@@ -13,6 +13,64 @@
     CP1: 2003, CP2: 2011, FLV: 1554
   };
 
+  // Frota própria (planilha DistanciaxFrotaXMotoristas, aba Frota Detalhada).
+  // Chave = 7 primeiros caracteres da placa do cavalo/caminhão, sem espaço nem hífen.
+  const FROTA_PADRAO = [
+    ['MCZ2627-QHC8466', 28, 'Carga seca carreta'], ['MFK7349-SXG6B33', 28, 'Carga seca carreta'],
+    ['MFO1149-QII9473', 28, 'Carga seca carreta'], ['MGT3791-RYU7G13', 28, 'Carga seca carreta'],
+    ['MJN5822-SXG6B43', 28, 'Carga seca carreta'], ['MAC1727-MBU5605', 28, 'Carga seca carreta'],
+    ['QIG8584-QIV7832', 28, 'Carga seca carreta'], ['RLK4D62-RLI0I64', 28, 'Carga seca carreta'],
+    ['RXS4A91-RYK3D44', 28, 'Carga seca carreta'],
+    ['QHK-4E72', 20, 'Frigorífico caminhão'], ['QHK-4492', 20, 'Frigorífico caminhão'], ['TPQ9G27', 20, 'Frigorífico caminhão'],
+    ['SXO2D45', 20, 'Frigorífico caminhão'], ['SXO2C05', 20, 'Frigorífico caminhão'], ['QJR-7415', 20, 'Frigorífico caminhão'],
+    ['MJF-7378', 18, 'Frigorífico caminhão'], ['MHM-1657', 18, 'Frigorífico caminhão'], ['RYS4G50', 16, 'Frigorífico caminhão'],
+    ['SXK9F20', 14, 'Frigorífico caminhão'],
+    ['MBI1011-MFA9213', 24, 'Frigorífico carreta'], ['MBP3776-MFT4312', 24, 'Frigorífico carreta'],
+    ['MMC6327-MLW2257', 26, 'Frigorífico carreta'], ['QIM1043-MKZ6729', 26, 'Frigorífico carreta'],
+    ['RYH8B57', 16, 'Carga seca caminhão'], ['SXN4J64', 18, 'Carga seca caminhão'], ['RXT8H90', 18, 'Carga seca caminhão'],
+    ['RXZ8F20', 18, 'Carga seca caminhão'], ['MJE-6535', 18, 'Carga seca caminhão'], ['RXN4A50', 18, 'Carga seca caminhão']
+  ];
+  const MOTORISTAS_PADRAO = ['ADEMIR', 'AZENIR', 'CARLOS', 'CHIMELLER', 'CLEBER', 'CRISTIANO', 'DJAIME', 'EDERSON', 'EDIO',
+    'EDUARDO', 'ERMERSON', 'FELIPE', 'FELIPE CAETANO', 'FERNANDO', 'GABRIEL', 'GABRIELA', 'GETULIO', 'GIOVANE I', 'GIOVANE R',
+    'GIOVANI', 'JURANDI', 'LEANDRO', 'MARCELO', 'MARCOS', 'MAXOEL', 'PATRICIA', 'PAULO', 'RICARDO', 'ROGERIO', 'ROMARIO',
+    'ROSINEI', 'RUDINEI', 'TEIXEIRA', 'THALYS', 'VILMAR', 'VILTON', 'ZECAO'];
+
+  const chavePlaca = p => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
+  const normNome = n => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+  function montarFrota(lista, motoristas) {
+    const veiculos = {};
+    lista.forEach(([placa, cap, tipo]) => { veiculos[chavePlaca(placa)] = { placa: String(placa).trim(), cap, tipo }; });
+    return { veiculos, motoristas: new Set(motoristas.map(normNome).filter(m => m && m !== 'TERCEIRO')) };
+  }
+
+  /* Lê a planilha de frota: aba "Frota Detalhada" (blocos Placa/Capacidade lado a lado, tipo na linha 1)
+   * e aba "Motoristas Ativos". Devolve null se não for esse arquivo. */
+  function lerFrota(rowsPorAba) {
+    const nomes = Object.keys(rowsPorAba);
+    const norm = n => normNome(n);
+    const aFrota = nomes.find(n => norm(n).includes('FROTA DETALHADA'));
+    if (!aFrota) return null;
+    const rows = rowsPorAba[aFrota];
+    const lista = [];
+    let tipos = [];
+    rows.forEach(r => {
+      if (!r) return;
+      r.forEach((v, c) => {
+        const t = txt(v);
+        if (/^placa$/i.test(t)) return;
+        if (typeof r[c + 1] === 'number' && RE_PLACA.test(t)) {
+          lista.push([t, r[c + 1], tipos[c] || '']);
+        } else if (t && !/capacidade/i.test(t) && typeof v === 'string' && !RE_PLACA.test(t) && !r.some(x => typeof x === 'number')) {
+          tipos[c] = t.charAt(0) + t.slice(1).toLowerCase();
+        }
+      });
+    });
+    const aMot = nomes.find(n => norm(n).includes('MOTORISTA'));
+    const mot = aMot ? rowsPorAba[aMot].map(r => r && r[0]).filter(Boolean) : MOTORISTAS_PADRAO;
+    return lista.length ? { lista, motoristas: mot } : null;
+  }
+
   const RE_PLACA = /^[A-Z]{3}\s*-?\s*\d[A-Z0-9]\d{2}/i;
 
   function excelDate(v) {
@@ -175,7 +233,8 @@
   }
 
   /* rowsPorAba: { nomeDaAba: [[...linha], ...] } (sheet_to_json com header:1, raw:true) */
-  function processar(rowsPorAba, nomesAbas) {
+  function processar(rowsPorAba, nomesAbas, frotaCfg) {
+    const FROTA = frotaCfg ? montarFrota(frotaCfg.lista, frotaCfg.motoristas) : montarFrota(FROTA_PADRAO, MOTORISTAS_PADRAO);
     const wbLike = { SheetNames: nomesAbas || Object.keys(rowsPorAba) };
     const abaGeral = acharAba(wbLike, [n => n === 'CARGAS GERAL', n => n.includes('CARGAS GERAL')]);
     const abaCp2 = acharAba(wbLike, [n => n.startsWith('CP2 CARGA'), n => n.includes('CP2') && n.includes('CARGA') && !n.includes('MEXER')]);
@@ -210,7 +269,7 @@
             viagem: id, data: base.data, aba: base.aba, linha: base.linha, origem,
             destino: o.destino, grupo: !!o.grupo,
             tipo: o.grupo ? 'loja' : tipoDestino(o.destino),
-            qtd: o.qtd, frota: base.frota, placa: base.placa, motorista: base.motorista,
+            qtd: o.qtd, frota: base.frota, veiculo: base.veiculo, placa: base.placa, motorista: base.motorista,
             lojasTexto: base.lojasTexto, qtdTexto: base.qtdTexto, obs: o.obs || base.obs || ''
           });
         });
@@ -222,9 +281,15 @@
       return algum;
     }
 
+    /* Própria: placa da lista da frota (com capacidade), outra placa sem marca de terceiro
+     *   (frota antiga) ou motorista da casa.
+     * Terceiro: marcado como terceiro (motorista TERCEIRO, placa -T ou T/).
+     * Não informado: sem placa reconhecível e sem motorista (ex.: "CARGA SAI DE PALHOÇA"). */
     function frotaDe(placa, mot) {
-      if (!placa && !mot) return 'nao_inf';
-      return ehTerceiro(placa, mot) ? 'terceiro' : 'propria';
+      if (FROTA.veiculos[chavePlaca(placa)]) return { frota: 'propria', veiculo: chavePlaca(placa) };
+      if (ehTerceiro(placa, mot)) return { frota: 'terceiro', veiculo: '' };
+      if (RE_PLACA.test(placa) || FROTA.motoristas.has(normNome(mot)) || mot) return { frota: 'propria', veiculo: '' };
+      return { frota: 'nao_inf', veiculo: '' };
     }
 
     // ---------- CARGAS GERAL (saídas do CD) ----------
@@ -244,7 +309,7 @@
         }
         const mot = txt(r[17]);
         const base = {
-          data, aba: abaGeral, linha: i + 1, placa, motorista: mot, frota: frotaDe(placa, mot),
+          data, aba: abaGeral, linha: i + 1, placa, motorista: mot, ...frotaDe(placa, mot),
           lojasTexto: txt(lojasRaw), qtdTexto: txt(cdRaw)
         };
         const dest = splitDestinos(lojasRaw);
@@ -283,7 +348,7 @@
           out.forEach(o => entregas.push({
             viagem: viagemId, data, aba: abaGeral, linha: i + 1, origem: campo, extra: true,
             destino: o.destino, grupo: !!o.grupo, tipo: o.grupo ? 'loja' : tipoDestino(o.destino),
-            qtd: o.qtd, frota: base.frota, placa, motorista: mot, lojasTexto: base.lojasTexto, qtdTexto: txt(campo === 'S' ? r[12] : r[13]), obs: ''
+            qtd: o.qtd, frota: base.frota, veiculo: base.veiculo, placa, motorista: mot, lojasTexto: base.lojasTexto, qtdTexto: txt(campo === 'S' ? r[12] : r[13]), obs: ''
           }));
         }
       }
@@ -311,7 +376,7 @@
         }
         if (!q.nums.length) continue;
         if (aba === abaCp2) datasCp2Novo.add(data);
-        const base = { data, aba, linha: i + 1, placa, motorista: mot, frota: frotaDe(placa, mot),
+        const base = { data, aba, linha: i + 1, placa, motorista: mot, ...frotaDe(placa, mot),
           lojasTexto: txt(lojasRaw), qtdTexto: txt(r[cQtd]), obs: q.texto };
         if (registrar(base, dest.itens, { CP2: q })) n++;
       }
@@ -360,7 +425,7 @@
           if (marca && /CD/i.test(marca) && !isNaN(vC)) cdExtra.push({ destino: d, qtd: vC });
         });
         if (!valido || !destinos.length) continue;
-        const base = { data, aba: abaFlv, linha: i + 1, placa, motorista: mot, frota: frotaDe(placa, mot),
+        const base = { data, aba: abaFlv, linha: i + 1, placa, motorista: mot, ...frotaDe(placa, mot),
           lojasTexto: lojasTxt, qtdTexto: flvTxt + (txt(r[13]) ? ' | CD ' + txt(r[13]) : '') };
         // Mais números que lojas (ex.: "CB4" com "7+2"): deixa a regra geral decidir
         const qF = qtdTokens.length > tokens.length ? splitQtd(flvTxt)
@@ -374,10 +439,10 @@
 
     entregas.sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : a.viagem - b.viagem);
     alertas.sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
-    return { entregas, alertas, codigos, resumoAbas, abas: { abaGeral, abaCp2, abaCp2Ant, abaFlv, abaApoio } };
+    return { entregas, alertas, codigos, resumoAbas, veiculos: FROTA.veiculos, frotaCarregada: !!frotaCfg, abas: { abaGeral, abaCp2, abaCp2Ant, abaFlv, abaApoio } };
   }
 
-  const api = { processar, splitDestinos, splitQtd, normDestino, nomeDestino, tipoDestino, ehTerceiro, distribuir, excelDate, excelTime };
+  const api = { processar, lerFrota, chavePlaca, splitDestinos, splitQtd, normDestino, nomeDestino, tipoDestino, ehTerceiro, distribuir, excelDate, excelTime };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Expedicao = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -143,7 +143,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
 <main class="wrap">
   <section class="drop" id="drop">
     <strong>Arraste a planilha aqui</strong>
-    <p>Abra o arquivo <span class="mono">EMBARQUE EXPEDIÇÃO.xlsx</span>. Ele é lido só no seu navegador, sem envio para lugar nenhum. A leitura de um arquivo grande leva de 10 a 20 segundos.</p>
+    <p>Abra o arquivo <span class="mono">EMBARQUE EXPEDIÇÃO.xlsx</span>. Ele é lido só no seu navegador, sem envio para lugar nenhum. A leitura de um arquivo grande leva de 10 a 20 segundos. Para atualizar placas e capacidades, abra também a planilha de frota (aba Frota Detalhada).</p>
     <span class="progress" id="progress"></span>
   </section>
 
@@ -195,6 +195,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
     <button role="tab" data-t="loja" aria-selected="true">Por loja</button>
     <button role="tab" data-t="dia" aria-selected="false">Por dia</button>
     <button role="tab" data-t="viagens" aria-selected="false">Viagens <span class="count" id="cViagens">0</span></button>
+    <button role="tab" data-t="frota" aria-selected="false">Frota</button>
     <button role="tab" data-t="conferir" aria-selected="false">Para conferir <span class="count warn" id="cAlertas">0</span></button>
     <button role="tab" data-t="regras" aria-selected="false">Como a planilha é lida</button>
   </nav>
@@ -202,6 +203,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
   <section class="panel" id="pLoja" hidden></section>
   <section class="panel" id="pDia" hidden></section>
   <section class="panel" id="pViagens" hidden></section>
+  <section class="panel" id="pFrota" hidden></section>
   <section class="panel" id="pConferir" hidden></section>
 
   <section class="panel" id="pRegras">
@@ -224,7 +226,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </div>
       <div class="rule">
         <h3>Terceiros</h3>
-        <p>É terceiro quando o motorista é TERCEIRO ou a placa termina em <span class="mono">-T</span> (ou começa com <span class="mono">T/</span>). Sem placa e sem motorista, a frota fica "não informada".</p>
+        <p>Própria quando a placa está na lista da frota (29 veículos, com capacidade). Terceiro quando o motorista é TERCEIRO ou a placa termina em <span class="mono">-T</span> (ou começa com <span class="mono">T/</span>). Placas antigas sem essa marca seguem como próprias. Sem placa e sem motorista (ex.: "CARGA SAI DE PALHOÇA"), a frota fica "não informada".</p>
         <div class="ex"><span>PLACA <b>OKE6H15-T</b> · MOT <b>TERCEIRO</b></span><span>→ Terceiro</span></div>
       </div>
       <div class="rule">
@@ -284,9 +286,12 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
   ['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop' || e.target === drop) drop.classList.remove('over'); }));
   document.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) carregar(f); });
 
+  let ROWS = null, NOMES = null, NOME_ARQ = '', FROTA_CFG = null, FROTA_ORIGEM = 'lista padrão';
+  try { const f = JSON.parse(localStorage.getItem('paletes-frota') || 'null'); if (f && f.lista) { FROTA_CFG = f; FROTA_ORIGEM = f.arquivo || 'arquivo carregado'; } } catch (e) { /* segue com a lista padrão */ }
+
   function carregar(file) {
     const prog = $('progress');
-    drop.hidden = false;
+    if (!DADOS) drop.hidden = false;
     prog.textContent = 'Lendo ' + file.name + '…';
     const t0 = performance.now();
     const reader = new FileReader();
@@ -295,21 +300,31 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       prog.textContent = 'Interpretando as abas (pode levar alguns segundos)…';
       setTimeout(() => {
         try {
-          const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array', sheets: ABAS, dense: true, cellFormula: false, cellHTML: false, cellText: false });
+          const buf = new Uint8Array(reader.result);
+          const nomes = XLSX.read(buf, { type: 'array', bookSheets: true }).SheetNames;
+          // Planilha de frota (aba "Frota Detalhada"): atualiza placas e capacidades
+          if (nomes.some(n => /FROTA DETALHADA/i.test(n.normalize('NFD').replace(/[\u0300-\u036f]/g, '')))) {
+            const wb = XLSX.read(buf, { type: 'array', dense: true });
+            const rows = {};
+            wb.SheetNames.forEach(n => { rows[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null }); });
+            const F = E.lerFrota(rows);
+            if (!F) { prog.textContent = 'Achei a aba Frota Detalhada, mas nenhuma placa com capacidade.'; toast('Nenhuma placa encontrada na planilha de frota.'); return; }
+            FROTA_CFG = Object.assign(F, { arquivo: file.name });
+            FROTA_ORIGEM = file.name;
+            try { localStorage.setItem('paletes-frota', JSON.stringify(FROTA_CFG)); } catch (e) { /* lembra só nesta sessão */ }
+            prog.textContent = 'Frota atualizada: ' + F.lista.length + ' veículos. Agora abra a planilha de embarque.';
+            toast('Frota atualizada: ' + F.lista.length + ' veículos de ' + file.name);
+            if (ROWS) processarTudo();
+            return;
+          }
+          const wb = XLSX.read(buf, { type: 'array', sheets: ABAS, dense: true, cellFormula: false, cellHTML: false, cellText: false });
           const rows = {};
           wb.SheetNames.forEach(n => { if (wb.Sheets[n]) rows[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null }); });
-          const R = E.processar(rows, wb.SheetNames);
-          if (!R.entregas.length) { prog.textContent = 'Não encontrei as abas CARGAS GERAL, CP2 CARGA-N ou CARGA FLV neste arquivo.'; return; }
-          DADOS = R;
-          const datas = R.entregas.map(e => e.data);
-          DADOS.min = datas[0]; DADOS.max = datas[datas.length - 1];
-          const seg = ((performance.now() - t0) / 1000).toFixed(1);
-          $('fileInfo').textContent = file.name + ' · lido em ' + seg + ' s · dados de ' + br(DADOS.min) + ' a ' + br(DADOS.max);
-          $('btnFile').textContent = 'Trocar planilha';
-          drop.hidden = true;
-          ['filters', 'kpis', 'tabs'].forEach(id => { $(id).hidden = false; });
-          aplicarPreset('7');
-          mostrarAba(estado.aba || 'loja');
+          ROWS = rows; NOMES = wb.SheetNames; NOME_ARQ = file.name;
+          if (!processarTudo(((performance.now() - t0) / 1000).toFixed(1))) {
+            ROWS = null;
+            prog.textContent = 'Não encontrei as abas CARGAS GERAL, CP2 CARGA-N ou CARGA FLV neste arquivo.';
+          }
         } catch (err) {
           console.error(err);
           prog.textContent = 'Erro ao ler a planilha: ' + err.message;
@@ -317,6 +332,23 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       }, 30);
     };
     reader.readAsArrayBuffer(file);
+  }
+
+  function processarTudo(seg) {
+    const R = E.processar(ROWS, NOMES, FROTA_CFG || undefined);
+    if (!R.entregas.length) return false;
+    const primeira = !DADOS;
+    DADOS = R;
+    const datas = R.entregas.map(e => e.data);
+    DADOS.min = datas[0]; DADOS.max = datas[datas.length - 1];
+    if (seg) processarTudo.seg = seg;
+    $('fileInfo').textContent = NOME_ARQ + ' · lido em ' + processarTudo.seg + ' s · dados de ' + br(DADOS.min) + ' a ' + br(DADOS.max) +
+      ' · frota: ' + Object.keys(R.veiculos).length + ' veículos (' + FROTA_ORIGEM + ')';
+    $('btnFile').textContent = 'Trocar planilha';
+    drop.hidden = true;
+    ['filters', 'kpis', 'tabs'].forEach(id => { $(id).hidden = false; });
+    if (primeira || !$('dIni').value) { aplicarPreset('7'); mostrarAba(estado.aba || 'loja'); } else render();
+    return true;
   }
 
   // ---------- Datas ----------
@@ -379,6 +411,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
     renderLoja(L);
     renderDia(P);
     renderViagens(P);
+    renderFrota(P);
     renderConferir();
   }
 
@@ -493,18 +526,75 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
     el.innerHTML = `<div class="panel-head"><h2>Viagens</h2><span class="hint">Mais recentes primeiro · o que está escrito na planilha e como foi lido</span></div>
       ${lista.length ? `<div class="tscroll"><table><thead><tr>
         <th class="l" scope="col">Data</th><th class="l" scope="col">Aba · linha</th><th class="l" scope="col">Placa</th><th class="l" scope="col">Motorista</th><th class="l" scope="col">Frota</th>
-        <th class="l" scope="col">Lojas</th><th class="l" scope="col">Quant.</th><th class="l" scope="col">Leitura</th><th scope="col">Paletes</th>
+        <th class="l" scope="col">Lojas</th><th class="l" scope="col">Quant.</th><th class="l" scope="col">Leitura</th><th scope="col">Paletes</th><th scope="col">Ocupação</th>
       </tr></thead><tbody>
       ${mostrar.map(({ e, itens }) => `<tr><td class="l">${br(e.data)}</td><td class="l mono muted">${ABA_CURTA(e.aba)} · ${e.linha}</td>
         <td class="l mono">${esc(e.placa) || '<span class="muted">—</span>'}</td><td class="l">${esc(e.motorista) || '<span class="muted">—</span>'}</td>
         <td class="l"><span class="pill ${e.frota}">${e.frota === 'terceiro' ? 'Terceiro' : e.frota === 'propria' ? 'Própria' : 'Não inf.'}</span></td>
         <td class="l mono">${esc(e.lojasTexto)}</td><td class="l mono">${esc(e.qtdTexto)}</td>
         <td class="l"><span class="split">${itens.map(i => `<span class="num-${i.origem.toLowerCase()}">${nome(i.destino)}: ${i.qtd} ${i.origem}</span>`).join('')}</span>${e.obs ? ` <span class="muted">${esc(e.obs)}</span>` : ''}</td>
-        <td><strong>${fmt(soma(itens))}</strong></td></tr>`).join('')}
+        <td><strong>${fmt(soma(itens))}</strong></td><td>${ocupacao(e, soma(itens))}</td></tr>`).join('')}
       </tbody></table></div>
       ${lista.length > mostrar.length ? `<div class="more">Mostrando ${fmt(mostrar.length)} de ${fmt(lista.length)} viagens. <button type="button" id="maisViagens">Mostrar mais 300</button></div>` : ''}`
       : '<div class="empty">Nenhuma viagem no período e filtros escolhidos.</div>'}`;
     const b = $('maisViagens'); if (b) b.addEventListener('click', () => { estado.limiteViagens += 300; render(); });
+  }
+
+  function ocupacao(e, pal) {
+    const v = e.veiculo && DADOS.veiculos[e.veiculo];
+    if (!v) return '<span class="muted">—</span>';
+    const pct = Math.round(pal * 100 / v.cap);
+    return `<span class="${pct > 100 ? 'warn-tag' : pct < 70 ? 'muted' : ''}">${pal}/${v.cap} · ${pct}%</span>`;
+  }
+
+  /* Uma viagem = um caminhão saindo. Ocupação = paletes da viagem ÷ capacidade do veículo. */
+  function renderFrota(P) {
+    const porViagem = new Map();
+    for (const e of P) {
+      let v = porViagem.get(e.viagem);
+      if (!v) { v = { e, pal: 0 }; porViagem.set(e.viagem, v); }
+      v.pal += e.qtd;
+    }
+    const frota = new Map(), terc = new Map(), fora = new Map();
+    for (const { e, pal } of porViagem.values()) {
+      if (e.veiculo) {
+        const ve = DADOS.veiculos[e.veiculo];
+        let r = frota.get(e.veiculo);
+        if (!r) { r = { placa: ve.placa, tipo: ve.tipo, cap: ve.cap, viagens: 0, pal: 0, ocup: 0, dias: new Set(), mot: new Map() }; frota.set(e.veiculo, r); }
+        r.viagens++; r.pal += pal; r.ocup += Math.min(pal / ve.cap, 1.5); r.dias.add(e.data);
+        if (e.motorista) r.mot.set(e.motorista, (r.mot.get(e.motorista) || 0) + 1);
+      } else {
+        const alvo = e.frota === 'terceiro' ? terc : e.frota === 'propria' ? fora : null;
+        if (!alvo) continue;
+        const k = (e.placa || e.motorista || '—').toUpperCase().replace(/\s+/g, ' ');
+        let r = alvo.get(k);
+        if (!r) { r = { placa: e.placa || '—', viagens: 0, pal: 0, dias: new Set() }; alvo.set(k, r); }
+        r.viagens++; r.pal += pal; r.dias.add(e.data);
+      }
+    }
+    // Veículos da lista que não rodaram no período também aparecem
+    Object.entries(DADOS.veiculos).forEach(([k, ve]) => {
+      if (!frota.has(k)) frota.set(k, { placa: ve.placa, tipo: ve.tipo, cap: ve.cap, viagens: 0, pal: 0, ocup: 0, dias: new Set(), mot: new Map() });
+    });
+    const lf = [...frota.values()].sort((a, b) => b.pal - a.pal || a.placa.localeCompare(b.placa));
+    const tf = lf.reduce((t, r) => ({ v: t.v + r.viagens, p: t.p + r.pal, o: t.o + r.ocup }), { v: 0, p: 0, o: 0 });
+    const pctOc = (o, v) => v ? Math.round(o * 100 / v) + '%' : '—';
+    const topMot = r => [...r.mot.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(m => esc(m[0])).join(', ');
+    const tabelaSimples = (titulo, hint, m, cls) => {
+      const l = [...m.values()].sort((a, b) => b.pal - a.pal);
+      if (!l.length) return '';
+      return `<div class="panel-head"><h2>${titulo}</h2><span class="hint">${hint}</span></div>
+        <div class="tscroll"><table><thead><tr><th class="l" scope="col">Placa</th><th scope="col">Viagens</th><th scope="col">Paletes</th><th scope="col">Média/viagem</th><th scope="col">Dias</th></tr></thead><tbody>
+        ${l.map(r => `<tr><td class="l mono">${esc(r.placa)}</td>${cel(r.viagens)}<td class="${cls || ''}"><strong>${fmt(r.pal)}</strong></td><td>${(r.pal / r.viagens).toFixed(1)}</td>${cel(r.dias.size)}</tr>`).join('')}
+        </tbody></table></div>`;
+    };
+    $('pFrota').innerHTML = `<div class="panel-head"><h2>Frota própria</h2><span class="hint">Ocupação = paletes da viagem ÷ capacidade do veículo · lista: ${esc(FROTA_ORIGEM)}</span></div>
+      <div class="tscroll"><table><thead><tr><th class="l" scope="col">Placa</th><th class="l" scope="col">Tipo</th><th scope="col">Capac.</th><th scope="col">Viagens</th><th scope="col">Paletes</th><th scope="col">Média/viagem</th><th scope="col">Ocupação média</th><th scope="col">Dias rodados</th><th class="l" scope="col">Motoristas mais frequentes</th></tr></thead><tbody>
+      ${lf.map(r => `<tr${r.viagens ? '' : ' class="muted"'}><td class="l mono">${esc(r.placa)}</td><td class="l">${esc(r.tipo)}</td><td>${r.cap}</td>${cel(r.viagens)}<td><strong>${fmt(r.pal)}</strong></td><td>${r.viagens ? (r.pal / r.viagens).toFixed(1) : '—'}</td><td>${pctOc(r.ocup, r.viagens)}</td>${cel(r.dias.size)}<td class="l">${topMot(r) || '<span class="muted">sem viagens no período</span>'}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td class="l">Total</td><td></td><td></td><td>${fmt(tf.v)}</td><td>${fmt(tf.p)}</td><td>${tf.v ? (tf.p / tf.v).toFixed(1) : '—'}</td><td>${pctOc(tf.o, tf.v)}</td><td></td><td></td></tr></tfoot></table></div>
+      ${tabelaSimples('Terceiros', 'Placas marcadas como terceiro (motorista TERCEIRO ou placa -T)', terc, 'num-terc')}
+      ${tabelaSimples('Próprias fora da lista', 'Sem marca de terceiro, mas a placa não está na lista da frota (frota antiga ou placa escrita diferente)', fora)}
+      <div class="more">Para atualizar placas e capacidades, abra a planilha de frota (aba Frota Detalhada) no botão do topo.</div>`;
   }
 
   function renderConferir() {
@@ -541,7 +631,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
   });
 
   // ---------- Abas ----------
-  const PAINEIS = { loja: 'pLoja', dia: 'pDia', viagens: 'pViagens', conferir: 'pConferir', regras: 'pRegras' };
+  const PAINEIS = { loja: 'pLoja', dia: 'pDia', viagens: 'pViagens', frota: 'pFrota', conferir: 'pConferir', regras: 'pRegras' };
   function mostrarAba(t) {
     estado.aba = t;
     document.querySelectorAll('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
