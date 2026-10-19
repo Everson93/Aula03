@@ -260,14 +260,21 @@
           }
           continue;
         }
-        if (qCD.nums.length === 0 && qCP2.nums.length === 0 && qFLV.nums.length === 0) {
+        if (qCD.nums.length === 0) {
           semQtd++;
           continue;
         }
-        // "complemento flv" escrito na coluna CP2/FLV: a quantidade da coluna CD é de FLV
-        const complementoFlv = /comp.*flv|flv.*comp/i.test(qCP2.texto + ' ' + qFLV.texto) && !qFLV.nums.length;
-        const qtds = complementoFlv ? { FLV: qCD, CP2: qCP2 } : { CD: qCD, CP2: qCP2, FLV: qFLV };
-        if (registrar(base, dest.itens, qtds)) n++;
+        // Daqui sai só o volume do CD. CP2 e FLV são lidos das abas próprias,
+        // então números nas colunas CP2/FLV ficam só como observação.
+        if (qCP2.nums.length) base.obs = (base.obs ? base.obs + ' · ' : '') + 'CP2 ' + txt(r[10]);
+        if (qFLV.nums.length) base.obs = (base.obs ? base.obs + ' · ' : '') + 'FLV ' + txt(r[11]);
+        // "complemento flv": a quantidade da coluna CD é de FLV, não entra como CD
+        if (/comp.*flv|flv.*comp/i.test(qCP2.texto + ' ' + qFLV.texto)) {
+          alertas.push({ data, aba: abaGeral, linha: i + 1, lojas: base.lojasTexto, qtd: base.qtdTexto,
+            motivo: 'complemento FLV lançado na CARGAS GERAL; não somado (FLV vem da aba CARGA FLV)' });
+          continue;
+        }
+        if (registrar(base, dest.itens, { CD: qCD })) n++;
         // Colunas S e PM: extras que não entram no total de paletes
         const qS = splitQtd(r[12]), qPM = splitQtd(r[13]);
         for (const [campo, q] of [['S', qS], ['PM', qPM]]) {
@@ -280,7 +287,7 @@
           }));
         }
       }
-      resumoAbas.push({ aba: abaGeral, viagens: n, ignoradas: semQtd, papel: 'Saídas do CD (coluna CD, e CP2/FLV quando numéricos)' });
+      resumoAbas.push({ aba: abaGeral, viagens: n, ignoradas: semQtd, papel: 'Volume CD (só a coluna CD)' });
     }
 
     // ---------- CP2 ----------
@@ -358,11 +365,11 @@
         // Mais números que lojas (ex.: "CB4" com "7+2"): deixa a regra geral decidir
         const qF = qtdTokens.length > tokens.length ? splitQtd(flvTxt)
           : { nums: flv.some(x => x > 0) ? flv : [], incompleto: false, texto: '' };
-        const qtds = { FLV: qF };
-        if (!cdExtra.length) qtds.CD = splitQtd(r[13]);
-        if (registrar(base, destinos, qtds, cdExtra.map(x => Object.assign({ origem: 'CD', obs: 'CD na carga FLV' }, x)))) n++;
+        // Só o volume FLV. Os paletes de CD que vão junto ("-CD", coluna CD) já estão na CARGAS GERAL.
+        if (cdExtra.length || txt(r[13])) base.obs = 'CD junto na carga (contado pela CARGAS GERAL)';
+        if (registrar(base, destinos, { FLV: qF })) n++;
       }
-      resumoAbas.push({ aba: abaFlv, viagens: n, ignoradas: 0, papel: 'Expedição FLV (coluna FLV, e CD quando houver)' });
+      resumoAbas.push({ aba: abaFlv, viagens: n, ignoradas: 0, papel: 'Volume FLV (só a coluna FLV)' });
     }
 
     entregas.sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : a.viagem - b.viagem);
