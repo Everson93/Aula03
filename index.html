@@ -782,6 +782,104 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   }
 
+  // ---------- Versão formatada (ExcelJS): mesmas células do modelo, só com visual ----------
+  let excelJsPromise = null;
+  function carregarExcelJS() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (!excelJsPromise) excelJsPromise = new Promise((ok, falha) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+      sc.onload = () => window.ExcelJS ? ok(window.ExcelJS) : falha(new Error('ExcelJS'));
+      sc.onerror = () => { excelJsPromise = null; falha(new Error('ExcelJS')); };
+      document.head.appendChild(sc);
+    });
+    return excelJsPromise;
+  }
+
+  // Cores por origem (título do bloco / cabeçalho claro). Vieira leva a faixa laranja de terceiro.
+  const COR_BLOCO = { CD: ['FF1F4E79', 'FFDCE6F2'], FLV: ['FF1E6B45', 'FFE2EFDA'], CP2: ['FF5B3A8E', 'FFE8E0F5'] };
+  const COR_TERC = 'FFE07B00';
+
+  async function montarModeloFormatado(ini, fim) {
+    const ExcelJS = await carregarExcelJS();
+    const mes = ini.slice(0, 7);
+    const nomeMes = MESES_NOME[+mes.slice(5, 7) - 1];
+    const soma = {};
+    for (const e of DADOS.entregas) {
+      if (e.extra || e.tipo !== 'loja' || e.data < ini || e.data > fim) continue;
+      const k = [e.origem, e.frota === 'terceiro' ? 'terceiro' : 'propria', e.destino].join('|');
+      soma[k] = (soma[k] || 0) + e.qtd;
+    }
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Paletes Expedidos';
+    wb.calcProperties.fullCalcOnLoad = true;
+    const ws = wb.addWorksheet('Paletes', {
+      views: [{ state: 'frozen', xSplit: 0, ySplit: 2, showGridLines: false }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1, paperSize: 9 }
+    });
+    const fino = { style: 'thin', color: { argb: 'FFD0D7E1' } };
+    const borda = { top: fino, left: fino, bottom: fino, right: fino };
+    const rTot = 3 + LOJAS_MODELO.length;     // linha TOTAL (31)
+    BLOCOS.forEach(([titulo, origem, frota, rotulo], b) => {
+      const c0 = b * 4 + 1;                   // A=1, E=5, I=9...: loja, mês, Total, separador
+      const [escuro, claro] = COR_BLOCO[origem];
+      const L = n => ws.getColumn(n).letter;
+      // Linha 1: título do bloco
+      ws.mergeCells(1, c0, 1, c0 + 2);
+      const t = ws.getCell(1, c0);
+      t.value = titulo;
+      t.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: escuro } };
+      t.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      for (let c = c0; c <= c0 + 2; c++) ws.getCell(1, c).border = { bottom: frota === 'terceiro' ? { style: 'thick', color: { argb: COR_TERC } } : { style: 'thick', color: { argb: escuro } } };
+      // Linha 2: cabeçalho
+      [rotulo, nomeMes, 'Total'].forEach((v, j) => {
+        const c = ws.getCell(2, c0 + j);
+        c.value = v;
+        c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: escuro } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: claro } };
+        c.alignment = { horizontal: j === 0 ? 'left' : 'center', vertical: 'middle' };
+        c.border = { bottom: { style: 'medium', color: { argb: escuro } } };
+      });
+      // Lojas
+      LOJAS_MODELO.forEach(([rot, chave], i) => {
+        const r = 3 + i;
+        const zebra = i % 2 ? 'FFF6F8FB' : 'FFFFFFFF';
+        const v = soma[[origem, frota, chave].join('|')] || 0;
+        const cl = ws.getCell(r, c0), cv = ws.getCell(r, c0 + 1), ct = ws.getCell(r, c0 + 2);
+        cl.value = rot;
+        cv.value = v;
+        ct.value = { formula: `SUM(${L(c0 + 1)}${r}:${L(c0 + 1)}${r})`, result: v };
+        [cl, cv, ct].forEach((c, j) => {
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: zebra } };
+          c.border = borda;
+          c.font = { name: 'Calibri', size: 10, bold: j !== 1, color: { argb: j === 0 ? 'FF33414F' : v ? 'FF1B2430' : 'FFB4BCC6' } };
+          c.alignment = { horizontal: j === 0 ? 'left' : 'right', vertical: 'middle' };
+          if (j) c.numFmt = '#,##0;-#,##0;"-"';
+        });
+      });
+      // TOTAL
+      const total = LOJAS_MODELO.reduce((a, [, chave]) => a + (soma[[origem, frota, chave].join('|')] || 0), 0);
+      [0, 1, 2].forEach(j => {
+        const c = ws.getCell(rTot, c0 + j);
+        c.value = j === 0 ? 'TOTAL' : { formula: `SUM(${L(c0 + j)}3:${L(c0 + j)}${rTot - 1})`, result: total };
+        c.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: escuro } };
+        c.alignment = { horizontal: j === 0 ? 'left' : 'right', vertical: 'middle' };
+        if (j) c.numFmt = '#,##0';
+      });
+      ws.getColumn(c0).width = 9;
+      ws.getColumn(c0 + 1).width = 13;
+      ws.getColumn(c0 + 2).width = 11;
+      if (b < BLOCOS.length - 1) ws.getColumn(c0 + 3).width = 2.5;
+    });
+    ws.getRow(1).height = 36;
+    ws.getRow(2).height = 20;
+    for (let r = 3; r < rTot; r++) ws.getRow(r).height = 16;
+    ws.getRow(rTot).height = 20;
+    return new Uint8Array(await wb.xlsx.writeBuffer());
+  }
+
   // O relatório é mensal: exporta sempre um mês inteiro, o escolhido no seletor
   $('btnExportar').addEventListener('click', async () => {
     if (!DADOS) return;
@@ -791,7 +889,9 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     const d = new Date(ini + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0);
     const fim = d.toISOString().slice(0, 10);
     const nome = 'Paletes_' + MESES_NOME[+mes.slice(5, 7) - 1] + '_' + mes.slice(0, 4) + '.xlsx';
-    const dados = montarModelo(ini, fim);
+    let dados;
+    try { dados = await montarModeloFormatado(ini, fim); }
+    catch (err) { console.warn('Exportação sem formatação:', err); dados = montarModelo(ini, fim); }
     let dl = null;
     try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
     if (dl) {
