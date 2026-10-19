@@ -1,0 +1,553 @@
+<title>Paletes Expedidos</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: faixa de doca no topo (placa de sinalização), filtros fixos, resumo em números e abas de tabelas abaixo. */
+:root {
+  --bg: #eef1f4; --surface: #ffffff; --surface-2: #f6f8fa; --ink: #16202a; --muted: #586675; --line: #d6dde4;
+  --accent: #f2b705; --accent-ink: #16202a; --band: #16202a; --band-ink: #f3f5f7;
+  --cd: #2b67a8; --cp2: #8048b5; --flv: #23864c; --terc: #b9531a; --warn: #a86a00; --warn-bg: #fff4d6;
+  --f-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e141a; --surface: #161f28; --surface-2: #1b2631; --ink: #e5ecf2; --muted: #98a6b3; --line: #2a3744;
+  --accent: #f5c518; --accent-ink: #16202a; --band: #070b0f; --band-ink: #e5ecf2;
+  --cd: #5c9ce0; --cp2: #b384e6; --flv: #4cbf7b; --terc: #ec8a4f; --warn: #f0b84a; --warn-bg: #3a2c0c;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0e141a; --surface: #161f28; --surface-2: #1b2631; --ink: #e5ecf2; --muted: #98a6b3; --line: #2a3744;
+  --accent: #f5c518; --accent-ink: #16202a; --band: #070b0f; --band-ink: #e5ecf2;
+  --cd: #5c9ce0; --cp2: #b384e6; --flv: #4cbf7b; --terc: #ec8a4f; --warn: #f0b84a; --warn-bg: #3a2c0c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1280px; margin: 0 auto; }
+
+header.band { background: var(--band); color: var(--band-ink); position: relative; }
+header.band::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 6px;
+  background: repeating-linear-gradient(-45deg, var(--accent) 0 12px, var(--band) 12px 24px); }
+header .wrap { padding-block: 18px 24px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: 2.4rem; letter-spacing: .01em; line-height: 1; margin: 0; text-transform: uppercase; }
+header p { margin: 6px 0 0; color: color-mix(in srgb, var(--band-ink) 70%, transparent); font-size: .9rem; }
+.file-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+button, .btn { font: inherit; cursor: pointer; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 7px 12px; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, select:focus-visible, label.chip:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn-primary:hover { border-color: var(--band-ink); }
+header .btn-ghost { background: transparent; color: var(--band-ink); border-color: color-mix(in srgb, var(--band-ink) 35%, transparent); }
+
+main { padding-block: 20px 48px; display: grid; gap: 18px; }
+
+.drop { border: 2px dashed var(--line); border-radius: 10px; background: var(--surface); padding: 28px 20px; text-align: center; display: grid; gap: 8px; justify-items: center; }
+.drop.over { border-color: var(--accent); background: var(--surface-2); }
+.drop strong { font-family: var(--f-display); font-size: 1.5rem; text-transform: uppercase; letter-spacing: .02em; }
+.drop p { margin: 0; color: var(--muted); max-width: 60ch; }
+.progress { font-family: var(--f-mono); font-size: .85rem; color: var(--muted); }
+
+.filters { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 12px; }
+.frow { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.fgroup { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.flabel { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; margin-right: 2px; }
+input[type="date"], input[type="search"], select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+input[type="search"] { min-width: 0; width: 180px; }
+.preset { padding: 5px 10px; font-size: .85rem; background: var(--surface-2); }
+.preset[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+label.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; font-size: .85rem; background: var(--surface-2); user-select: none; }
+label.chip input { position: absolute; opacity: 0; pointer-events: none; }
+label.chip .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--muted)); opacity: .35; }
+label.chip:has(input:checked) { border-color: var(--c, var(--ink)); background: color-mix(in srgb, var(--c, var(--ink)) 12%, var(--surface)); font-weight: 600; }
+label.chip:has(input:checked) .dot { opacity: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 5px 11px; font-size: .85rem; background: var(--surface-2); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 2px; border-top: 4px solid var(--c, var(--line)); }
+.kpi .k { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.kpi .v { font-family: var(--f-display); font-weight: 700; font-size: 2.1rem; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.kpi .s { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 900px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } h1 { font-size: 1.9rem; } }
+
+.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--line); overflow-x: auto; }
+.tabs button { border: 0; border-radius: 6px 6px 0 0; background: transparent; padding: 9px 14px; font-weight: 500; color: var(--muted); margin-bottom: -2px; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.tabs .count { font-family: var(--f-mono); font-size: .75rem; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+.tabs .count.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.panel-head h2 { font-family: var(--f-display); text-transform: uppercase; letter-spacing: .02em; font-size: 1.25rem; margin: 0; }
+.panel-head .hint { color: var(--muted); font-size: .85rem; }
+.tscroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: var(--surface-2); position: sticky; top: 0; }
+th.sortable { cursor: pointer; }
+th.sortable:hover { color: var(--ink); }
+th .arrow { font-size: .7rem; }
+td.l, th.l { text-align: left; }
+tbody tr:hover td { background: var(--surface-2); }
+tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0; }
+.num-cd { color: var(--cd); } .num-cp2 { color: var(--cp2); } .num-flv { color: var(--flv); } .num-terc { color: var(--terc); }
+.zero { color: var(--line); }
+.mono { font-family: var(--f-mono); font-size: .85rem; }
+.muted { color: var(--muted); }
+.bar { display: flex; height: 8px; width: 120px; border-radius: 2px; overflow: hidden; background: var(--surface-2); }
+.bar span { display: block; height: 100%; }
+.bar .b-cd { background: var(--cd); } .bar .b-cp2 { background: var(--cp2); } .bar .b-flv { background: var(--flv); }
+.pill { display: inline-block; font-size: .72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; }
+.pill.propria { color: var(--muted); } .pill.terceiro { color: var(--terc); } .pill.nao_inf { color: var(--muted); border-style: dashed; }
+.pill.o-CD { color: var(--cd); } .pill.o-CP2 { color: var(--cp2); } .pill.o-FLV { color: var(--flv); }
+.split { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.split span { font-family: var(--f-mono); font-size: .8rem; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.warn-tag { color: var(--warn); background: var(--warn-bg); border-radius: 4px; padding: 0 5px; font-size: .78rem; }
+.more { padding: 12px 14px; display: flex; gap: 10px; align-items: center; color: var(--muted); }
+.empty { padding: 28px 14px; color: var(--muted); text-align: center; }
+
+.rules { padding: 14px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.rule { display: grid; gap: 6px; align-content: start; }
+.rule h3 { margin: 0; font-size: .95rem; }
+.rule p { margin: 0; color: var(--muted); max-width: 65ch; }
+.ex { font-family: var(--f-mono); font-size: .82rem; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: grid; gap: 2px; }
+.ex b { font-weight: 500; color: var(--ink); }
+.toast { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 8px 14px; border-radius: 6px; font-size: .9rem; z-index: 20; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: .8rem; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+@media (prefers-reduced-motion: no-preference) { .kpi .v { transition: color .2s; } }
+</style>
+
+<header class="band">
+  <div class="wrap">
+    <div>
+      <h1>Paletes Expedidos</h1>
+      <p id="fileInfo">Leitura da planilha EMBARQUE EXPEDIÇÃO: CD, CP2 e FLV por loja, frota própria e terceiros.</p>
+    </div>
+    <div class="file-actions">
+      <button class="btn-primary" id="btnFile" type="button">Abrir planilha (.xlsx)</button>
+      <input type="file" id="file" accept=".xlsx,.xlsm,.xls" hidden>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="drop" id="drop">
+    <strong>Arraste a planilha aqui</strong>
+    <p>Abra o arquivo <span class="mono">EMBARQUE EXPEDIÇÃO.xlsx</span>. Ele é lido só no seu navegador, sem envio para lugar nenhum. A leitura de um arquivo grande leva de 10 a 20 segundos.</p>
+    <span class="progress" id="progress"></span>
+  </section>
+
+  <section class="filters" id="filters" hidden>
+    <div class="frow">
+      <div class="fgroup">
+        <span class="flabel">Período</span>
+        <input type="date" id="dIni" aria-label="Data inicial">
+        <span class="muted">até</span>
+        <input type="date" id="dFim" aria-label="Data final">
+      </div>
+      <div class="fgroup" id="presets">
+        <button class="preset" type="button" data-p="dia">Último dia</button>
+        <button class="preset" type="button" data-p="7">7 dias</button>
+        <button class="preset" type="button" data-p="mes">Mês atual</button>
+        <button class="preset" type="button" data-p="mesAnt">Mês anterior</button>
+        <button class="preset" type="button" data-p="ano">Ano</button>
+      </div>
+    </div>
+    <div class="frow">
+      <div class="fgroup">
+        <span class="flabel">Origem</span>
+        <label class="chip" style="--c: var(--cd)"><input type="checkbox" id="oCD" checked><span class="dot"></span>CD</label>
+        <label class="chip" style="--c: var(--cp2)"><input type="checkbox" id="oCP2" checked><span class="dot"></span>CP2</label>
+        <label class="chip" style="--c: var(--flv)"><input type="checkbox" id="oFLV" checked><span class="dot"></span>FLV</label>
+      </div>
+      <div class="fgroup">
+        <span class="flabel">Frota</span>
+        <div class="seg" id="frota" role="group" aria-label="Frota">
+          <button type="button" data-v="todas" aria-pressed="true">Todas</button>
+          <button type="button" data-v="propria" aria-pressed="false">Própria</button>
+          <button type="button" data-v="terceiro" aria-pressed="false">Terceiro</button>
+        </div>
+      </div>
+      <div class="fgroup">
+        <span class="flabel">Destino</span>
+        <label class="chip"><input type="checkbox" id="dTransf"><span class="dot"></span>Transferências (CP1, CP2, FLV)</label>
+        <label class="chip"><input type="checkbox" id="dOutros"><span class="dot"></span>Outros (clientes, cestas)</label>
+      </div>
+      <div class="fgroup">
+        <input type="search" id="busca" placeholder="Filtrar loja: 7, CB2…" aria-label="Filtrar loja">
+      </div>
+    </div>
+  </section>
+
+  <section class="kpis" id="kpis" hidden></section>
+
+  <nav class="tabs" id="tabs" role="tablist" hidden>
+    <button role="tab" data-t="loja" aria-selected="true">Por loja</button>
+    <button role="tab" data-t="dia" aria-selected="false">Por dia</button>
+    <button role="tab" data-t="viagens" aria-selected="false">Viagens <span class="count" id="cViagens">0</span></button>
+    <button role="tab" data-t="conferir" aria-selected="false">Para conferir <span class="count warn" id="cAlertas">0</span></button>
+    <button role="tab" data-t="regras" aria-selected="false">Como a planilha é lida</button>
+  </nav>
+
+  <section class="panel" id="pLoja" hidden></section>
+  <section class="panel" id="pDia" hidden></section>
+  <section class="panel" id="pViagens" hidden></section>
+  <section class="panel" id="pConferir" hidden></section>
+
+  <section class="panel" id="pRegras">
+    <div class="panel-head"><h2>Como a planilha é lida</h2><span class="hint">Regras aplicadas automaticamente</span></div>
+    <div class="rules">
+      <div class="rule">
+        <h3>Viagens com mais de uma loja</h3>
+        <p>A ordem das quantidades segue a ordem das lojas na coluna LOJAS.</p>
+        <div class="ex"><span>LOJAS <b>7+CB2</b> · CD <b>21+7</b></span><span>→ Loja 7: 21 paletes · CB2: 7 paletes</span></div>
+      </div>
+      <div class="rule">
+        <h3>Escrita livre</h3>
+        <p>Maiúsculas, espaços e zeros não importam. CB02, cb2 e "CB 2" são a mesma loja. Número sozinho é a loja de mesmo número.</p>
+        <div class="ex"><span><b>4+ cb6</b> · <b>CB2 / 10</b> · <b>cpi</b></span><span>→ Loja 4 + CB6 · CB2 + Loja 10 · CP1</span></div>
+      </div>
+      <div class="rule">
+        <h3>Origem da carga</h3>
+        <p>CD vem da aba CARGAS GERAL (coluna CD). CP2 vem da aba CP2 CARGA-N (histórico na aba "Nao mexer CARGA CP2"). FLV vem da aba CARGA FLV. Números nas colunas CP2/FLV do CARGAS GERAL também contam.</p>
+        <div class="ex"><span>CARGA FLV · LOJA <b>13-CD+17</b> · FLV <b>8-5+5</b></span><span>→ Loja 13: 8 FLV e 5 CD · Loja 17: 5 FLV</span></div>
+      </div>
+      <div class="rule">
+        <h3>Terceiros</h3>
+        <p>É terceiro quando o motorista é TERCEIRO ou a placa termina em <span class="mono">-T</span> (ou começa com <span class="mono">T/</span>). Sem placa e sem motorista, a frota fica "não informada".</p>
+        <div class="ex"><span>PLACA <b>OKE6H15-T</b> · MOT <b>TERCEIRO</b></span><span>→ Terceiro</span></div>
+      </div>
+      <div class="rule">
+        <h3>Quando não dá para dividir</h3>
+        <p>Se há duas lojas e um número só, os paletes ficam juntos no grupo "7+CB2" e a linha vai para "Para conferir". Nenhum número é inventado.</p>
+        <div class="ex"><span>LOJAS <b>14+8</b> · QUANT <b>26</b></span><span>→ Grupo 14+8: 26 paletes (conferir)</span></div>
+      </div>
+      <div class="rule">
+        <h3>Colunas S e PM</h3>
+        <p>Aparecem separadas na tabela por loja e não entram no total de paletes. "Complemento flv" escrito na linha faz a quantidade contar como FLV.</p>
+        <div class="ex"><span>CD <b>28</b> · S <b>3</b> · PREVISÃO <b>31</b></span><span>→ 28 paletes CD · S: 3 (à parte)</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="parser.js"></script>
+<script>
+(function () {
+  'use strict';
+  const E = window.Expedicao;
+  const $ = id => document.getElementById(id);
+  const fmt = n => n.toLocaleString('pt-BR');
+  const ABAS = ['CARGAS GERAL', 'CP2 CARGA-N', 'Nao mexer CARGA CP2', 'CARGA FLV', 'APOIO'];
+  const ORIGENS = ['CD', 'CP2', 'FLV'];
+  const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  let DADOS = null;
+  let estado = { frota: 'todas', aba: 'loja', ordem: { loja: ['total', -1], dia: ['data', 1] }, limiteViagens: 300 };
+
+  function lerPrefs() {
+    try { const p = JSON.parse(localStorage.getItem('paletes-prefs') || '{}'); Object.assign(estado, p.estado || {}); return p; } catch (e) { return {}; }
+  }
+  function salvarPrefs() {
+    try {
+      localStorage.setItem('paletes-prefs', JSON.stringify({
+        estado: { frota: estado.frota, aba: estado.aba, ordem: estado.ordem },
+        oCD: $('oCD').checked, oCP2: $('oCP2').checked, oFLV: $('oFLV').checked,
+        dTransf: $('dTransf').checked, dOutros: $('dOutros').checked
+      }));
+    } catch (e) { /* sem armazenamento: segue sem lembrar */ }
+  }
+  const prefs = lerPrefs();
+  ['oCD', 'oCP2', 'oFLV', 'dTransf', 'dOutros'].forEach(k => { if (typeof prefs[k] === 'boolean') $(k).checked = prefs[k]; });
+
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2200);
+  }
+
+  // ---------- Arquivo ----------
+  $('btnFile').addEventListener('click', () => $('file').click());
+  $('file').addEventListener('change', e => { if (e.target.files[0]) carregar(e.target.files[0]); });
+  const drop = $('drop');
+  ['dragenter', 'dragover'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop' || e.target === drop) drop.classList.remove('over'); }));
+  document.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) carregar(f); });
+
+  function carregar(file) {
+    const prog = $('progress');
+    drop.hidden = false;
+    prog.textContent = 'Lendo ' + file.name + '…';
+    const t0 = performance.now();
+    const reader = new FileReader();
+    reader.onerror = () => { prog.textContent = 'Não consegui abrir o arquivo. Confira se é um .xlsx válido.'; };
+    reader.onload = () => {
+      prog.textContent = 'Interpretando as abas (pode levar alguns segundos)…';
+      setTimeout(() => {
+        try {
+          const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array', sheets: ABAS, dense: true, cellFormula: false, cellHTML: false, cellText: false });
+          const rows = {};
+          wb.SheetNames.forEach(n => { if (wb.Sheets[n]) rows[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null }); });
+          const R = E.processar(rows, wb.SheetNames);
+          if (!R.entregas.length) { prog.textContent = 'Não encontrei as abas CARGAS GERAL, CP2 CARGA-N ou CARGA FLV neste arquivo.'; return; }
+          DADOS = R;
+          const datas = R.entregas.map(e => e.data);
+          DADOS.min = datas[0]; DADOS.max = datas[datas.length - 1];
+          const seg = ((performance.now() - t0) / 1000).toFixed(1);
+          $('fileInfo').textContent = file.name + ' · lido em ' + seg + ' s · dados de ' + br(DADOS.min) + ' a ' + br(DADOS.max);
+          $('btnFile').textContent = 'Trocar planilha';
+          drop.hidden = true;
+          ['filters', 'kpis', 'tabs'].forEach(id => { $(id).hidden = false; });
+          aplicarPreset('7');
+          mostrarAba(estado.aba || 'loja');
+        } catch (err) {
+          console.error(err);
+          prog.textContent = 'Erro ao ler a planilha: ' + err.message;
+        }
+      }, 30);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // ---------- Datas ----------
+  function br(iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : ''; }
+  function isoAdd(iso, dias) { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + dias); return d.toISOString().slice(0, 10); }
+  function diaSemana(iso) { return DIAS[new Date(iso + 'T12:00:00Z').getUTCDay()]; }
+
+  function aplicarPreset(p) {
+    const fim = DADOS.max;
+    let ini = fim, f = fim;
+    if (p === '7') ini = isoAdd(fim, -6);
+    if (p === 'mes') ini = fim.slice(0, 8) + '01';
+    if (p === 'mesAnt') { const d = new Date(fim.slice(0, 8) + '01T12:00:00Z'); d.setUTCDate(0); f = d.toISOString().slice(0, 10); ini = f.slice(0, 8) + '01'; }
+    if (p === 'ano') ini = fim.slice(0, 4) + '-01-01';
+    $('dIni').value = ini; $('dFim').value = f;
+    document.querySelectorAll('#presets .preset').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.p === p)));
+    render();
+  }
+  document.querySelectorAll('#presets .preset').forEach(b => b.addEventListener('click', () => aplicarPreset(b.dataset.p)));
+  ['dIni', 'dFim'].forEach(id => $(id).addEventListener('change', () => {
+    document.querySelectorAll('#presets .preset').forEach(b => b.setAttribute('aria-pressed', 'false')); render();
+  }));
+  ['oCD', 'oCP2', 'oFLV', 'dTransf', 'dOutros'].forEach(id => $(id).addEventListener('change', () => { salvarPrefs(); render(); }));
+  $('busca').addEventListener('input', () => render());
+  document.querySelectorAll('#frota button').forEach(b => b.addEventListener('click', () => {
+    estado.frota = b.dataset.v; salvarPrefs(); render();
+  }));
+
+  // ---------- Filtro ----------
+  function nome(dest) {
+    return dest.split('+').map(E.nomeDestino).join(' + ');
+  }
+  function codigo(dest) {
+    if (dest.includes('+')) return '';
+    const c = DADOS.codigos[dest]; return c ? String(c) : '';
+  }
+  function casaBusca(dest, q) {
+    if (!q) return true;
+    const alvos = q.toUpperCase().split(/[\s,;]+/).filter(Boolean).map(t => E.normDestino(t) || t);
+    const partes = dest.split('+');
+    return alvos.some(a => partes.includes(a) || nome(dest).toUpperCase().includes(a) || codigo(dest) === a);
+  }
+  function filtrar() {
+    const ini = $('dIni').value, fim = $('dFim').value;
+    const orig = { CD: $('oCD').checked, CP2: $('oCP2').checked, FLV: $('oFLV').checked, S: $('oCD').checked, PM: $('oCD').checked };
+    const tipos = { loja: true, transferencia: $('dTransf').checked, outros: $('dOutros').checked };
+    const q = $('busca').value.trim();
+    return DADOS.entregas.filter(e =>
+      e.data >= ini && e.data <= fim && orig[e.origem] && tipos[e.tipo] &&
+      (estado.frota === 'todas' || e.frota === estado.frota) && casaBusca(e.destino, q));
+  }
+
+  // ---------- Render ----------
+  function render() {
+    if (!DADOS) return;
+    document.querySelectorAll('#frota button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === estado.frota)));
+    const L = filtrar();
+    const P = L.filter(e => !e.extra);
+    renderKpis(P);
+    renderLoja(L);
+    renderDia(P);
+    renderViagens(P);
+    renderConferir();
+  }
+
+  function soma(lista, f) { let s = 0; for (const e of lista) if (!f || f(e)) s += e.qtd; return s; }
+  function viagens(lista) { return new Set(lista.map(e => e.viagem)).size; }
+
+  function renderKpis(P) {
+    const tot = soma(P), terc = soma(P, e => e.frota === 'terceiro');
+    const dias = new Set(P.map(e => e.data)).size;
+    const card = (k, v, s, c) => `<div class="kpi" style="--c:${c || 'var(--line)'}"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span></div>`;
+    const pct = v => tot ? Math.round(v * 100 / tot) + '% do total' : '—';
+    $('kpis').innerHTML =
+      card('Paletes', fmt(tot), dias ? fmt(Math.round(tot / dias)) + ' por dia · ' + dias + ' dia(s)' : 'sem dados no período', 'var(--ink)') +
+      card('CD', fmt(soma(P, e => e.origem === 'CD')), pct(soma(P, e => e.origem === 'CD')), 'var(--cd)') +
+      card('CP2', fmt(soma(P, e => e.origem === 'CP2')), pct(soma(P, e => e.origem === 'CP2')), 'var(--cp2)') +
+      card('FLV', fmt(soma(P, e => e.origem === 'FLV')), pct(soma(P, e => e.origem === 'FLV')), 'var(--flv)') +
+      card('Viagens', fmt(viagens(P)), fmt(viagens(P.filter(e => e.frota === 'terceiro'))) + ' de terceiros') +
+      card('Terceiros', fmt(terc), pct(terc), 'var(--terc)');
+  }
+
+  function cel(v, cls) { return v ? `<td class="${cls || ''}">${fmt(v)}</td>` : '<td class="zero">0</td>'; }
+  function th(key, label, tab, cls) {
+    const [k, dir] = estado.ordem[tab];
+    const arrow = k === key ? (dir > 0 ? ' ▲' : ' ▼') : '';
+    return `<th class="sortable ${cls || ''}" data-tab="${tab}" data-k="${key}" scope="col">${label}<span class="arrow">${arrow}</span></th>`;
+  }
+  function ligarOrdem(el, tab) {
+    el.querySelectorAll('th.sortable').forEach(t => t.addEventListener('click', () => {
+      const [k, d] = estado.ordem[tab];
+      estado.ordem[tab] = [t.dataset.k, k === t.dataset.k ? -d : (t.dataset.k === 'nome' || t.dataset.k === 'data' ? 1 : -1)];
+      salvarPrefs(); render();
+    }));
+  }
+  function barra(r, max) {
+    const w = v => (max ? v * 120 / max : 0).toFixed(1) + 'px';
+    return `<div class="bar" aria-hidden="true"><span class="b-cd" style="width:${w(r.CD)}"></span><span class="b-cp2" style="width:${w(r.CP2)}"></span><span class="b-flv" style="width:${w(r.FLV)}"></span></div>`;
+  }
+  function copiarBtn(id) { return `<button type="button" data-copy="${id}">Copiar para Excel</button>`; }
+
+  let tabelaLoja = [], tabelaDia = [];
+
+  function renderLoja(L) {
+    const m = new Map();
+    for (const e of L) {
+      let r = m.get(e.destino);
+      if (!r) { r = { dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), grupo: e.grupo, CD: 0, CP2: 0, FLV: 0, S: 0, PM: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set() }; m.set(e.destino, r); }
+      r[e.origem] += e.qtd;
+      if (!e.extra) { r[e.frota] += e.qtd; r.v.add(e.viagem); }
+    }
+    const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size }));
+    const ordemNatural = d => { const p = d.split('+')[0]; const n = parseInt(p.replace(/\D/g, ''), 10) || 0; return (p.startsWith('LJ') ? 0 : p.startsWith('CB') ? 100 : 200) + n; };
+    const [k, dir] = estado.ordem.loja;
+    rows.sort((a, b) => k === 'nome' ? (ordemNatural(a.dest) - ordemNatural(b.dest)) * dir : ((a[k] || 0) - (b[k] || 0)) * dir || ordemNatural(a.dest) - ordemNatural(b.dest));
+    tabelaLoja = rows;
+    const max = Math.max(0, ...rows.map(r => r.total));
+    const T = rows.reduce((t, r) => { ['CD', 'CP2', 'FLV', 'total', 'propria', 'terceiro', 'S', 'PM'].forEach(c => { t[c] = (t[c] || 0) + r[c]; }); return t; }, {});
+    const tv = viagens(L.filter(e => !e.extra));
+    const temExtra = T.S || T.PM;
+    const el = $('pLoja');
+    el.innerHTML = `<div class="panel-head"><h2>Paletes por loja</h2>
+      <div class="fgroup"><span class="legend"><span><i style="background:var(--cd)"></i>CD</span><span><i style="background:var(--cp2)"></i>CP2</span><span><i style="background:var(--flv)"></i>FLV</span></span>${copiarBtn('loja')}</div></div>
+      ${rows.length ? `<div class="tscroll"><table><thead><tr>
+        ${th('nome', 'Loja', 'loja', 'l')}<th class="l" scope="col">Código</th>${th('CD', 'CD', 'loja')}${th('CP2', 'CP2', 'loja')}${th('FLV', 'FLV', 'loja')}${th('total', 'Total', 'loja')}<th class="l" scope="col"><span class="sr">Composição</span></th>
+        ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${th('viagens', 'Viagens', 'loja')}${temExtra ? th('S', 'S', 'loja') + th('PM', 'PM', 'loja') : ''}
+      </tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="l">${r.nome}${r.grupo ? ' <span class="warn-tag">grupo</span>' : ''}</td><td class="l mono muted">${r.cod}</td>
+        ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td><td class="l">${barra(r, max)}</td>
+        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${cel(r.viagens)}${temExtra ? cel(r.S, 'muted') + cel(r.PM, 'muted') : ''}</tr>`).join('')}
+      </tbody><tfoot><tr><td class="l">Total</td><td></td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td></td>${cel(T.propria)}${cel(T.terceiro, 'num-terc')}<td>${fmt(tv)}</td>${temExtra ? cel(T.S) + cel(T.PM) : ''}</tr></tfoot>
+      </table></div>` : '<div class="empty">Nenhum palete no período e filtros escolhidos.</div>'}`;
+    ligarOrdem(el, 'loja');
+  }
+
+  function renderDia(P) {
+    const m = new Map();
+    for (const e of P) {
+      let r = m.get(e.data);
+      if (!r) { r = { data: e.data, CD: 0, CP2: 0, FLV: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set(), vt: new Set() }; m.set(e.data, r); }
+      r[e.origem] += e.qtd; r[e.frota] += e.qtd; r.v.add(e.viagem); if (e.frota === 'terceiro') r.vt.add(e.viagem);
+    }
+    const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size, vterc: r.vt.size }));
+    const [k, dir] = estado.ordem.dia;
+    rows.sort((a, b) => k === 'data' ? (a.data < b.data ? -1 : 1) * dir : ((a[k] || 0) - (b[k] || 0)) * dir);
+    tabelaDia = rows;
+    const max = Math.max(0, ...rows.map(r => r.total));
+    const el = $('pDia');
+    el.innerHTML = `<div class="panel-head"><h2>Paletes por dia</h2>${copiarBtn('dia')}</div>
+      ${rows.length ? `<div class="tscroll"><table><thead><tr>
+        ${th('data', 'Data', 'dia', 'l')}${th('CD', 'CD', 'dia')}${th('CP2', 'CP2', 'dia')}${th('FLV', 'FLV', 'dia')}${th('total', 'Total', 'dia')}<th class="l" scope="col"></th>
+        ${th('propria', 'Própria', 'dia')}${th('terceiro', 'Terceiro', 'dia')}${th('viagens', 'Viagens', 'dia')}${th('vterc', 'Viag. terc.', 'dia')}
+      </tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="l">${br(r.data)} <span class="muted">${diaSemana(r.data)}</span></td>
+        ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td><td class="l">${barra(r, max)}</td>
+        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${cel(r.viagens)}${cel(r.vterc, 'num-terc')}</tr>`).join('')}
+      </tbody></table></div>` : '<div class="empty">Nenhum palete no período e filtros escolhidos.</div>'}`;
+    ligarOrdem(el, 'dia');
+  }
+
+  const ABA_CURTA = n => /FLV/i.test(n) ? 'CARGA FLV' : /MEXER/i.test(n) ? 'CP2 (hist.)' : /CP2/i.test(n) ? 'CP2 CARGA-N' : 'CARGAS GERAL';
+
+  function renderViagens(P) {
+    const m = new Map();
+    for (const e of P) {
+      let v = m.get(e.viagem);
+      if (!v) { v = { e, itens: [] }; m.set(e.viagem, v); }
+      v.itens.push(e);
+    }
+    const lista = [...m.values()].reverse();
+    $('cViagens').textContent = fmt(lista.length);
+    const mostrar = lista.slice(0, estado.limiteViagens);
+    const el = $('pViagens');
+    el.innerHTML = `<div class="panel-head"><h2>Viagens</h2><span class="hint">Mais recentes primeiro · o que está escrito na planilha e como foi lido</span></div>
+      ${lista.length ? `<div class="tscroll"><table><thead><tr>
+        <th class="l" scope="col">Data</th><th class="l" scope="col">Aba · linha</th><th class="l" scope="col">Placa</th><th class="l" scope="col">Motorista</th><th class="l" scope="col">Frota</th>
+        <th class="l" scope="col">Lojas</th><th class="l" scope="col">Quant.</th><th class="l" scope="col">Leitura</th><th scope="col">Paletes</th>
+      </tr></thead><tbody>
+      ${mostrar.map(({ e, itens }) => `<tr><td class="l">${br(e.data)}</td><td class="l mono muted">${ABA_CURTA(e.aba)} · ${e.linha}</td>
+        <td class="l mono">${esc(e.placa) || '<span class="muted">—</span>'}</td><td class="l">${esc(e.motorista) || '<span class="muted">—</span>'}</td>
+        <td class="l"><span class="pill ${e.frota}">${e.frota === 'terceiro' ? 'Terceiro' : e.frota === 'propria' ? 'Própria' : 'Não inf.'}</span></td>
+        <td class="l mono">${esc(e.lojasTexto)}</td><td class="l mono">${esc(e.qtdTexto)}</td>
+        <td class="l"><span class="split">${itens.map(i => `<span class="num-${i.origem.toLowerCase()}">${nome(i.destino)}: ${i.qtd} ${i.origem}</span>`).join('')}</span>${e.obs ? ` <span class="muted">${esc(e.obs)}</span>` : ''}</td>
+        <td><strong>${fmt(soma(itens))}</strong></td></tr>`).join('')}
+      </tbody></table></div>
+      ${lista.length > mostrar.length ? `<div class="more">Mostrando ${fmt(mostrar.length)} de ${fmt(lista.length)} viagens. <button type="button" id="maisViagens">Mostrar mais 300</button></div>` : ''}`
+      : '<div class="empty">Nenhuma viagem no período e filtros escolhidos.</div>'}`;
+    const b = $('maisViagens'); if (b) b.addEventListener('click', () => { estado.limiteViagens += 300; render(); });
+  }
+
+  function renderConferir() {
+    const ini = $('dIni').value, fim = $('dFim').value;
+    const A = DADOS.alertas.filter(a => a.data >= ini && a.data <= fim);
+    $('cAlertas').textContent = fmt(A.length);
+    $('pConferir').innerHTML = `<div class="panel-head"><h2>Para conferir</h2><span class="hint">Linhas que a leitura automática não conseguiu dividir com certeza. Os paletes delas estão nos totais, mas podem estar no grupo errado.</span></div>
+      ${A.length ? `<div class="tscroll"><table><thead><tr><th class="l" scope="col">Data</th><th class="l" scope="col">Aba · linha</th><th class="l" scope="col">Lojas</th><th class="l" scope="col">Quant.</th><th class="l" scope="col">Motivo</th></tr></thead><tbody>
+      ${A.slice().reverse().map(a => `<tr><td class="l">${br(a.data)}</td><td class="l mono muted">${ABA_CURTA(a.aba)} · ${a.linha}</td><td class="l mono">${esc(a.lojas) || '<span class="muted">vazio</span>'}</td><td class="l mono">${esc(a.qtd)}</td><td class="l"><span class="warn-tag">${esc(a.motivo)}</span></td></tr>`).join('')}
+      </tbody></table></div>` : '<div class="empty">Nada para conferir neste período.</div>'}`;
+  }
+
+  function esc(s) { return String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  // ---------- Copiar (cola direto no Excel) ----------
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-copy]'); if (!b) return;
+    let linhas;
+    if (b.dataset.copy === 'loja') {
+      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'S', 'PM']]
+        .concat(tabelaLoja.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.viagens, r.S, r.PM]));
+    } else {
+      linhas = [['Data', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'Viagens terceiro']]
+        .concat(tabelaDia.map(r => [br(r.data), r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.viagens, r.vterc]));
+    }
+    const tsv = 'Período ' + br($('dIni').value) + ' a ' + br($('dFim').value) + '\n' + linhas.map(l => l.join('\t')).join('\n');
+    const ok = () => toast('Tabela copiada. Cole no Excel com Ctrl+V.');
+    const falha = () => {
+      const ta = document.createElement('textarea'); ta.value = tsv; document.body.appendChild(ta); ta.select();
+      let feito = false; try { feito = document.execCommand('copy'); } catch (err) { /* ignora */ }
+      ta.remove(); feito ? ok() : toast('Não foi possível copiar neste aplicativo.');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(tsv).then(ok, falha); else falha();
+  });
+
+  // ---------- Abas ----------
+  const PAINEIS = { loja: 'pLoja', dia: 'pDia', viagens: 'pViagens', conferir: 'pConferir', regras: 'pRegras' };
+  function mostrarAba(t) {
+    estado.aba = t;
+    document.querySelectorAll('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
+    Object.entries(PAINEIS).forEach(([k, id]) => { $(id).hidden = k !== t; });
+    salvarPrefs();
+  }
+  document.querySelectorAll('#tabs [role=tab]').forEach(b => b.addEventListener('click', () => mostrarAba(b.dataset.t)));
+})();
+</script>
