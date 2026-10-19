@@ -279,7 +279,7 @@
             destino: o.destino, grupo: !!o.grupo,
             tipo: o.grupo ? 'loja' : tipoDestino(o.destino),
             qtd: o.qtd, frota: base.frota, veiculo: base.veiculo, placa: base.placa, motorista: base.motorista,
-            lojasTexto: base.lojasTexto, qtdTexto: base.qtdTexto, obs: o.obs || base.obs || ''
+            lojasTexto: base.lojasTexto, qtdTexto: base.qtdTexto, obs: o.obs || base.obs || '', regiao: base.regiao || ''
           });
         });
       }
@@ -406,6 +406,7 @@
       const corFlv = (cores && cores[abaFlv]) || [];
       let n = 0, vermelhas = 0;
       let grupo = null;
+      let regiao = '', dataRegiao = '';
       const fecharGrupo = (r, i) => {
         if (!grupo) return;
         const pl = typeof r[15] === 'number' ? r[15] : null;
@@ -419,6 +420,11 @@
         const r = rows[i];
         const data = excelDate(r[0]);
         if (!data) continue;
+        // Cabe\u00e7alho de bloco: "PREVISAO FLV POR PALETES REGIAO NORTE" / "... REGIAO SUL"
+        const cab = normNome(txt(r[1]));
+        if (/REGIAO\s+NORTE/.test(cab)) { regiao = 'norte'; dataRegiao = data; grupo = null; continue; }
+        if (/REGIAO\s+SUL/.test(cab)) { regiao = 'sul'; dataRegiao = data; grupo = null; continue; }
+        if (dataRegiao !== data) { regiao = ''; }
         const lojasTxt = txt(r[11]);
         if (!lojasTxt) { grupo = null; continue; }
         const fecha = typeof r[15] === 'number' || typeof r[10] === 'number';
@@ -461,6 +467,11 @@
         const base = { data, aba: abaFlv, linha: i + 1, placa, motorista: mot, ...frotaDe(placa, mot),
           lojasTexto: lojasTxt, qtdTexto: flvTxt + (txt(r[13]) ? ' | CD ' + txt(r[13]) : '') };
         const semPlaca = !placa && !mot;
+        // Regi\u00e3o Norte \u00e9 feita toda por terceiro. Sem cabe\u00e7alho de regi\u00e3o (planilhas antigas),
+        // o bloco sem placa e sem motorista \u00e9 o Norte.
+        const norte = regiao === 'norte' || (regiao === '' && semPlaca);
+        base.regiao = norte ? 'norte' : 'sul';
+        if (norte) { base.frota = 'terceiro'; base.veiculo = ''; }
         if (semPlaca) {
           if (!grupo || grupo.data !== data) { grupo = { id: ++viagemId, data, linhaIni: i + 1, total: 0, lojas: [] }; n++; }
           base.viagem = grupo.id;

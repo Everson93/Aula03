@@ -226,7 +226,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </div>
       <div class="rule">
         <h3>Terceiros</h3>
-        <p>Própria quando a placa está na lista da frota (29 veículos, com capacidade). Terceiro quando o motorista é TERCEIRO ou a placa termina em <span class="mono">-T</span> (ou começa com <span class="mono">T/</span>). Placas antigas sem essa marca seguem como próprias. Sem placa e sem motorista (ex.: "CARGA SAI DE PALHOÇA"), a frota fica "não informada".</p>
+        <p>Própria quando a placa está na lista da frota (29 veículos, com capacidade). Terceiro quando o motorista é TERCEIRO ou a placa termina em <span class="mono">-T</span> (ou começa com <span class="mono">T/</span>). Placas antigas sem essa marca seguem como próprias. Na CARGA FLV, todo o bloco REGIÃO NORTE é terceiro; o bloco REGIÃO SUL segue a placa. Em datas antigas sem esses títulos, as linhas sem placa e sem motorista contam como Norte.</p>
         <div class="ex"><span>PLACA <b>OKE6H15-T</b> · MOT <b>TERCEIRO</b></span><span>→ Terceiro</span></div>
       </div>
       <div class="rule">
@@ -444,7 +444,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       card('Paletes', fmt(tot), dias ? fmt(Math.round(tot / dias)) + ' por dia · ' + dias + ' dia(s)' : 'sem dados no período', 'var(--ink)') +
       card('CD', fmt(soma(P, e => e.origem === 'CD')), pct(soma(P, e => e.origem === 'CD')), 'var(--cd)') +
       card('CP2', fmt(soma(P, e => e.origem === 'CP2')), pct(soma(P, e => e.origem === 'CP2')), 'var(--cp2)') +
-      card('FLV', fmt(soma(P, e => e.origem === 'FLV')), pct(soma(P, e => e.origem === 'FLV')), 'var(--flv)') +
+      card('FLV', fmt(soma(P, e => e.origem === 'FLV')), 'Norte ' + fmt(soma(P, e => e.origem === 'FLV' && e.regiao === 'norte')) + ' · Sul ' + fmt(soma(P, e => e.origem === 'FLV' && e.regiao !== 'norte')), 'var(--flv)') +
       card('Viagens', fmt(viagens(P)), fmt(viagens(P.filter(e => e.frota === 'terceiro'))) + ' de terceiros') +
       card('Terceiros', fmt(terc), pct(terc), 'var(--terc)');
   }
@@ -554,7 +554,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </tr></thead><tbody>
       ${mostrar.map(({ e, itens }) => `<tr><td class="l">${br(e.data)}</td><td class="l mono muted">${ABA_CURTA(e.aba)} · ${e.linha}</td>
         <td class="l mono">${esc(e.placa) || '<span class="muted">—</span>'}</td><td class="l">${esc(e.motorista) || '<span class="muted">—</span>'}</td>
-        <td class="l"><span class="pill ${e.frota}">${e.frota === 'terceiro' ? 'Terceiro' : e.frota === 'propria' ? 'Própria' : 'Não inf.'}</span></td>
+        <td class="l"><span class="pill ${e.frota}">${e.frota === 'terceiro' ? 'Terceiro' : e.frota === 'propria' ? 'Própria' : 'Não inf.'}${e.regiao === 'norte' ? ' · Norte' : ''}</span></td>
         <td class="l mono">${linhasTexto(itens, 'lojasTexto')}</td><td class="l mono">${linhasTexto(itens, 'qtdTexto')}</td>
         <td class="l"><span class="split">${itens.map(i => `<span class="num-${i.origem.toLowerCase()}">${nome(i.destino)}: ${i.qtd} ${i.origem}</span>`).join('')}</span>${e.obs ? ` <span class="muted">${esc(e.obs)}</span>` : ''}</td>
         <td><strong>${fmt(soma(itens))}</strong></td><td>${ocupacao(e, soma(itens))}</td></tr>`).join('')}
