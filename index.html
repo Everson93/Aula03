@@ -208,6 +208,9 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       <div class="fgroup">
         <input type="search" id="busca" placeholder="Filtrar loja: 7, CB2…" aria-label="Filtrar loja">
       </div>
+      <div class="fgroup" style="margin-left:auto">
+        <button type="button" class="btn-primary" id="btnExportar" title="Gera o .xlsx no modelo Base Importação: CD, FLV e CP02, frota própria e Vieira Transportes, uma coluna por mês do período">Exportar planilha</button>
+      </div>
     </div>
   </section>
 
@@ -701,6 +704,102 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       ta.remove(); feito ? ok() : toast('Não foi possível copiar neste aplicativo.');
     };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(tsv).then(ok, falha); else falha();
+  });
+
+  // ---------- Exportar no modelo "Base Importação" ----------
+  // Seis blocos lado a lado: CD, FLV e CP02, cada um em Frota Própria e Vieira Transportes (terceiro).
+  // Lojas L01..L19 e CB01..CB09, uma coluna por mês do período, Total por linha e linha TOTAL.
+  const MESES_NOME = ['Janeiro', 'Fevereiro', 'Mar\u00e7o', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const LOJAS_MODELO = [...Array(19)].map((_, i) => ['L' + String(i + 1).padStart(2, '0'), 'LJ' + (i + 1)])
+    .concat([...Array(9)].map((_, i) => ['CB' + String(i + 1).padStart(2, '0'), 'CB' + (i + 1)]));
+  const BLOCOS = [
+    ['CD - Paletes Transportados - Frota Propria', 'CD', 'propria', 'Giassi'],
+    ['CD - Paletes Transportados - Vieira Transportes', 'CD', 'terceiro', '3\u00ba'],
+    ['FLV - Paletes Transportados - Frota Propria', 'FLV', 'propria', 'Giassi'],
+    ['FLV - Paletes Transportados - Vieira Transportes', 'FLV', 'terceiro', '3\u00ba'],
+    ['CP02 - Paletes Transportados - Frota Propria', 'CP2', 'propria', 'Giassi'],
+    ['CP02 - Paletes Transportados - Vieira Transportes', 'CP2', 'terceiro', '3\u00ba']
+  ];
+
+  function montarModelo(ini, fim) {
+    const meses = [];
+    for (let d = new Date(ini.slice(0, 7) + '-01T12:00:00Z'); d.toISOString().slice(0, 7) <= fim.slice(0, 7); d.setUTCMonth(d.getUTCMonth() + 1)) meses.push(d.toISOString().slice(0, 7));
+    const variosAnos = meses[0].slice(0, 4) !== meses[meses.length - 1].slice(0, 4);
+    const nomeMes = m => MESES_NOME[+m.slice(5, 7) - 1] + (variosAnos ? '/' + m.slice(2, 4) : '');
+    // soma por origem | frota | loja | mês (frota não informada entra como própria)
+    const soma = {};
+    for (const e of DADOS.entregas) {
+      if (e.extra || e.tipo !== 'loja' || e.data < ini || e.data > fim) continue;
+      const k = [e.origem, e.frota === 'terceiro' ? 'terceiro' : 'propria', e.destino, e.data.slice(0, 7)].join('|');
+      soma[k] = (soma[k] || 0) + e.qtd;
+    }
+    const larg = meses.length + 2;           // coluna da loja + meses + Total
+    const aoa = [[], []];
+    const merges = [];
+    const col = (b, j) => b * (larg + 1) + j;  // +1 = coluna vazia entre blocos
+    const letra = c => XLSX.utils.encode_col(c);
+    BLOCOS.forEach(([titulo, , , rotulo], b) => {
+      aoa[0][col(b, 0)] = titulo;
+      merges.push({ s: { r: 0, c: col(b, 0) }, e: { r: 0, c: col(b, larg - 1) } });
+      aoa[1][col(b, 0)] = rotulo;
+      meses.forEach((m, j) => { aoa[1][col(b, 1 + j)] = nomeMes(m); });
+      aoa[1][col(b, larg - 1)] = 'Total';
+    });
+    LOJAS_MODELO.forEach(([rot, chave], i) => {
+      const r = 2 + i, linha = [];
+      BLOCOS.forEach(([, origem, frota], b) => {
+        linha[col(b, 0)] = rot;
+        meses.forEach((m, j) => { linha[col(b, 1 + j)] = soma[[origem, frota, chave, m].join('|')] || 0; });
+      });
+      aoa[r] = linha;
+    });
+    const rTot = 2 + LOJAS_MODELO.length;
+    aoa[rTot] = [];
+    BLOCOS.forEach((_, b) => { aoa[rTot][col(b, 0)] = 'TOTAL'; });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    // Fórmulas: Total da linha e linha TOTAL, como no modelo
+    BLOCOS.forEach((_, b) => {
+      const c1 = letra(col(b, 1)), cN = letra(col(b, larg - 2)), cT = col(b, larg - 1);
+      for (let r = 2; r <= rTot; r++) {
+        if (r < rTot) ws[XLSX.utils.encode_cell({ r, c: cT })] = { t: 'n', f: `SUM(${c1}${r + 1}:${cN}${r + 1})`, z: '#,##0' };
+      }
+      for (let j = 1; j < larg; j++) {
+        const c = letra(col(b, j));
+        ws[XLSX.utils.encode_cell({ r: rTot, c: col(b, j) })] = { t: 'n', f: `SUM(${c}3:${c}${rTot})`, z: '#,##0' };
+      }
+      for (let r = 2; r < rTot; r++) for (let j = 1; j <= meses.length; j++) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c: col(b, j) })]; if (cell) cell.z = '#,##0';
+      }
+    });
+    ws['!merges'] = merges;
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rTot, c: col(BLOCOS.length - 1, larg - 1) } });
+    ws['!cols'] = [...Array(col(BLOCOS.length - 1, larg - 1) + 1)].map((_, c) => ({ wch: c % (larg + 1) === larg ? 3 : c % (larg + 1) === 0 ? 8 : 10 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Paletes');
+    return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  }
+
+  $('btnExportar').addEventListener('click', async () => {
+    if (!DADOS) return;
+    const ini = $('dIni').value, fim = $('dFim').value;
+    if (!ini || !fim || ini > fim) { toast('Escolha um período válido para exportar.'); return; }
+    const nome = 'Paletes_' + ini + '_a_' + fim + '.xlsx';
+    const dados = montarModelo(ini, fim);
+    let dl = null;
+    try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
+    if (dl) {
+      try { await dl.save({ filename: nome, data: new Blob([dados]) }); toast('Planilha salva: ' + nome); }
+      catch (err) {
+        const code = err && err.code;
+        toast(code === 'declined' ? 'Download cancelado.' : code === 'rate_limited' ? 'Já existe um download aguardando confirmação.' : 'Não foi possível salvar o arquivo aqui.');
+      }
+      return;
+    }
+    // Fora do claude.ai (arquivo aberto no computador): download direto
+    const url = URL.createObjectURL(new Blob([dados], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    toast('Planilha gerada: ' + nome);
   });
 
   // ---------- Abas ----------
