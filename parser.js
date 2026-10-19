@@ -290,7 +290,7 @@
             viagem: id, data: base.data, aba: base.aba, linha: base.linha, origem,
             destino: o.destino, estimado: !!o.estimado, tipo: tipoDestino(o.destino),
             qtd: o.qtd, frota: base.frota, veiculo: base.veiculo, placa: base.placa, motorista: base.motorista,
-            lojasTexto: base.lojasTexto, qtdTexto: base.qtdTexto, obs: o.obs || base.obs || '', regiao: base.regiao || ''
+            lojasTexto: base.lojasTexto, qtdTexto: base.qtdTexto, obs: o.obs || base.obs || '', regiao: base.regiao || '', semViagem: !!base.semViagem
           });
         });
       }
@@ -365,6 +365,7 @@
         // do caminh\u00e3o FLV, que por isso n\u00e3o soma no total.
         if (/comp.*flv|flv.*comp/i.test(qCP2.texto + ' ' + qFLV.texto)) {
           base.obs = 'complemento FLV (contado aqui como CD)';
+          base.semViagem = true;   // vai no caminh\u00e3o do FLV: soma paletes, n\u00e3o conta como viagem
         }
         if (registrar(base, dest.itens, { CD: qCD })) n++;
       }

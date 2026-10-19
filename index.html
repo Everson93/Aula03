@@ -464,7 +464,8 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
   }
 
   function soma(lista, f) { let s = 0; for (const e of lista) if (!f || f(e)) s += e.qtd; return s; }
-  function viagens(lista) { return new Set(lista.map(e => e.viagem)).size; }
+  // Complemento FLV lançado na CARGAS GERAL soma paletes, mas não é viagem (vai no caminhão do FLV)
+  function viagens(lista) { return new Set(lista.filter(e => !e.semViagem).map(e => e.viagem)).size; }
 
   function renderKpis(P) {
     const tot = soma(P), terc = soma(P, e => e.frota === 'terceiro');
@@ -507,7 +508,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       let r = m.get(e.destino);
       if (!r) { r = { dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), est: 0, CD: 0, CP2: 0, FLV: 0, S: 0, PM: 0, COMP: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set() }; m.set(e.destino, r); }
       r[e.origem] += e.qtd;
-      if (!e.extra) { r[e.frota] += e.qtd; r.v.add(e.viagem); if (e.estimado) r.est += e.qtd; }
+      if (!e.extra) { r[e.frota] += e.qtd; if (!e.semViagem) r.v.add(e.viagem); if (e.estimado) r.est += e.qtd; }
     }
     const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size }));
     const ordemNatural = d => { const p = d.split('+')[0]; const n = parseInt(p.replace(/\D/g, ''), 10) || 0; return (p.startsWith('LJ') ? 0 : p.startsWith('CB') ? 100 : 200) + n; };
@@ -538,7 +539,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     for (const e of P) {
       let r = m.get(e.data);
       if (!r) { r = { data: e.data, CD: 0, CP2: 0, FLV: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set(), vt: new Set() }; m.set(e.data, r); }
-      r[e.origem] += e.qtd; r[e.frota] += e.qtd; r.v.add(e.viagem); if (e.frota === 'terceiro') r.vt.add(e.viagem);
+      r[e.origem] += e.qtd; r[e.frota] += e.qtd; if (!e.semViagem) { r.v.add(e.viagem); if (e.frota === 'terceiro') r.vt.add(e.viagem); }
     }
     const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size, vterc: r.vt.size }));
     const [k, dir] = estado.ordem.dia;
@@ -570,6 +571,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
   function renderViagens(P) {
     const m = new Map();
     for (const e of P) {
+      if (e.semViagem) continue;
       let v = m.get(e.viagem);
       if (!v) { v = { e, itens: [] }; m.set(e.viagem, v); }
       v.itens.push(e);
@@ -606,6 +608,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
   function renderFrota(P) {
     const porViagem = new Map();
     for (const e of P) {
+      if (e.semViagem) continue;
       let v = porViagem.get(e.viagem);
       if (!v) { v = { e, pal: 0 }; porViagem.set(e.viagem, v); }
       v.pal += e.qtd;
@@ -661,7 +664,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       if (e.frota !== 'nao_inf') continue;
       let r = m.get(e.destino);
       if (!r) { r = { nome: nome(e.destino), cod: codigo(e.destino), CD: 0, CP2: 0, FLV: 0, v: new Set(), dias: new Set(), ini: e.data, fim: e.data, abas: new Set() }; m.set(e.destino, r); }
-      r[e.origem] += e.qtd; r.v.add(e.viagem); r.dias.add(e.data); r.abas.add(ABA_CURTA(e.aba));
+      r[e.origem] += e.qtd; if (!e.semViagem) r.v.add(e.viagem); r.dias.add(e.data); r.abas.add(ABA_CURTA(e.aba));
       if (e.data < r.ini) r.ini = e.data; if (e.data > r.fim) r.fim = e.data;
     }
     tabelaBranco = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV })).sort((a, b) => b.total - a.total);
