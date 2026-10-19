@@ -260,8 +260,8 @@
     const codigos = lerApoio(abaApoio && rowsPorAba[abaApoio]);
     // Linha com a c\u00e9lula LOJA pintada de vermelho n\u00e3o conta (em todas as abas)
     const vermelha = (aba, i) => !!(cores && cores[aba] && ehVermelho(cores[aba][i]));
-    const descartarVermelha = (aba, i, data, lojas, qtd) => alertas.push({ data, aba, linha: i + 1, lojas: txt(lojas), qtd: txt(qtd),
-      motivo: 'linha em vermelho: n\u00e3o contada' });
+    // Regra fixa: n\u00e3o vai para "Para conferir"
+    const descartarVermelha = () => {};
     const entregas = [];
     const alertas = [];
     const resumoAbas = [];
@@ -282,6 +282,8 @@
       lancar(extras || [], null);
       function lancar(lista, origemPadrao) {
         lista.forEach(o => {
+          // CP1 n\u00e3o \u00e9 considerado
+          if (o.destino === 'CP1') return;
           const origem = o.origem || origemPadrao;
           if (!o.extra) algum = true;
           entregas.push({ extra: !!o.extra,

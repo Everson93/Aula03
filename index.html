@@ -202,7 +202,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       </div>
       <div class="fgroup">
         <span class="flabel">Destino</span>
-        <label class="chip"><input type="checkbox" id="dTransf"><span class="dot"></span>Transferências (CP1, CP2, FLV)</label>
+        <label class="chip"><input type="checkbox" id="dTransf"><span class="dot"></span>Transferências (CP2, FLV)</label>
         <label class="chip"><input type="checkbox" id="dOutros"><span class="dot"></span>Outros (clientes, cestas)</label>
       </div>
       <div class="fgroup">
@@ -239,7 +239,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       <div class="rule">
         <h3>Escrita livre</h3>
         <p>Maiúsculas, espaços e zeros não importam. CB02, cb2 e "CB 2" são a mesma loja. Número sozinho é a loja de mesmo número.</p>
-        <div class="ex"><span><b>4+ cb6</b> · <b>CB2 / 10</b> · <b>cpi</b></span><span>→ Loja 4 + CB6 · CB2 + Loja 10 · CP1</span></div>
+        <div class="ex"><span><b>4+ cb6</b> · <b>CB2 / 10</b> · <b>cpi</b></span><span>→ Loja 4 + CB6 · CB2 + Loja 10 · CP1 (não é considerado)</span></div>
       </div>
       <div class="rule">
         <h3>Origem da carga</h3>
@@ -258,7 +258,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       </div>
       <div class="rule">
         <h3>Caminhões do FLV Norte</h3>
-        <p>No bloco sem placa, as linhas seguidas da mesma faixa de cor são um caminhão, fechado pela linha com o número na coluna T e o PL. O FLV conta só a coluna FLV. A coluna CD desses caminhões é o complemento, que já é contado uma vez como CD pela CARGAS GERAL; aqui aparece só como referência (coluna "Compl. no FLV", fora do total). Linhas com LOJA em vermelho não contam, em nenhuma aba (CARGAS GERAL, CP2 CARGA-N e CARGA FLV); elas aparecem em "Para conferir".</p>
+        <p>No bloco sem placa, as linhas seguidas da mesma faixa de cor são um caminhão, fechado pela linha com o número na coluna T e o PL. O FLV conta só a coluna FLV. A coluna CD desses caminhões é o complemento, que já é contado uma vez como CD pela CARGAS GERAL; aqui aparece só como referência (coluna "Compl. no FLV", fora do total). Linhas com LOJA em vermelho não contam, em nenhuma aba (CARGAS GERAL, CP2 CARGA-N e CARGA FLV). Cargas para o CP1 não são consideradas.</p>
         <div class="ex"><span><b>14</b> 22 · <b>CB2</b> 6 · T <b>1</b> · PL <b>28</b></span><span>→ Caminhão 1: Loja 14 = 22, CB2 = 6 (28 paletes)</span></div>
       </div>
       <div class="rule">
