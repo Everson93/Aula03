@@ -236,12 +236,12 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </div>
       <div class="rule">
         <h3>Caminhões do FLV Norte</h3>
-        <p>No bloco sem placa, as linhas seguidas da mesma faixa de cor são um caminhão, fechado pela linha com o número na coluna T e o PL. O FLV conta só a coluna FLV; a coluna CD desses caminhões é complemento e aparece à parte (coluna "Compl. FLV", fora do total). Linhas com LOJA em vermelho não foram carregadas e são descartadas.</p>
+        <p>No bloco sem placa, as linhas seguidas da mesma faixa de cor são um caminhão, fechado pela linha com o número na coluna T e o PL. O FLV conta só a coluna FLV. A coluna CD desses caminhões é o complemento, que já é contado uma vez como CD pela CARGAS GERAL; aqui aparece só como referência (coluna "Compl. no FLV", fora do total). Linhas com LOJA em vermelho não foram carregadas e são descartadas.</p>
         <div class="ex"><span><b>14</b> 22 · <b>CB2</b> 6 · T <b>1</b> · PL <b>28</b></span><span>→ Caminhão 1: Loja 14 = 22, CB2 = 6 (28 paletes)</span></div>
       </div>
       <div class="rule">
         <h3>Colunas S e PM</h3>
-        <p>Aparecem separadas na tabela por loja e não entram no total de paletes. Linhas de "complemento flv" na CARGAS GERAL não somam como CD e aparecem em "Para conferir".</p>
+        <p>Aparecem separadas na tabela por loja e não entram no total de paletes. O complemento é contado uma vez só: como CD, pela linha "complemento flv" da CARGAS GERAL.</p>
         <div class="ex"><span>CD <b>28</b> · S <b>3</b> · PREVISÃO <b>31</b></span><span>→ 28 paletes CD · S: 3 (à parte)</span></div>
       </div>
     </div>
@@ -493,7 +493,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       <div class="fgroup"><span class="legend"><span><i style="background:var(--cd)"></i>CD</span><span><i style="background:var(--cp2)"></i>CP2</span><span><i style="background:var(--flv)"></i>FLV</span></span>${copiarBtn('loja')}</div></div>
       ${rows.length ? `<div class="tscroll"><table><thead><tr>
         ${th('nome', 'Loja', 'loja', 'l')}<th class="l" scope="col">Código</th>${th('CD', 'CD', 'loja')}${th('CP2', 'CP2', 'loja')}${th('FLV', 'FLV', 'loja')}${th('total', 'Total', 'loja')}<th class="l" scope="col"><span class="sr">Composição</span></th>
-        ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${th('viagens', 'Viagens', 'loja')}${temExtra ? th('S', 'S', 'loja') + th('PM', 'PM', 'loja') : ''}${temComp ? th('COMP', 'Compl. FLV', 'loja') : ''}
+        ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${th('viagens', 'Viagens', 'loja')}${temExtra ? th('S', 'S', 'loja') + th('PM', 'PM', 'loja') : ''}${temComp ? th('COMP', 'Compl. no FLV', 'loja') : ''}
       </tr></thead><tbody>
       ${rows.map(r => `<tr><td class="l">${r.nome}${r.est ? ` <span class="warn-tag" title="Paletes de viagens com duas lojas e um número só, divididos igualmente">${r.est} estimado</span>` : ''}</td><td class="l mono muted">${r.cod}</td>
         ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td><td class="l">${barra(r, max)}</td>
@@ -639,7 +639,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
     const b = e.target.closest('[data-copy]'); if (!b) return;
     let linhas;
     if (b.dataset.copy === 'loja') {
-      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'S', 'PM', 'Compl. FLV']]
+      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'S', 'PM', 'Compl. no FLV (já no CD)']]
         .concat(tabelaLoja.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.viagens, r.S, r.PM, r.COMP]));
     } else {
       linhas = [['Data', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'Viagens terceiro']]

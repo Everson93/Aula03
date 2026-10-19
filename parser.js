@@ -344,11 +344,10 @@
         // então números nas colunas CP2/FLV ficam só como observação.
         if (qCP2.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'CP2 ' + txt(r[10]);
         if (qFLV.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'FLV ' + txt(r[11]);
-        // "complemento flv": a quantidade da coluna CD é de FLV, não entra como CD
+        // "complemento flv": conta como CD aqui, uma vez s\u00f3. A mesma carga aparece na coluna CD
+        // do caminh\u00e3o FLV, que por isso n\u00e3o soma no total.
         if (/comp.*flv|flv.*comp/i.test(qCP2.texto + ' ' + qFLV.texto)) {
-          alertas.push({ data, aba: abaGeral, linha: i + 1, lojas: base.lojasTexto, qtd: base.qtdTexto,
-            motivo: 'complemento FLV lan\u00e7ado na CARGAS GERAL; n\u00e3o somado (FLV vem da aba CARGA FLV)' });
-          continue;
+          base.obs = 'complemento FLV (contado aqui como CD)';
         }
         if (registrar(base, dest.itens, { CD: qCD })) n++;
         // Colunas S e PM: extras que não entram no total de paletes
@@ -483,15 +482,14 @@
           : { nums: flv.some(x => x > 0) ? flv : [], incompleto: false, texto: '' };
         // S\u00f3 o volume FLV. Os paletes de CD que v\u00e3o junto ("-CD", coluna CD) j\u00e1 est\u00e3o na CARGAS GERAL.
         const cdCol = splitQtd(r[13]).nums.reduce((a, x) => a + x, 0) + cdExtra.reduce((a, x) => a + x.qtd, 0);
-        // Caminh\u00e3o do Norte (sem placa): a coluna CD \u00e9 o complemento que vai no caminh\u00e3o FLV.
-        // Fica \u00e0 parte (origem COMP, fora do total): o FLV conta s\u00f3 a coluna FLV.
-        // Com placa, o CD j\u00e1 est\u00e1 na CARGAS GERAL.
+        // Coluna CD do caminh\u00e3o FLV = complemento, j\u00e1 contado como CD pela CARGAS GERAL.
+        // No Norte (sem placa) aparece \u00e0 parte (origem COMP, fora do total) s\u00f3 para refer\u00eancia.
         let extras = [];
         if (semPlaca && cdCol) {
           extras = cdExtra.map(x => ({ origem: 'COMP', extra: true, destino: x.destino, qtd: x.qtd, obs: 'complemento (coluna CD)' }));
           extras = extras.concat(distribuir(destinos, splitQtd(r[13])).out.map(o => Object.assign({ origem: 'COMP', extra: true, obs: 'complemento (coluna CD)' }, o)));
         }
-        base.obs = [nota, cdCol ? (semPlaca ? 'complemento \u00e0 parte: ' + cdCol + ' (coluna CD)' : 'CD junto na carga: ' + cdCol + ' (contado pela CARGAS GERAL)') : ''].filter(Boolean).join(' \u00b7 ');
+        base.obs = [nota, cdCol ? (semPlaca ? 'complemento ' + cdCol + ' (coluna CD; contado como CD pela CARGAS GERAL)' : 'CD junto na carga: ' + cdCol + ' (contado pela CARGAS GERAL)') : ''].filter(Boolean).join(' \u00b7 ');
         const ok = registrar(base, destinos, { FLV: qF }, extras);
         if (semPlaca) {
           grupo.total += qF.nums.reduce((a, x) => a + x, 0) + cdCol;
