@@ -402,7 +402,7 @@
       const corFlv = (cores && cores[abaFlv]) || [];
       let n = 0, vermelhas = 0;
       let grupo = null;
-      let regiao = '', dataRegiao = '';
+      let regiao = '', dataRegiao = '', diaAtual = '', vistoPlaca = false;
       const fecharGrupo = (r, i) => {
         if (!grupo) return;
         const pl = typeof r[15] === 'number' ? r[15] : null;
@@ -419,7 +419,8 @@
         // Cabe\u00e7alho de bloco: "PREVISAO FLV POR PALETES REGIAO NORTE" / "... REGIAO SUL"
         const cab = normNome(txt(r[1]));
         if (/REGIAO\s+NORTE/.test(cab)) { regiao = 'norte'; dataRegiao = data; grupo = null; continue; }
-        if (/REGIAO\s+SUL/.test(cab)) { regiao = 'sul'; dataRegiao = data; grupo = null; continue; }
+        if (data !== diaAtual) { diaAtual = data; vistoPlaca = false; }
+        if (/REGIAO\s+SUL/.test(cab)) { regiao = 'sul'; dataRegiao = data; vistoPlaca = true; grupo = null; continue; }
         if (dataRegiao !== data) { regiao = ''; }
         const lojasTxt = txt(r[11]);
         if (!lojasTxt) { grupo = null; continue; }
@@ -464,11 +465,17 @@
         const base = { data, aba: abaFlv, linha: i + 1, placa, motorista: mot, ...frotaDe(placa, mot),
           lojasTexto: lojasTxt, qtdTexto: flvTxt + (txt(r[13]) ? ' | CD ' + txt(r[13]) : '') };
         const semPlaca = !placa && !mot;
-        // Regi\u00e3o Norte \u00e9 feita toda por terceiro. Sem cabe\u00e7alho de regi\u00e3o (antes de 01/06/2026)
-        // a regi\u00e3o fica em branco e linha sem placa fica como "placa em branco" para an\u00e1lise.
-        const norte = regiao === 'norte';
-        base.regiao = regiao;
-        if (norte) { base.frota = 'terceiro'; base.veiculo = ''; }
+        // In\u00edcio do bloco Sul: primeira linha com placa/motorista ou com letra na coluna K
+        // (no Norte a coluna K s\u00f3 tem o n\u00famero do caminh\u00e3o).
+        if (!semPlaca || (typeof r[10] === 'string' && r[10].trim() && isNaN(+r[10]))) vistoPlaca = true;
+        // Regi\u00e3o: pelo t\u00edtulo do bloco quando existe (a partir de 01/06/2026). Sem t\u00edtulo, o bloco
+        // sem placa que abre o dia \u00e9 o Norte e, da primeira linha com placa em diante, \u00e9 o Sul
+        // (confere com o t\u00edtulo em 923 de 924 linhas de jun-out/2026).
+        const reg = regiao || (vistoPlaca ? 'sul' : 'norte');
+        base.regiao = reg;
+        // Sem placa, a frota sai da regi\u00e3o: Norte \u00e9 terceiro, Sul \u00e9 frota pr\u00f3pria.
+        if (reg === 'norte') { base.frota = 'terceiro'; base.veiculo = ''; }
+        else if (semPlaca) { base.frota = 'propria'; base.veiculo = ''; }
         if (semPlaca) {
           if (!grupo || grupo.data !== data) { grupo = { id: ++viagemId, data, linhaIni: i + 1, total: 0, lojas: [] }; n++; }
           base.viagem = grupo.id;
