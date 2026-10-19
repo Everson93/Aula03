@@ -245,7 +245,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="parser.js"></script>
+<script src="parser.js" charset="utf-8"></script>
 <script>
 (function () {
   'use strict';
@@ -291,6 +291,11 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
 
   function carregar(file) {
     const prog = $('progress');
+    if (!E || !window.XLSX) {
+      drop.hidden = false;
+      prog.textContent = 'A página não terminou de carregar o leitor de planilhas. Recarregue a página e tente de novo.';
+      return;
+    }
     if (!DADOS) drop.hidden = false;
     prog.textContent = 'Lendo ' + file.name + '…';
     const t0 = performance.now();

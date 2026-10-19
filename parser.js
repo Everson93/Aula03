@@ -21,14 +21,14 @@
     ['MJN5822-SXG6B43', 28, 'Carga seca carreta'], ['MAC1727-MBU5605', 28, 'Carga seca carreta'],
     ['QIG8584-QIV7832', 28, 'Carga seca carreta'], ['RLK4D62-RLI0I64', 28, 'Carga seca carreta'],
     ['RXS4A91-RYK3D44', 28, 'Carga seca carreta'],
-    ['QHK-4E72', 20, 'Frigorífico caminhão'], ['QHK-4492', 20, 'Frigorífico caminhão'], ['TPQ9G27', 20, 'Frigorífico caminhão'],
-    ['SXO2D45', 20, 'Frigorífico caminhão'], ['SXO2C05', 20, 'Frigorífico caminhão'], ['QJR-7415', 20, 'Frigorífico caminhão'],
-    ['MJF-7378', 18, 'Frigorífico caminhão'], ['MHM-1657', 18, 'Frigorífico caminhão'], ['RYS4G50', 16, 'Frigorífico caminhão'],
-    ['SXK9F20', 14, 'Frigorífico caminhão'],
-    ['MBI1011-MFA9213', 24, 'Frigorífico carreta'], ['MBP3776-MFT4312', 24, 'Frigorífico carreta'],
-    ['MMC6327-MLW2257', 26, 'Frigorífico carreta'], ['QIM1043-MKZ6729', 26, 'Frigorífico carreta'],
-    ['RYH8B57', 16, 'Carga seca caminhão'], ['SXN4J64', 18, 'Carga seca caminhão'], ['RXT8H90', 18, 'Carga seca caminhão'],
-    ['RXZ8F20', 18, 'Carga seca caminhão'], ['MJE-6535', 18, 'Carga seca caminhão'], ['RXN4A50', 18, 'Carga seca caminhão']
+    ['QHK-4E72', 20, 'Frigor\u00edfico caminh\u00e3o'], ['QHK-4492', 20, 'Frigor\u00edfico caminh\u00e3o'], ['TPQ9G27', 20, 'Frigor\u00edfico caminh\u00e3o'],
+    ['SXO2D45', 20, 'Frigor\u00edfico caminh\u00e3o'], ['SXO2C05', 20, 'Frigor\u00edfico caminh\u00e3o'], ['QJR-7415', 20, 'Frigor\u00edfico caminh\u00e3o'],
+    ['MJF-7378', 18, 'Frigor\u00edfico caminh\u00e3o'], ['MHM-1657', 18, 'Frigor\u00edfico caminh\u00e3o'], ['RYS4G50', 16, 'Frigor\u00edfico caminh\u00e3o'],
+    ['SXK9F20', 14, 'Frigor\u00edfico caminh\u00e3o'],
+    ['MBI1011-MFA9213', 24, 'Frigor\u00edfico carreta'], ['MBP3776-MFT4312', 24, 'Frigor\u00edfico carreta'],
+    ['MMC6327-MLW2257', 26, 'Frigor\u00edfico carreta'], ['QIM1043-MKZ6729', 26, 'Frigor\u00edfico carreta'],
+    ['RYH8B57', 16, 'Carga seca caminh\u00e3o'], ['SXN4J64', 18, 'Carga seca caminh\u00e3o'], ['RXT8H90', 18, 'Carga seca caminh\u00e3o'],
+    ['RXZ8F20', 18, 'Carga seca caminh\u00e3o'], ['MJE-6535', 18, 'Carga seca caminh\u00e3o'], ['RXN4A50', 18, 'Carga seca caminh\u00e3o']
   ];
   const MOTORISTAS_PADRAO = ['ADEMIR', 'AZENIR', 'CARLOS', 'CHIMELLER', 'CLEBER', 'CRISTIANO', 'DJAIME', 'EDERSON', 'EDIO',
     'EDUARDO', 'ERMERSON', 'FELIPE', 'FELIPE CAETANO', 'FERNANDO', 'GABRIEL', 'GABRIELA', 'GETULIO', 'GIOVANE I', 'GIOVANE R',
@@ -199,7 +199,7 @@
       alertas.push(nq > 1 ? 'mais quantidades que lojas; somadas para a loja' : '');
     } else if (nq === 1 && q.incompleto) {
       out.push({ destino: destinos[0], qtd: q.nums[0] });
-      alertas.push('só a 1ª loja tem quantidade ("' + q.nums[0] + '+")');
+      alertas.push('s\u00f3 a 1\u00aa loja tem quantidade ("' + q.nums[0] + '+")');
     } else {
       // Não dá para saber a divisão: mantém o grupo junto, sem inventar números.
       out.push({ destino: destinos.join('+'), qtd: q.nums.reduce((a, b) => a + b, 0), grupo: true });
@@ -211,7 +211,7 @@
 
   function acharAba(wb, testes) {
     const nomes = wb.SheetNames;
-    const norm = n => n.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+    const norm = n => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
     for (const t of testes) {
       const achou = nomes.find(n => t(norm(n)));
       if (achou) return achou;
@@ -316,12 +316,12 @@
         const qCD = splitQtd(cdRaw);
         const qCP2 = splitQtd(r[10]);
         const qFLV = splitQtd(r[11]);
-        const obs = [qCD.texto, qCP2.texto, qFLV.texto].filter(Boolean).join(' · ');
+        const obs = [qCD.texto, qCP2.texto, qFLV.texto].filter(Boolean).join(' \u00b7 ');
         base.obs = obs;
         if (!dest.valido) {
           if (qCD.nums.length) {
             alertas.push({ data, aba: abaGeral, linha: i + 1, lojas: base.lojasTexto, qtd: base.qtdTexto,
-              motivo: 'destino não reconhecido; linha ignorada' });
+              motivo: 'destino n\u00e3o reconhecido; linha ignorada' });
           }
           continue;
         }
@@ -331,12 +331,12 @@
         }
         // Daqui sai só o volume do CD. CP2 e FLV são lidos das abas próprias,
         // então números nas colunas CP2/FLV ficam só como observação.
-        if (qCP2.nums.length) base.obs = (base.obs ? base.obs + ' · ' : '') + 'CP2 ' + txt(r[10]);
-        if (qFLV.nums.length) base.obs = (base.obs ? base.obs + ' · ' : '') + 'FLV ' + txt(r[11]);
+        if (qCP2.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'CP2 ' + txt(r[10]);
+        if (qFLV.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'FLV ' + txt(r[11]);
         // "complemento flv": a quantidade da coluna CD é de FLV, não entra como CD
         if (/comp.*flv|flv.*comp/i.test(qCP2.texto + ' ' + qFLV.texto)) {
           alertas.push({ data, aba: abaGeral, linha: i + 1, lojas: base.lojasTexto, qtd: base.qtdTexto,
-            motivo: 'complemento FLV lançado na CARGAS GERAL; não somado (FLV vem da aba CARGA FLV)' });
+            motivo: 'complemento FLV lan\u00e7ado na CARGAS GERAL; n\u00e3o somado (FLV vem da aba CARGA FLV)' });
           continue;
         }
         if (registrar(base, dest.itens, { CD: qCD })) n++;
@@ -352,7 +352,7 @@
           }));
         }
       }
-      resumoAbas.push({ aba: abaGeral, viagens: n, ignoradas: semQtd, papel: 'Volume CD (só a coluna CD)' });
+      resumoAbas.push({ aba: abaGeral, viagens: n, ignoradas: semQtd, papel: 'Volume CD (s\u00f3 a coluna CD)' });
     }
 
     // ---------- CP2 ----------
@@ -371,7 +371,7 @@
         const q = splitQtd(r[cQtd]);
         const placa = txt(r[cPlaca]), mot = txt(r[cMot]);
         if (!dest.valido) {
-          if (q.nums.length) alertas.push({ data, aba, linha: i + 1, lojas: txt(lojasRaw), qtd: txt(r[cQtd]), motivo: 'destino não reconhecido; linha ignorada' });
+          if (q.nums.length) alertas.push({ data, aba, linha: i + 1, lojas: txt(lojasRaw), qtd: txt(r[cQtd]), motivo: 'destino n\u00e3o reconhecido; linha ignorada' });
           continue;
         }
         if (!q.nums.length) continue;
@@ -380,7 +380,7 @@
           lojasTexto: txt(lojasRaw), qtdTexto: txt(r[cQtd]), obs: q.texto };
         if (registrar(base, dest.itens, { CP2: q })) n++;
       }
-      resumoAbas.push({ aba, viagens: n, ignoradas: 0, papel: aba === abaCp2 ? 'Expedição CP2 (atual)' : 'Expedição CP2 (histórico, só datas que não estão na aba atual)' });
+      resumoAbas.push({ aba, viagens: n, ignoradas: 0, papel: aba === abaCp2 ? 'Expedi\u00e7\u00e3o CP2 (atual)' : 'Expedi\u00e7\u00e3o CP2 (hist\u00f3rico, s\u00f3 datas que n\u00e3o est\u00e3o na aba atual)' });
     }
     if (abaCp2) lerCp2(abaCp2, 17, 18, 19, 24);
     if (abaCp2Ant) lerCp2(abaCp2Ant, 10, 11, 9, 14);
@@ -434,7 +434,7 @@
         if (cdExtra.length || txt(r[13])) base.obs = 'CD junto na carga (contado pela CARGAS GERAL)';
         if (registrar(base, destinos, { FLV: qF })) n++;
       }
-      resumoAbas.push({ aba: abaFlv, viagens: n, ignoradas: 0, papel: 'Volume FLV (só a coluna FLV)' });
+      resumoAbas.push({ aba: abaFlv, viagens: n, ignoradas: 0, papel: 'Volume FLV (s\u00f3 a coluna FLV)' });
     }
 
     entregas.sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : a.viagem - b.viagem);
