@@ -201,9 +201,12 @@
       out.push({ destino: destinos[0], qtd: q.nums[0] });
       alertas.push('s\u00f3 a 1\u00aa loja tem quantidade ("' + q.nums[0] + '+")');
     } else {
-      // Não dá para saber a divisão: mantém o grupo junto, sem inventar números.
-      out.push({ destino: destinos.join('+'), qtd: q.nums.reduce((a, b) => a + b, 0), grupo: true });
-      alertas.push(nd + ' lojas para ' + nq + ' quantidade(s); paletes ficaram no grupo');
+      // A planilha n\u00e3o diz a divis\u00e3o: reparte igualmente entre as lojas (estimativa,
+      // a sobra vai para as primeiras) para cada loja ter seu n\u00famero. Fica em "Para conferir".
+      const total = q.nums.reduce((a, b) => a + b, 0);
+      const base = Math.floor(total / nd);
+      destinos.forEach((d, i) => out.push({ destino: d, qtd: base + (i < total % nd ? 1 : 0), estimado: true }));
+      alertas.push(nd + ' lojas para ' + nq + ' quantidade(s); ' + total + ' paletes divididos igualmente (estimativa)');
     }
     if (q.incompleto && nd !== nq && !(nq === 1 && nd > 1)) alertas.push('quantidade incompleta');
     return { out, alertas: alertas.filter(Boolean) };
@@ -276,8 +279,7 @@
           if (!o.extra) algum = true;
           entregas.push({ extra: !!o.extra,
             viagem: id, data: base.data, aba: base.aba, linha: base.linha, origem,
-            destino: o.destino, grupo: !!o.grupo,
-            tipo: o.grupo ? 'loja' : tipoDestino(o.destino),
+            destino: o.destino, estimado: !!o.estimado, tipo: tipoDestino(o.destino),
             qtd: o.qtd, frota: base.frota, veiculo: base.veiculo, placa: base.placa, motorista: base.motorista,
             lojasTexto: base.lojasTexto, qtdTexto: base.qtdTexto, obs: o.obs || base.obs || '', regiao: base.regiao || ''
           });
@@ -356,7 +358,7 @@
           const { out } = distribuir(dest.itens, q);
           out.forEach(o => entregas.push({
             viagem: viagemId, data, aba: abaGeral, linha: i + 1, origem: campo, extra: true,
-            destino: o.destino, grupo: !!o.grupo, tipo: o.grupo ? 'loja' : tipoDestino(o.destino),
+            destino: o.destino, estimado: !!o.estimado, tipo: tipoDestino(o.destino),
             qtd: o.qtd, frota: base.frota, veiculo: base.veiculo, placa, motorista: mot, lojasTexto: base.lojasTexto, qtdTexto: txt(campo === 'S' ? r[12] : r[13]), obs: ''
           }));
         }

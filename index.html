@@ -231,8 +231,8 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </div>
       <div class="rule">
         <h3>Quando não dá para dividir</h3>
-        <p>Se há duas lojas e um número só, os paletes ficam juntos no grupo "7+CB2" e a linha vai para "Para conferir". Nenhum número é inventado.</p>
-        <div class="ex"><span>LOJAS <b>14+8</b> · QUANT <b>26</b></span><span>→ Grupo 14+8: 26 paletes (conferir)</span></div>
+        <p>Se há duas lojas e um número só, os paletes são divididos igualmente entre as lojas, a loja ganha a marca "estimado" e a linha vai para "Para conferir".</p>
+        <div class="ex"><span>LOJAS <b>14+8</b> · QUANT <b>26</b></span><span>→ Loja 14: 13 · Loja 8: 13 (estimado, conferir)</span></div>
       </div>
       <div class="rule">
         <h3>Caminhões do FLV Norte</h3>
@@ -474,9 +474,9 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
     const m = new Map();
     for (const e of L) {
       let r = m.get(e.destino);
-      if (!r) { r = { dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), grupo: e.grupo, CD: 0, CP2: 0, FLV: 0, S: 0, PM: 0, COMP: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set() }; m.set(e.destino, r); }
+      if (!r) { r = { dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), est: 0, CD: 0, CP2: 0, FLV: 0, S: 0, PM: 0, COMP: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set() }; m.set(e.destino, r); }
       r[e.origem] += e.qtd;
-      if (!e.extra) { r[e.frota] += e.qtd; r.v.add(e.viagem); }
+      if (!e.extra) { r[e.frota] += e.qtd; r.v.add(e.viagem); if (e.estimado) r.est += e.qtd; }
     }
     const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size }));
     const ordemNatural = d => { const p = d.split('+')[0]; const n = parseInt(p.replace(/\D/g, ''), 10) || 0; return (p.startsWith('LJ') ? 0 : p.startsWith('CB') ? 100 : 200) + n; };
@@ -495,7 +495,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
         ${th('nome', 'Loja', 'loja', 'l')}<th class="l" scope="col">Código</th>${th('CD', 'CD', 'loja')}${th('CP2', 'CP2', 'loja')}${th('FLV', 'FLV', 'loja')}${th('total', 'Total', 'loja')}<th class="l" scope="col"><span class="sr">Composição</span></th>
         ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${th('viagens', 'Viagens', 'loja')}${temExtra ? th('S', 'S', 'loja') + th('PM', 'PM', 'loja') : ''}${temComp ? th('COMP', 'Compl. FLV', 'loja') : ''}
       </tr></thead><tbody>
-      ${rows.map(r => `<tr><td class="l">${r.nome}${r.grupo ? ' <span class="warn-tag">grupo</span>' : ''}</td><td class="l mono muted">${r.cod}</td>
+      ${rows.map(r => `<tr><td class="l">${r.nome}${r.est ? ` <span class="warn-tag" title="Paletes de viagens com duas lojas e um número só, divididos igualmente">${r.est} estimado</span>` : ''}</td><td class="l mono muted">${r.cod}</td>
         ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td><td class="l">${barra(r, max)}</td>
         ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${cel(r.viagens)}${temExtra ? cel(r.S, 'muted') + cel(r.PM, 'muted') : ''}${temComp ? cel(r.COMP, 'muted') : ''}</tr>`).join('')}
       </tbody><tfoot><tr><td class="l">Total</td><td></td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td></td>${cel(T.propria)}${cel(T.terceiro, 'num-terc')}<td>${fmt(tv)}</td>${temExtra ? cel(T.S) + cel(T.PM) : ''}${temComp ? cel(T.COMP) : ''}</tr></tfoot>
@@ -626,7 +626,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
     const ini = $('dIni').value, fim = $('dFim').value;
     const A = DADOS.alertas.filter(a => a.data >= ini && a.data <= fim);
     $('cAlertas').textContent = fmt(A.length);
-    $('pConferir').innerHTML = `<div class="panel-head"><h2>Para conferir</h2><span class="hint">Linhas que a leitura automática não conseguiu dividir com certeza. Os paletes delas estão nos totais, mas podem estar no grupo errado.</span></div>
+    $('pConferir').innerHTML = `<div class="panel-head"><h2>Para conferir</h2><span class="hint">Linhas que a leitura automática não conseguiu dividir com certeza. Os paletes delas estão nos totais; quando a divisão entre lojas foi estimada, confira aqui.</span></div>
       ${A.length ? `<div class="tscroll"><table><thead><tr><th class="l" scope="col">Data</th><th class="l" scope="col">Aba · linha</th><th class="l" scope="col">Lojas</th><th class="l" scope="col">Quant.</th><th class="l" scope="col">Motivo</th></tr></thead><tbody>
       ${A.slice().reverse().map(a => `<tr><td class="l">${br(a.data)}</td><td class="l mono muted">${ABA_CURTA(a.aba)} · ${a.linha}</td><td class="l mono">${esc(a.lojas) || '<span class="muted">vazio</span>'}</td><td class="l mono">${esc(a.qtd)}</td><td class="l"><span class="warn-tag">${esc(a.motivo)}</span></td></tr>`).join('')}
       </tbody></table></div>` : '<div class="empty">Nada para conferir neste período.</div>'}`;
