@@ -71,6 +71,9 @@
     return lista.length ? { lista, motoristas: mot } : null;
   }
 
+  // Meses em que a carga seca (CARGAS GERAL) sem placa e sem motorista conta como terceiro
+  const TERCEIRO_SEM_PLACA_MESES = ['2026-08'];
+
   const RE_PLACA = /^[A-Z]{3}\s*-?\s*\d[A-Z0-9]\d{2}/i;
 
   function excelDate(v) {
@@ -315,25 +318,32 @@
         const r = rows[i];
         const data = excelDate(r[0]);
         if (!data) continue;
-        let lojasRaw = r[8], placa = txt(r[6]);
-        const cdRaw = r[9];
+        // Linha deslocada: placa em LOJAS (I), loja em CD (J), quantidade em CP2 (K) e o resto
+        // uma coluna \u00e0 direita (motorista em S). Ex.: 19/09/2025.
+        const o = (!txt(r[6]) && RE_PLACA.test(txt(r[8])) && !RE_PLACA.test(txt(r[9])) && splitDestinos(r[9]).valido) ? 1 : 0;
+        const c = k => r[k + o];
+        let lojasRaw = c(8), placa = o ? txt(r[8]) : txt(r[6]);
+        const cdRaw = c(9);
         if (txt(lojasRaw) === '' && txt(cdRaw) === '') continue;
         if (vermelha(abaGeral, i)) { if (txt(cdRaw)) descartarVermelha(abaGeral, i, data, lojasRaw, cdRaw); continue; }
         // Linha com placa e loja trocadas de coluna
         if (RE_PLACA.test(txt(lojasRaw)) && splitDestinos(placa).valido) {
           const tmp = placa; placa = txt(lojasRaw); lojasRaw = tmp;
         }
-        const mot = txt(r[17]);
+        const mot = txt(c(17));
         const base = {
           data, aba: abaGeral, linha: i + 1, placa, motorista: mot, ...frotaDe(placa, mot),
           lojasTexto: txt(lojasRaw), qtdTexto: txt(cdRaw)
         };
+        if (o) base.obs = 'linha com colunas deslocadas (lida a partir da coluna J)';
+        // Agosto/2026: carga seca sem placa e sem motorista foi feita por terceiro (informado pelo usu\u00e1rio)
+        if (base.frota === 'nao_inf' && TERCEIRO_SEM_PLACA_MESES.includes(data.slice(0, 7))) base.frota = 'terceiro';
         const dest = splitDestinos(lojasRaw);
         const qCD = splitQtd(cdRaw);
-        const qCP2 = splitQtd(r[10]);
-        const qFLV = splitQtd(r[11]);
+        const qCP2 = splitQtd(c(10));
+        const qFLV = splitQtd(c(11));
         const obs = [qCD.texto, qCP2.texto, qFLV.texto].filter(Boolean).join(' \u00b7 ');
-        base.obs = obs;
+        base.obs = [base.obs, obs].filter(Boolean).join(' \u00b7 ');
         if (!dest.valido) {
           if (qCD.nums.length) {
             alertas.push({ data, aba: abaGeral, linha: i + 1, lojas: base.lojasTexto, qtd: base.qtdTexto,
@@ -347,8 +357,8 @@
         }
         // Daqui sai só o volume do CD. CP2 e FLV são lidos das abas próprias,
         // então números nas colunas CP2/FLV ficam só como observação.
-        if (qCP2.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'CP2 ' + txt(r[10]);
-        if (qFLV.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'FLV ' + txt(r[11]);
+        if (qCP2.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'CP2 ' + txt(c(10));
+        if (qFLV.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'FLV ' + txt(c(11));
         // "complemento flv": conta como CD aqui, uma vez s\u00f3. A mesma carga aparece na coluna CD
         // do caminh\u00e3o FLV, que por isso n\u00e3o soma no total.
         if (/comp.*flv|flv.*comp/i.test(qCP2.texto + ' ' + qFLV.texto)) {
