@@ -209,7 +209,9 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
         <input type="search" id="busca" placeholder="Filtrar loja: 7, CB2…" aria-label="Filtrar loja">
       </div>
       <div class="fgroup" style="margin-left:auto">
-        <button type="button" class="btn-primary" id="btnExportar" title="Gera o .xlsx no modelo Base Importação: CD, FLV e CP02, frota própria e Vieira Transportes, uma coluna por mês do período">Exportar planilha</button>
+        <span class="flabel">Exportar mês</span>
+        <input type="month" id="mesExport" aria-label="Mês a exportar">
+        <button type="button" class="btn-primary" id="btnExportar" title="Gera o .xlsx do mês no modelo Base Importação: CD, FLV e CP02, frota própria e Vieira Transportes">Exportar planilha</button>
       </div>
     </div>
   </section>
@@ -393,6 +395,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     drop.hidden = true;
     ['filters', 'kpis', 'tabs'].forEach(id => { $(id).hidden = false; });
     if (primeira || !$('dIni').value) { aplicarPreset('7'); mostrarAba(estado.aba || 'loja'); } else render();
+    if (!$('mesExport').value) $('mesExport').value = DADOS.max.slice(0, 7);
     return true;
   }
 
@@ -779,11 +782,15 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   }
 
+  // O relatório é mensal: exporta sempre um mês inteiro, o escolhido no seletor
   $('btnExportar').addEventListener('click', async () => {
     if (!DADOS) return;
-    const ini = $('dIni').value, fim = $('dFim').value;
-    if (!ini || !fim || ini > fim) { toast('Escolha um período válido para exportar.'); return; }
-    const nome = 'Paletes_' + ini + '_a_' + fim + '.xlsx';
+    const mes = $('mesExport').value || ($('dFim').value || DADOS.max).slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(mes)) { toast('Escolha o mês para exportar.'); return; }
+    const ini = mes + '-01';
+    const d = new Date(ini + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0);
+    const fim = d.toISOString().slice(0, 10);
+    const nome = 'Paletes_' + MESES_NOME[+mes.slice(5, 7) - 1] + '_' + mes.slice(0, 4) + '.xlsx';
     const dados = montarModelo(ini, fim);
     let dl = null;
     try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
