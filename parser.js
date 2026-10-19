@@ -255,6 +255,10 @@
     const abaApoio = acharAba(wbLike, [n => n === 'APOIO']);
 
     const codigos = lerApoio(abaApoio && rowsPorAba[abaApoio]);
+    // Linha com a c\u00e9lula LOJA pintada de vermelho n\u00e3o conta (em todas as abas)
+    const vermelha = (aba, i) => !!(cores && cores[aba] && ehVermelho(cores[aba][i]));
+    const descartarVermelha = (aba, i, data, lojas, qtd) => alertas.push({ data, aba, linha: i + 1, lojas: txt(lojas), qtd: txt(qtd),
+      motivo: 'linha em vermelho: n\u00e3o contada' });
     const entregas = [];
     const alertas = [];
     const resumoAbas = [];
@@ -314,6 +318,7 @@
         let lojasRaw = r[8], placa = txt(r[6]);
         const cdRaw = r[9];
         if (txt(lojasRaw) === '' && txt(cdRaw) === '') continue;
+        if (vermelha(abaGeral, i)) { if (txt(cdRaw)) descartarVermelha(abaGeral, i, data, lojasRaw, cdRaw); continue; }
         // Linha com placa e loja trocadas de coluna
         if (RE_PLACA.test(txt(lojasRaw)) && splitDestinos(placa).valido) {
           const tmp = placa; placa = txt(lojasRaw); lojasRaw = tmp;
@@ -350,17 +355,6 @@
           base.obs = 'complemento FLV (contado aqui como CD)';
         }
         if (registrar(base, dest.itens, { CD: qCD })) n++;
-        // Colunas S e PM: extras que não entram no total de paletes
-        const qS = splitQtd(r[12]), qPM = splitQtd(r[13]);
-        for (const [campo, q] of [['S', qS], ['PM', qPM]]) {
-          if (!q.nums.length) continue;
-          const { out } = distribuir(dest.itens, q);
-          out.forEach(o => entregas.push({
-            viagem: viagemId, data, aba: abaGeral, linha: i + 1, origem: campo, extra: true,
-            destino: o.destino, estimado: !!o.estimado, tipo: tipoDestino(o.destino),
-            qtd: o.qtd, frota: base.frota, veiculo: base.veiculo, placa, motorista: mot, lojasTexto: base.lojasTexto, qtdTexto: txt(campo === 'S' ? r[12] : r[13]), obs: ''
-          }));
-        }
       }
       resumoAbas.push({ aba: abaGeral, viagens: n, ignoradas: semQtd, papel: 'Volume CD (s\u00f3 a coluna CD)' });
     }
@@ -377,6 +371,7 @@
         if (aba === abaCp2Ant && datasCp2Novo.has(data)) continue;
         const lojasRaw = r[cLoja];
         if (txt(lojasRaw) === '') continue;
+        if (vermelha(aba, i)) { if (txt(r[cQtd])) descartarVermelha(aba, i, data, lojasRaw, r[cQtd]); continue; }
         const dest = splitDestinos(lojasRaw);
         const q = splitQtd(r[cQtd]);
         const placa = txt(r[cPlaca]), mot = txt(r[cMot]);
@@ -393,7 +388,7 @@
       resumoAbas.push({ aba, viagens: n, ignoradas: 0, papel: aba === abaCp2 ? 'Expedi\u00e7\u00e3o CP2 (atual)' : 'Expedi\u00e7\u00e3o CP2 (hist\u00f3rico, s\u00f3 datas que n\u00e3o est\u00e3o na aba atual)' });
     }
     if (abaCp2) lerCp2(abaCp2, 17, 18, 19, 24);
-    if (abaCp2Ant) lerCp2(abaCp2Ant, 10, 11, 9, 14);
+    // A aba "Nao mexer CARGA CP2" n\u00e3o \u00e9 usada: o CP2 vem s\u00f3 da CP2 CARGA-N.
 
     // ---------- CARGA FLV ----------
     // Bloco de expedição: L=LOJA, M=FLV, N=CD, Q=PLACA, R=MOT.
@@ -431,6 +426,7 @@
         const fecha = typeof r[15] === 'number' || typeof r[10] === 'number';
         if (ehVermelho(corFlv[i])) {
           vermelhas++;
+          if (txt(r[12])) descartarVermelha(abaFlv, i, data, lojasTxt, r[12]);
           if (fecha) grupo = null;
           continue;
         }
@@ -468,10 +464,10 @@
         const base = { data, aba: abaFlv, linha: i + 1, placa, motorista: mot, ...frotaDe(placa, mot),
           lojasTexto: lojasTxt, qtdTexto: flvTxt + (txt(r[13]) ? ' | CD ' + txt(r[13]) : '') };
         const semPlaca = !placa && !mot;
-        // Regi\u00e3o Norte \u00e9 feita toda por terceiro. Sem cabe\u00e7alho de regi\u00e3o (planilhas antigas),
-        // o bloco sem placa e sem motorista \u00e9 o Norte.
-        const norte = regiao === 'norte' || (regiao === '' && semPlaca);
-        base.regiao = norte ? 'norte' : 'sul';
+        // Regi\u00e3o Norte \u00e9 feita toda por terceiro. Sem cabe\u00e7alho de regi\u00e3o (antes de 01/06/2026)
+        // a regi\u00e3o fica em branco e linha sem placa fica como "placa em branco" para an\u00e1lise.
+        const norte = regiao === 'norte';
+        base.regiao = regiao;
         if (norte) { base.frota = 'terceiro'; base.veiculo = ''; }
         if (semPlaca) {
           if (!grupo || grupo.data !== data) { grupo = { id: ++viagemId, data, linhaIni: i + 1, total: 0, lojas: [] }; n++; }

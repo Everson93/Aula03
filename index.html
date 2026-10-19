@@ -176,6 +176,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
           <button type="button" data-v="todas" aria-pressed="true">Todas</button>
           <button type="button" data-v="propria" aria-pressed="false">Própria</button>
           <button type="button" data-v="terceiro" aria-pressed="false">Terceiro</button>
+          <button type="button" data-v="nao_inf" aria-pressed="false">Placa em branco</button>
         </div>
       </div>
       <div class="fgroup">
@@ -221,12 +222,12 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </div>
       <div class="rule">
         <h3>Origem da carga</h3>
-        <p>Cada volume vem da sua aba, para nada ser contado duas vezes. CD: coluna CD da CARGAS GERAL. CP2: aba CP2 CARGA-N (datas antigas na "Nao mexer CARGA CP2"). FLV: aba CARGA FLV.</p>
+        <p>Cada volume vem da sua aba, para nada ser contado duas vezes. CD: coluna CD da CARGAS GERAL. CP2: só a aba CP2 CARGA-N (a aba "Nao mexer CARGA CP2" não é usada). FLV: aba CARGA FLV.</p>
         <div class="ex"><span>CARGA FLV · LOJA <b>13-CD+17</b> · FLV <b>8-5+5</b></span><span>→ Loja 13: 8 FLV · Loja 17: 5 FLV (os 5 CD vêm da CARGAS GERAL)</span></div>
       </div>
       <div class="rule">
         <h3>Terceiros</h3>
-        <p>Própria quando a placa está na lista da frota (29 veículos, com capacidade). Terceiro quando o motorista é TERCEIRO ou a placa termina em <span class="mono">-T</span> (ou começa com <span class="mono">T/</span>). Placas antigas sem essa marca seguem como próprias. Na CARGA FLV, todo o bloco REGIÃO NORTE é terceiro; o bloco REGIÃO SUL segue a placa. Em datas antigas sem esses títulos, as linhas sem placa e sem motorista contam como Norte.</p>
+        <p>Própria quando a placa está na lista da frota (29 veículos, com capacidade). Terceiro quando o motorista é TERCEIRO ou a placa termina em <span class="mono">-T</span> (ou começa com <span class="mono">T/</span>). Placas antigas sem essa marca seguem como próprias. Na CARGA FLV, todo o bloco REGIÃO NORTE é terceiro; o bloco REGIÃO SUL segue a placa. Antes de 01/06/2026 não há esses títulos: linhas sem placa e sem motorista ficam como "placa em branco", separadas para análise na aba Frota.</p>
         <div class="ex"><span>PLACA <b>OKE6H15-T</b> · MOT <b>TERCEIRO</b></span><span>→ Terceiro</span></div>
       </div>
       <div class="rule">
@@ -236,13 +237,13 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </div>
       <div class="rule">
         <h3>Caminhões do FLV Norte</h3>
-        <p>No bloco sem placa, as linhas seguidas da mesma faixa de cor são um caminhão, fechado pela linha com o número na coluna T e o PL. O FLV conta só a coluna FLV. A coluna CD desses caminhões é o complemento, que já é contado uma vez como CD pela CARGAS GERAL; aqui aparece só como referência (coluna "Compl. no FLV", fora do total). Linhas com LOJA em vermelho não foram carregadas e são descartadas.</p>
+        <p>No bloco sem placa, as linhas seguidas da mesma faixa de cor são um caminhão, fechado pela linha com o número na coluna T e o PL. O FLV conta só a coluna FLV. A coluna CD desses caminhões é o complemento, que já é contado uma vez como CD pela CARGAS GERAL; aqui aparece só como referência (coluna "Compl. no FLV", fora do total). Linhas com LOJA em vermelho não contam, em nenhuma aba (CARGAS GERAL, CP2 CARGA-N e CARGA FLV); elas aparecem em "Para conferir".</p>
         <div class="ex"><span><b>14</b> 22 · <b>CB2</b> 6 · T <b>1</b> · PL <b>28</b></span><span>→ Caminhão 1: Loja 14 = 22, CB2 = 6 (28 paletes)</span></div>
       </div>
       <div class="rule">
-        <h3>Colunas S e PM</h3>
-        <p>Aparecem separadas na tabela por loja e não entram no total de paletes. O complemento é contado uma vez só: como CD, pela linha "complemento flv" da CARGAS GERAL.</p>
-        <div class="ex"><span>CD <b>28</b> · S <b>3</b> · PREVISÃO <b>31</b></span><span>→ 28 paletes CD · S: 3 (à parte)</span></div>
+        <h3>Complemento</h3>
+        <p>Conta uma vez só, como CD, pela linha "complemento flv" da CARGAS GERAL. A coluna CD do caminhão FLV é a mesma carga e aparece só como referência. As colunas S e PM da CARGAS GERAL não são usadas.</p>
+        <div class="ex"><span>Loja 8 · FLV <b>25</b> · CD do FLV <b>3</b> · CARGAS GERAL <b>4</b> (complemento)</span><span>→ 25 FLV + 4 CD</span></div>
       </div>
     </div>
   </section>
@@ -257,7 +258,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
   const E = window.Expedicao;
   const $ = id => document.getElementById(id);
   const fmt = n => n.toLocaleString('pt-BR');
-  const ABAS = ['CARGAS GERAL', 'CP2 CARGA-N', 'Nao mexer CARGA CP2', 'CARGA FLV', 'APOIO'];
+  const ABAS = ['CARGAS GERAL', 'CP2 CARGA-N', 'CARGA FLV', 'APOIO'];
   const ORIGENS = ['CD', 'CP2', 'FLV'];
   const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   let DADOS = null;
@@ -330,12 +331,14 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
           const wb = XLSX.read(buf, { type: 'array', sheets: ABAS, dense: true, cellStyles: true, cellFormula: false, cellHTML: false, cellText: false });
           const rows = {};
           wb.SheetNames.forEach(n => { if (wb.Sheets[n]) rows[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null }); });
-          // Cor de fundo da coluna LOJA (L) da CARGA FLV: linhas vermelhas não foram carregadas
+          // Cor de fundo da coluna LOJA de cada aba: linhas vermelhas não contam
           CORES = {};
-          wb.SheetNames.filter(n => /CARGA FLV/i.test(n) && wb.Sheets[n]).forEach(n => {
+          wb.SheetNames.forEach(n => {
+            const col = /FLV/i.test(n) ? 11 : /GERAL/i.test(n) ? 8 : /CP2/i.test(n) ? 17 : -1;
+            if (col < 0 || !wb.Sheets[n]) return;
             const ws = wb.Sheets[n], d = ws['!data'] || ws;
             const ini = XLSX.utils.decode_range(ws['!ref'] || 'A1').s.r;
-            CORES[n] = rows[n].map((_, i) => { const c = d[i + ini] && d[i + ini][11]; return (c && c.s && c.s.fgColor && c.s.fgColor.rgb) || ''; });
+            CORES[n] = rows[n].map((_, i) => { const c = d[i + ini] && d[i + ini][col]; return (c && c.s && c.s.fgColor && c.s.fgColor.rgb) || ''; });
           });
           ROWS = rows; NOMES = wb.SheetNames; NOME_ARQ = file.name;
           if (!processarTudo(((performance.now() - t0) / 1000).toFixed(1))) {
@@ -410,7 +413,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
   }
   function filtrar() {
     const ini = $('dIni').value, fim = $('dFim').value;
-    const orig = { CD: $('oCD').checked, CP2: $('oCP2').checked, FLV: $('oFLV').checked, S: $('oCD').checked, PM: $('oCD').checked, COMP: $('oFLV').checked };
+    const orig = { CD: $('oCD').checked, CP2: $('oCP2').checked, FLV: $('oFLV').checked, COMP: $('oFLV').checked };
     const tipos = { loja: true, transferencia: $('dTransf').checked, outros: $('dOutros').checked };
     const q = $('busca').value.trim();
     return DADOS.entregas.filter(e =>
@@ -484,21 +487,20 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
     rows.sort((a, b) => k === 'nome' ? (ordemNatural(a.dest) - ordemNatural(b.dest)) * dir : ((a[k] || 0) - (b[k] || 0)) * dir || ordemNatural(a.dest) - ordemNatural(b.dest));
     tabelaLoja = rows;
     const max = Math.max(0, ...rows.map(r => r.total));
-    const T = rows.reduce((t, r) => { ['CD', 'CP2', 'FLV', 'total', 'propria', 'terceiro', 'S', 'PM', 'COMP'].forEach(c => { t[c] = (t[c] || 0) + r[c]; }); return t; }, {});
+    const T = rows.reduce((t, r) => { ['CD', 'CP2', 'FLV', 'total', 'propria', 'terceiro', 'nao_inf', 'COMP'].forEach(c => { t[c] = (t[c] || 0) + r[c]; }); return t; }, {});
     const tv = viagens(L.filter(e => !e.extra));
-    const temExtra = T.S || T.PM;
     const temComp = T.COMP > 0;
     const el = $('pLoja');
     el.innerHTML = `<div class="panel-head"><h2>Paletes por loja</h2>
       <div class="fgroup"><span class="legend"><span><i style="background:var(--cd)"></i>CD</span><span><i style="background:var(--cp2)"></i>CP2</span><span><i style="background:var(--flv)"></i>FLV</span></span>${copiarBtn('loja')}</div></div>
       ${rows.length ? `<div class="tscroll"><table><thead><tr>
         ${th('nome', 'Loja', 'loja', 'l')}<th class="l" scope="col">Código</th>${th('CD', 'CD', 'loja')}${th('CP2', 'CP2', 'loja')}${th('FLV', 'FLV', 'loja')}${th('total', 'Total', 'loja')}<th class="l" scope="col"><span class="sr">Composição</span></th>
-        ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${th('viagens', 'Viagens', 'loja')}${temExtra ? th('S', 'S', 'loja') + th('PM', 'PM', 'loja') : ''}${temComp ? th('COMP', 'Compl. no FLV', 'loja') : ''}
+        ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${T.nao_inf ? th('nao_inf', 'Placa em branco', 'loja') : ''}${th('viagens', 'Viagens', 'loja')}${temComp ? th('COMP', 'Compl. no FLV', 'loja') : ''}
       </tr></thead><tbody>
       ${rows.map(r => `<tr><td class="l">${r.nome}${r.est ? ` <span class="warn-tag" title="Paletes de viagens com duas lojas e um número só, divididos igualmente">${r.est} estimado</span>` : ''}</td><td class="l mono muted">${r.cod}</td>
         ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td><td class="l">${barra(r, max)}</td>
-        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${cel(r.viagens)}${temExtra ? cel(r.S, 'muted') + cel(r.PM, 'muted') : ''}${temComp ? cel(r.COMP, 'muted') : ''}</tr>`).join('')}
-      </tbody><tfoot><tr><td class="l">Total</td><td></td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td></td>${cel(T.propria)}${cel(T.terceiro, 'num-terc')}<td>${fmt(tv)}</td>${temExtra ? cel(T.S) + cel(T.PM) : ''}${temComp ? cel(T.COMP) : ''}</tr></tfoot>
+        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${T.nao_inf ? cel(r.nao_inf) : ''}${cel(r.viagens)}${temComp ? cel(r.COMP, 'muted') : ''}</tr>`).join('')}
+      </tbody><tfoot><tr><td class="l">Total</td><td></td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td></td>${cel(T.propria)}${cel(T.terceiro, 'num-terc')}${T.nao_inf ? cel(T.nao_inf) : ''}<td>${fmt(tv)}</td>${temComp ? cel(T.COMP) : ''}</tr></tfoot>
       </table></div>` : '<div class="empty">Nenhum palete no período e filtros escolhidos.</div>'}`;
     ligarOrdem(el, 'loja');
   }
@@ -555,7 +557,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </tr></thead><tbody>
       ${mostrar.map(({ e, itens }) => `<tr><td class="l">${br(e.data)}</td><td class="l mono muted">${ABA_CURTA(e.aba)} · ${e.linha}</td>
         <td class="l mono">${esc(e.placa) || '<span class="muted">—</span>'}</td><td class="l">${esc(e.motorista) || '<span class="muted">—</span>'}</td>
-        <td class="l"><span class="pill ${e.frota}">${e.frota === 'terceiro' ? 'Terceiro' : e.frota === 'propria' ? 'Própria' : 'Não inf.'}${e.regiao === 'norte' ? ' · Norte' : ''}</span></td>
+        <td class="l"><span class="pill ${e.frota}">${e.frota === 'terceiro' ? 'Terceiro' : e.frota === 'propria' ? 'Própria' : 'Placa em branco'}${e.regiao === 'norte' ? ' · Norte' : ''}</span></td>
         <td class="l mono">${linhasTexto(itens, 'lojasTexto')}</td><td class="l mono">${linhasTexto(itens, 'qtdTexto')}</td>
         <td class="l"><span class="split">${itens.map(i => `<span class="num-${i.origem.toLowerCase()}">${nome(i.destino)}: ${i.qtd} ${i.origem}</span>`).join('')}</span>${e.obs ? ` <span class="muted">${esc(e.obs)}</span>` : ''}</td>
         <td><strong>${fmt(soma(itens))}</strong></td><td>${ocupacao(e, soma(itens))}</td></tr>`).join('')}
@@ -619,7 +621,28 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </tbody><tfoot><tr><td class="l">Total</td><td></td><td></td><td>${fmt(tf.v)}</td><td>${fmt(tf.p)}</td><td>${tf.v ? (tf.p / tf.v).toFixed(1) : '—'}</td><td>${pctOc(tf.o, tf.v)}</td><td></td><td></td></tr></tfoot></table></div>
       ${tabelaSimples('Terceiros', 'Placas marcadas como terceiro (motorista TERCEIRO ou placa -T)', terc, 'num-terc')}
       ${tabelaSimples('Próprias fora da lista', 'Sem marca de terceiro, mas a placa não está na lista da frota (frota antiga ou placa escrita diferente)', fora)}
+      ${tabelaSemPlaca(P)}
       <div class="more">Para atualizar placas e capacidades, abra a planilha de frota (aba Frota Detalhada) no botão do topo.</div>`;
+  }
+
+  // Lojas que receberam carga sem placa e sem motorista: separadas para análise
+  let tabelaBranco = [];
+  function tabelaSemPlaca(P) {
+    const m = new Map();
+    for (const e of P) {
+      if (e.frota !== 'nao_inf') continue;
+      let r = m.get(e.destino);
+      if (!r) { r = { nome: nome(e.destino), cod: codigo(e.destino), CD: 0, CP2: 0, FLV: 0, v: new Set(), dias: new Set(), ini: e.data, fim: e.data, abas: new Set() }; m.set(e.destino, r); }
+      r[e.origem] += e.qtd; r.v.add(e.viagem); r.dias.add(e.data); r.abas.add(ABA_CURTA(e.aba));
+      if (e.data < r.ini) r.ini = e.data; if (e.data > r.fim) r.fim = e.data;
+    }
+    tabelaBranco = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV })).sort((a, b) => b.total - a.total);
+    if (!tabelaBranco.length) return '<div class="panel-head"><h2>Placa em branco</h2><span class="hint">Nenhuma carga sem placa e sem motorista no período.</span></div>';
+    const T = tabelaBranco.reduce((t, r) => ({ CD: t.CD + r.CD, CP2: t.CP2 + r.CP2, FLV: t.FLV + r.FLV, total: t.total + r.total }), { CD: 0, CP2: 0, FLV: 0, total: 0 });
+    return `<div class="panel-head"><h2>Placa em branco</h2><span class="fgroup"><span class="hint">Cargas sem placa e sem motorista, por loja, para análise. Para ver as viagens, escolha Frota: Placa em branco e abra Viagens.</span>${copiarBtn('branco')}</span></div>
+      <div class="tscroll"><table><thead><tr><th class="l" scope="col">Loja</th><th class="l" scope="col">Código</th><th scope="col">CD</th><th scope="col">CP2</th><th scope="col">FLV</th><th scope="col">Total</th><th scope="col">Viagens</th><th scope="col">Dias</th><th class="l" scope="col">De</th><th class="l" scope="col">Até</th><th class="l" scope="col">Aba</th></tr></thead><tbody>
+      ${tabelaBranco.map(r => `<tr><td class="l">${r.nome}</td><td class="l mono muted">${r.cod}</td>${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td>${cel(r.v.size)}${cel(r.dias.size)}<td class="l">${br(r.ini)}</td><td class="l">${br(r.fim)}</td><td class="l muted">${[...r.abas].join(', ')}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td class="l">Total</td><td></td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td></td><td></td><td></td><td></td><td></td></tr></tfoot></table></div>`;
   }
 
   function renderConferir() {
@@ -639,8 +662,11 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
     const b = e.target.closest('[data-copy]'); if (!b) return;
     let linhas;
     if (b.dataset.copy === 'loja') {
-      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'S', 'PM', 'Compl. no FLV (já no CD)']]
-        .concat(tabelaLoja.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.viagens, r.S, r.PM, r.COMP]));
+      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'Compl. no FLV (já no CD)']]
+        .concat(tabelaLoja.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.viagens, r.COMP]));
+    } else if (b.dataset.copy === 'branco') {
+      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Viagens', 'Dias', 'De', 'Até']]
+        .concat(tabelaBranco.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.v.size, r.dias.size, br(r.ini), br(r.fim)]));
     } else {
       linhas = [['Data', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'Viagens terceiro']]
         .concat(tabelaDia.map(r => [br(r.data), r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.viagens, r.vterc]));
