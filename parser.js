@@ -233,7 +233,16 @@
   }
 
   /* rowsPorAba: { nomeDaAba: [[...linha], ...] } (sheet_to_json com header:1, raw:true) */
-  function processar(rowsPorAba, nomesAbas, frotaCfg) {
+  // Cor de preenchimento vermelha (linha marcada como "n\u00e3o carregou")
+  function ehVermelho(rgb) {
+    const m = /^(?:FF)?([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})$/i.exec(String(rgb || ''));
+    if (!m) return false;
+    const [r, g, b] = m.slice(1).map(h => parseInt(h, 16));
+    return r >= 200 && g <= 90 && b <= 90;
+  }
+
+  /* cores: { nomeDaAba: [cor de fundo da coluna LOJA por linha] } (opcional). */
+  function processar(rowsPorAba, nomesAbas, frotaCfg, cores) {
     const FROTA = frotaCfg ? montarFrota(frotaCfg.lista, frotaCfg.motoristas) : montarFrota(FROTA_PADRAO, MOTORISTAS_PADRAO);
     const wbLike = { SheetNames: nomesAbas || Object.keys(rowsPorAba) };
     const abaGeral = acharAba(wbLike, [n => n === 'CARGAS GERAL', n => n.includes('CARGAS GERAL')]);
@@ -250,7 +259,7 @@
 
     function registrar(base, destinos, qtds, extras) {
       // qtds: { CD: splitQtd, CP2: ..., FLV: ... }; extras: entregas já com loja definida
-      const id = ++viagemId;
+      const id = base.viagem || ++viagemId;
       const alertasViagem = [];
       let algum = false;
       for (const origem of Object.keys(qtds)) {
@@ -389,17 +398,41 @@
     // Bloco de expedição: L=LOJA, M=FLV, N=CD, Q=PLACA, R=MOT.
     // "6+CD" com "14+4": loja 6 recebe 14 FLV e 4 CD.
     // "13-CD+17" com "8-5+5": loja 13 recebe 8 FLV e 5 CD; loja 17 recebe 5 FLV.
+    // Bloco Norte (sem placa): linhas seguidas da mesma faixa de cor s\u00e3o UM caminh\u00e3o; a linha
+    // com o n\u00famero na coluna T (K) ou o total na coluna PL (P) fecha o caminh\u00e3o.
+    // Linhas pintadas de vermelho na LOJA n\u00e3o foram carregadas e s\u00e3o descartadas.
     if (abaFlv) {
       const rows = rowsPorAba[abaFlv];
-      let n = 0;
+      const corFlv = (cores && cores[abaFlv]) || [];
+      let n = 0, vermelhas = 0;
+      let grupo = null;
+      const fecharGrupo = (r, i) => {
+        if (!grupo) return;
+        const pl = typeof r[15] === 'number' ? r[15] : null;
+        if (pl !== null && grupo.total > pl) {
+          alertas.push({ data: grupo.data, aba: abaFlv, linha: grupo.linhaIni, lojas: grupo.lojas.join(' / '), qtd: String(grupo.total),
+            motivo: 'caminh\u00e3o FLV soma ' + grupo.total + ' paletes (FLV + CD), acima do PL ' + pl + ' (linhas ' + grupo.linhaIni + '\u2013' + (i + 1) + ')' });
+        }
+        grupo = null;
+      };
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
         const data = excelDate(r[0]);
         if (!data) continue;
         const lojasTxt = txt(r[11]);
-        if (!lojasTxt) continue;
+        if (!lojasTxt) { grupo = null; continue; }
+        const fecha = typeof r[15] === 'number' || typeof r[10] === 'number';
+        if (ehVermelho(corFlv[i])) {
+          vermelhas++;
+          if (fecha) grupo = null;
+          continue;
+        }
         const flvTxt = txt(r[12]);
-        const placa = txt(r[16]), mot = txt(r[17]);
+        // Na coluna PLACA do bloco Norte \u00e0s vezes vai uma anota\u00e7\u00e3o ("CARGA DIRETO LOJA")
+        const placaTxt = txt(r[16]), mot = txt(r[17]);
+        const ehPlaca = RE_PLACA.test(placaTxt) || /TERC|-\s*T\s*$|^T\//i.test(placaTxt);
+        const placa = ehPlaca ? placaTxt : '';
+        const nota = ehPlaca ? '' : placaTxt;
         const tokens = lojasTxt.split(/\s*\+\s*/).filter(Boolean);
         const qtdTokens = flvTxt === '' ? [] : flvTxt.split(/\s*\+\s*/);
         const destinos = [], flv = [], cdExtra = [];
@@ -424,17 +457,35 @@
           const vC = parseInt(qC, 10);
           if (marca && /CD/i.test(marca) && !isNaN(vC)) cdExtra.push({ destino: d, qtd: vC });
         });
-        if (!valido || !destinos.length) continue;
+        if (!valido || !destinos.length) { if (fecha) grupo = null; continue; }
         const base = { data, aba: abaFlv, linha: i + 1, placa, motorista: mot, ...frotaDe(placa, mot),
           lojasTexto: lojasTxt, qtdTexto: flvTxt + (txt(r[13]) ? ' | CD ' + txt(r[13]) : '') };
-        // Mais números que lojas (ex.: "CB4" com "7+2"): deixa a regra geral decidir
+        const semPlaca = !placa && !mot;
+        if (semPlaca) {
+          if (!grupo || grupo.data !== data) { grupo = { id: ++viagemId, data, linhaIni: i + 1, total: 0, lojas: [] }; n++; }
+          base.viagem = grupo.id;
+        } else grupo = null;
+        // Mais n\u00fameros que lojas (ex.: "CB4" com "7+2"): deixa a regra geral decidir
         const qF = qtdTokens.length > tokens.length ? splitQtd(flvTxt)
           : { nums: flv.some(x => x > 0) ? flv : [], incompleto: false, texto: '' };
-        // Só o volume FLV. Os paletes de CD que vão junto ("-CD", coluna CD) já estão na CARGAS GERAL.
-        if (cdExtra.length || txt(r[13])) base.obs = 'CD junto na carga (contado pela CARGAS GERAL)';
-        if (registrar(base, destinos, { FLV: qF })) n++;
+        // S\u00f3 o volume FLV. Os paletes de CD que v\u00e3o junto ("-CD", coluna CD) j\u00e1 est\u00e3o na CARGAS GERAL.
+        const cdCol = splitQtd(r[13]).nums.reduce((a, x) => a + x, 0) + cdExtra.reduce((a, x) => a + x.qtd, 0);
+        // Caminh\u00e3o do Norte (sem placa): a coluna CD \u00e9 o complemento que vai no caminh\u00e3o FLV
+        // e entra no volume FLV (como no resumo "FLV Vieira"). Com placa, o CD j\u00e1 est\u00e1 na CARGAS GERAL.
+        let extras = [];
+        if (semPlaca && cdCol) {
+          extras = cdExtra.map(x => ({ origem: 'FLV', destino: x.destino, qtd: x.qtd, obs: 'complemento (coluna CD)' }));
+          extras = extras.concat(distribuir(destinos, splitQtd(r[13])).out.map(o => Object.assign({ origem: 'FLV', obs: 'complemento (coluna CD)' }, o)));
+        }
+        base.obs = [nota, cdCol ? (semPlaca ? 'inclui ' + cdCol + ' de complemento (coluna CD)' : 'CD junto na carga: ' + cdCol + ' (contado pela CARGAS GERAL)') : ''].filter(Boolean).join(' \u00b7 ');
+        const ok = registrar(base, destinos, { FLV: qF }, extras);
+        if (semPlaca) {
+          grupo.total += qF.nums.reduce((a, x) => a + x, 0) + cdCol;
+          grupo.lojas.push(lojasTxt);
+          if (fecha) fecharGrupo(r, i);
+        } else if (ok) n++;
       }
-      resumoAbas.push({ aba: abaFlv, viagens: n, ignoradas: 0, papel: 'Volume FLV (s\u00f3 a coluna FLV)' });
+      resumoAbas.push({ aba: abaFlv, viagens: n, ignoradas: vermelhas, papel: 'Volume FLV (s\u00f3 a coluna FLV)' });
     }
 
     entregas.sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : a.viagem - b.viagem);

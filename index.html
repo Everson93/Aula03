@@ -221,7 +221,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       </div>
       <div class="rule">
         <h3>Origem da carga</h3>
-        <p>Cada volume vem da sua aba, para nada ser contado duas vezes. CD: coluna CD da CARGAS GERAL. CP2: aba CP2 CARGA-N (datas antigas na "Nao mexer CARGA CP2"). FLV: aba CARGA FLV. Os paletes de CD que vão junto na carga FLV já estão na CARGAS GERAL.</p>
+        <p>Cada volume vem da sua aba, para nada ser contado duas vezes. CD: coluna CD da CARGAS GERAL. CP2: aba CP2 CARGA-N (datas antigas na "Nao mexer CARGA CP2"). FLV: aba CARGA FLV.</p>
         <div class="ex"><span>CARGA FLV · LOJA <b>13-CD+17</b> · FLV <b>8-5+5</b></span><span>→ Loja 13: 8 FLV · Loja 17: 5 FLV (os 5 CD vêm da CARGAS GERAL)</span></div>
       </div>
       <div class="rule">
@@ -233,6 +233,11 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
         <h3>Quando não dá para dividir</h3>
         <p>Se há duas lojas e um número só, os paletes ficam juntos no grupo "7+CB2" e a linha vai para "Para conferir". Nenhum número é inventado.</p>
         <div class="ex"><span>LOJAS <b>14+8</b> · QUANT <b>26</b></span><span>→ Grupo 14+8: 26 paletes (conferir)</span></div>
+      </div>
+      <div class="rule">
+        <h3>Caminhões do FLV Norte</h3>
+        <p>No bloco sem placa, as linhas seguidas da mesma faixa de cor são um caminhão, fechado pela linha com o número na coluna T e o PL. A coluna CD desses caminhões é complemento e soma no FLV. Linhas com LOJA em vermelho não foram carregadas e são descartadas.</p>
+        <div class="ex"><span><b>14</b> 22 · <b>CB2</b> 6 · T <b>1</b> · PL <b>28</b></span><span>→ Caminhão 1: Loja 14 = 22, CB2 = 6 (28 paletes)</span></div>
       </div>
       <div class="rule">
         <h3>Colunas S e PM</h3>
@@ -286,7 +291,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
   ['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); if (ev === 'drop' || e.target === drop) drop.classList.remove('over'); }));
   document.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) carregar(f); });
 
-  let ROWS = null, NOMES = null, NOME_ARQ = '', FROTA_CFG = null, FROTA_ORIGEM = 'lista padrão';
+  let ROWS = null, NOMES = null, CORES = {}, NOME_ARQ = '', FROTA_CFG = null, FROTA_ORIGEM = 'lista padrão';
   try { const f = JSON.parse(localStorage.getItem('paletes-frota') || 'null'); if (f && f.lista) { FROTA_CFG = f; FROTA_ORIGEM = f.arquivo || 'arquivo carregado'; } } catch (e) { /* segue com a lista padrão */ }
 
   function carregar(file) {
@@ -322,9 +327,16 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
             if (ROWS) processarTudo();
             return;
           }
-          const wb = XLSX.read(buf, { type: 'array', sheets: ABAS, dense: true, cellFormula: false, cellHTML: false, cellText: false });
+          const wb = XLSX.read(buf, { type: 'array', sheets: ABAS, dense: true, cellStyles: true, cellFormula: false, cellHTML: false, cellText: false });
           const rows = {};
           wb.SheetNames.forEach(n => { if (wb.Sheets[n]) rows[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null }); });
+          // Cor de fundo da coluna LOJA (L) da CARGA FLV: linhas vermelhas não foram carregadas
+          CORES = {};
+          wb.SheetNames.filter(n => /CARGA FLV/i.test(n) && wb.Sheets[n]).forEach(n => {
+            const ws = wb.Sheets[n], d = ws['!data'] || ws;
+            const ini = XLSX.utils.decode_range(ws['!ref'] || 'A1').s.r;
+            CORES[n] = rows[n].map((_, i) => { const c = d[i + ini] && d[i + ini][11]; return (c && c.s && c.s.fgColor && c.s.fgColor.rgb) || ''; });
+          });
           ROWS = rows; NOMES = wb.SheetNames; NOME_ARQ = file.name;
           if (!processarTudo(((performance.now() - t0) / 1000).toFixed(1))) {
             ROWS = null;
@@ -340,7 +352,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
   }
 
   function processarTudo(seg) {
-    const R = E.processar(ROWS, NOMES, FROTA_CFG || undefined);
+    const R = E.processar(ROWS, NOMES, FROTA_CFG || undefined, CORES);
     if (!R.entregas.length) return false;
     const primeira = !DADOS;
     DADOS = R;
@@ -517,6 +529,13 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
 
   const ABA_CURTA = n => /FLV/i.test(n) ? 'CARGA FLV' : /MEXER/i.test(n) ? 'CP2 (hist.)' : /CP2/i.test(n) ? 'CP2 CARGA-N' : 'CARGAS GERAL';
 
+  // Caminhão com várias linhas na planilha (FLV Norte): mostra cada linha, na ordem
+  function linhasTexto(itens, campo) {
+    const vistos = new Map();
+    itens.forEach(i => { if (!vistos.has(i.linha)) vistos.set(i.linha, i[campo]); });
+    return [...vistos.values()].map(esc).join('<br>');
+  }
+
   function renderViagens(P) {
     const m = new Map();
     for (const e of P) {
@@ -536,7 +555,7 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--ink); border-bottom: 0;
       ${mostrar.map(({ e, itens }) => `<tr><td class="l">${br(e.data)}</td><td class="l mono muted">${ABA_CURTA(e.aba)} · ${e.linha}</td>
         <td class="l mono">${esc(e.placa) || '<span class="muted">—</span>'}</td><td class="l">${esc(e.motorista) || '<span class="muted">—</span>'}</td>
         <td class="l"><span class="pill ${e.frota}">${e.frota === 'terceiro' ? 'Terceiro' : e.frota === 'propria' ? 'Própria' : 'Não inf.'}</span></td>
-        <td class="l mono">${esc(e.lojasTexto)}</td><td class="l mono">${esc(e.qtdTexto)}</td>
+        <td class="l mono">${linhasTexto(itens, 'lojasTexto')}</td><td class="l mono">${linhasTexto(itens, 'qtdTexto')}</td>
         <td class="l"><span class="split">${itens.map(i => `<span class="num-${i.origem.toLowerCase()}">${nome(i.destino)}: ${i.qtd} ${i.origem}</span>`).join('')}</span>${e.obs ? ` <span class="muted">${esc(e.obs)}</span>` : ''}</td>
         <td><strong>${fmt(soma(itens))}</strong></td><td>${ocupacao(e, soma(itens))}</td></tr>`).join('')}
       </tbody></table></div>
