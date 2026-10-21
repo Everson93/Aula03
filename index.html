@@ -782,11 +782,11 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     ws['!cols'] = [...Array(col(BLOCOS.length - 1, larg - 1) + 1)].map((_, c) => ({ wch: c % (larg + 1) === larg ? 3 : c % (larg + 1) === 0 ? 8 : 10 }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Paletes');
-    {
-      const dias = diasDoPeriodo(ini, fim), soma = somaPorDia(ini, fim);
+    ABAS_DIA.forEach(([nomeAba, soTerceiro, rotulo]) => {
+      const dias = diasDoPeriodo(ini, fim), soma = somaPorDia(ini, fim, soTerceiro);
       const aoa2 = [];
       QUADROS_DIA.forEach(([origem, titulo]) => {
-        aoa2.push([titulo]);
+        aoa2.push([rotulo + ' - ' + titulo]);
         aoa2.push(['Loja'].concat(dias.map(d => +d.slice(8, 10)), ['Total']));
         LOJAS_MODELO.forEach(([rot, chave]) => {
           const vals = dias.map(d => soma[origem + '|' + chave + '|' + d] || 0);
@@ -794,8 +794,8 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
         });
         aoa2.push([]);
       });
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa2), 'Por dia e loja');
-    }
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa2), nomeAba);
+    });
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   }
 
@@ -894,7 +894,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     ws.getRow(2).height = 20;
     for (let r = 3; r < rTot; r++) ws.getRow(r).height = 16;
     ws.getRow(rTot).height = 20;
-    abaPorDia(wb, ini, fim, nomeMes);
+    ABAS_DIA.forEach(([nomeAba, soTerceiro, rotulo, cor]) => abaPorDia(wb, ini, fim, nomeMes, nomeAba, soTerceiro, rotulo, cor));
     return new Uint8Array(await wb.xlsx.writeBuffer());
   }
 
@@ -905,25 +905,34 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     for (let d = ini; d <= fim; d = isoAdd(d, 1)) dias.push(d);
     return dias;
   }
-  function somaPorDia(ini, fim) {
+  // soTerceiro: só o que foi entregue por terceiros (Vieira); senão, tudo consolidado
+  function somaPorDia(ini, fim, soTerceiro) {
     const soma = {};   // origem|loja|dia (origem 'TOT' = todas)
     for (const e of DADOS.entregas) {
       if (e.extra || e.tipo !== 'loja' || e.data < ini || e.data > fim) continue;
+      if (soTerceiro && e.frota !== 'terceiro') continue;
       for (const o of [e.origem, 'TOT']) { const k = o + '|' + e.destino + '|' + e.data; soma[k] = (soma[k] || 0) + e.qtd; }
     }
     return soma;
   }
   const QUADROS_DIA = [
-    ['TOT', 'Paletes entregues por dia - Total (CD + FLV + CP02)', 'FF263445', 'FFE3E8EF'],
-    ['CD', 'CD - Paletes entregues por dia', 'FF1F4E79', 'FFDCE6F2'],
-    ['FLV', 'FLV - Paletes entregues por dia', 'FF1E6B45', 'FFE2EFDA'],
-    ['CP2', 'CP02 - Paletes entregues por dia', 'FF5B3A8E', 'FFE8E0F5']
+    ['TOT', 'Total (CD + FLV + CP02)', 'FF263445', 'FFE3E8EF'],
+    ['CD', 'CD', 'FF1F4E79', 'FFDCE6F2'],
+    ['FLV', 'FLV', 'FF1E6B45', 'FFE2EFDA'],
+    ['CP2', 'CP02', 'FF5B3A8E', 'FFE8E0F5']
   ];
 
-  function abaPorDia(wb, ini, fim, nomeMes) {
+  // Duas abas: primeiro só terceiros, depois tudo consolidado
+  const ABAS_DIA = [
+    ['Terceiros por dia', true, 'Terceiros (Vieira Transportes)', 'FFE07B00'],
+    ['Consolidado por dia', false, 'Consolidado (pr\u00f3pria + terceiros)', 'FF263445']
+  ];
+
+  function abaPorDia(wb, ini, fim, nomeMes, nomeAba, soTerceiro, rotulo, corAba) {
     const dias = diasDoPeriodo(ini, fim);
-    const soma = somaPorDia(ini, fim);
-    const ws = wb.addWorksheet('Por dia e loja', {
+    const soma = somaPorDia(ini, fim, soTerceiro);
+    const ws = wb.addWorksheet(nomeAba, {
+      properties: { tabColor: { argb: corAba } },
       views: [{ state: 'frozen', xSplit: 1, ySplit: 0, showGridLines: false }],
       pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 }
     });
@@ -937,7 +946,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       // Título do quadro
       ws.mergeCells(r, 1, r, nCols);
       const t = ws.getCell(r, 1);
-      t.value = titulo + ' \u00b7 ' + nomeMes + '/' + ini.slice(0, 4);
+      t.value = rotulo + ' \u00b7 ' + titulo + ' \u00b7 ' + nomeMes + '/' + ini.slice(0, 4);
       t.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
       t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: escuro } };
       t.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
