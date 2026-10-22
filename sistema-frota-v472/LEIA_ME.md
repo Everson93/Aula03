@@ -243,13 +243,192 @@ Lavação sob o rótulo "Oficina". A checagem de rótulo × coluna fecha isso.
 
 ---
 
+# V4.9 — orçamento, alerta ativo e rateio com memória
+
+Três mudanças. A terceira não estava no pedido: apareceu ao implementar a
+primeira e precisava ser feita antes, não depois.
+
+## O defeito que a V4.9 conserta
+
+A aba Centros de Custo guardava **um único percentual de rateio: o corrente**,
+sobrescrito a cada alteração. Como o percentual é ajustado todo mês antes de
+fechar, no instante em que alguém mexia no % de novembro **o rateio de outubro
+passava a ser recalculado com os números de novembro**.
+
+Ninguém percebia, e é fácil entender por quê: o TOTAL continua fechando com o
+Resumo. Só a divisão entre as lojas muda. O próprio código já admitia o vão, em
+`rateioExportacaoPeriodo_`: *"rateio percentual histórico exato só existe quando
+a exportação é criada durante a competência/fechamento."*
+
+Agora cada competência guarda o seu bloco, na aba nova **Rateio Mensal**.
+
+### A aba Centros não saiu de cena
+
+Ela continua sendo a fonte das **fórmulas da planilha** — aba Rateio por Centro,
+Dashboard, `validarSistema_` — que leem `Centros!B` e não sabem o que é
+competência. Gravar a competência **corrente** espelha nela. Por isso nenhuma
+fórmula precisou ser reescrita, e a planilha e o app nunca mostram rateios
+diferentes.
+
+### Herança, e por que ela só olha para trás
+
+Competência sem bloco próprio herda do **mês gravado mais recente que seja
+anterior a ela**; na falta de qualquer histórico, da aba Centros. A tela diz de
+onde veio — *"herdado de 2026-09"* é informação útil, *"3,83%"* sozinho não é.
+
+Herdar do mês **seguinte** seria reabrir o defeito por outra porta: o passado
+voltaria a se mexer sozinho. Tem teste só para isso.
+
+### O vão da transição
+
+Instala em julho, ninguém abre a tela, fecha julho. Em agosto o operador ajusta
+o rateio. Agosto ganha bloco, julho não tem nenhum — e julho cairia na aba
+Centros, que já foi espelhada com os valores de agosto. **O mês de instalação
+herdaria do futuro.**
+
+Por isso a instalação chama `semearRateioCompetenciaAtual_()`, que congela os
+percentuais da competência aberta. É idempotente: rodar de novo não duplica.
+
+## Edição em lote, não um centro por vez
+
+A tela de centros era só leitura, com um seletor que alterava **um** centro e
+mandava "edite na planilha" para o resto. Virou tabela editável com gravação em
+lote.
+
+Em lote de propósito: o ajuste mensal mexe em várias lojas ao mesmo tempo, e
+salvar uma a uma deixaria a base num estado intermediário em que a soma não
+fecha — exatamente o estado que o aviso de 100% existe para denunciar.
+
+> **A unidade continua sendo a armadilha.** A tela fala em **por cento** (3,83) e
+> a coluna guarda **fração** (0,0383). Gravar 3,83 faria o centro receber
+> trezentas e oitenta e três vezes a base — e como o rateio normaliza por Σ%, o
+> TOTAL continuaria fechando. Tem teste de unidade só para isso.
+
+Competência encerrada **recusa** gravação. É o sentido de existirem por
+competência.
+
+## Orçamento por centro de custo
+
+O sistema media o custo com precisão de centavo e não tinha nada com que
+compará-lo. "A Loja 08 gastou R$ 41.230" não diz se foi bom ou ruim.
+
+Aba nova **Orçamento**, por competência, pelo mesmo motivo do rateio: o previsto
+de outubro tem de continuar sendo o de outubro.
+
+**O realizado é o TOTAL do centro DEPOIS do rateio**, não o custo direto —
+comparar com o direto deixaria de fora justamente a parcela do depósito que a
+loja recebe. E vem da **mesma função** que alimenta a tela de rateio
+(`apurarRateio_`), extraída para isso: se cada tela somasse o seu, "realizado" e
+"total do centro" divergiriam e ninguém saberia em qual acreditar.
+
+A projeção repete até o fim do período o ritmo de gasto até aqui. Quatro
+situações: `DENTRO`, `VAI ESTOURAR` (projeção passa do previsto), `ESTOUROU` e
+`SEM ORÇAMENTO`. No primeiro dia do período a fração decorrida nunca é zero —
+dividir por zero mandaria a projeção ao infinito e toda loja que gastasse um
+real apareceria estourando.
+
+A lista de edição traz **todos os centros cadastrados**, não só os que aparecem
+na tabela: um centro novo, ainda sem gasto nem previsto, ficaria impossível de
+orçar pela tela.
+
+## Alerta diário por e-mail
+
+Tudo o que ele conta **já existia** — e só aparecia para quem abrisse a tela e
+procurasse. Um tanque no fim, um odômetro que retrocedeu e um IPVA esquecido não
+melhoram sozinhos: pioram em silêncio até o fechamento.
+
+Três blocos, escolhidos pelo usuário: **consumo fora da curva**, **tanque e
+pendências**, **odômetro e IPVA**. Orçamento ficou fora do alerta de propósito —
+é tela, não e-mail.
+
+**Não manda nada quando não há nada.** Um e-mail diário de "tudo certo" vira
+filtro no Outlook em duas semanas, e junto com ele some o dia em que havia algo.
+
+**Reusa os critérios das telas.** O alerta de custo por km é a regra idêntica à
+da formatação condicional do Resumo: acima de **2×** a média da frota. Dois
+critérios parecidos mas diferentes seriam pior que nenhum — a tela diria uma
+coisa e o e-mail outra. A média é total ÷ total, nunca média das médias.
+
+Cada bloco é isolado: um erro ao apurar o tanque não pode impedir o aviso de
+odômetro.
+
+`EMAIL_ALERTAS` vazio desliga. Mudar `HORA_ALERTA` recria o gatilho — ele guarda
+a hora dentro dele, e sem recriar o alerta sairia no horário antigo para sempre.
+Há prévia na tela de Configurações, que mostra o que sairia sem enviar nada.
+
+## Parâmetros e abas novas
+
+| Parâmetro | Padrão | Para quê |
+|---|---|---|
+| `EMAIL_ALERTAS` | *(vazio)* | Quem recebe o alerta; vazio desliga |
+| `HORA_ALERTA` | 7 | Hora do envio (0-23) |
+| `ESTOQUE_MINIMO_L` | 500 | Litros abaixo dos quais o tanque entra no alerta |
+
+| Aba | Colunas |
+|---|---|
+| `Rateio Mensal` | Competência, Centro, % Rateio, Recebe Rateio, Atualizado em, Responsável |
+| `Orçamento` | Competência, Centro, Valor Previsto, Atualizado em, Responsável |
+
+Ambas acompanham os **centros**, não o movimento: `zerarSistema_` só as limpa no
+escopo "tudo", como já faz com o cadastro de centros.
+
+> **Reinstalar é obrigatório.** As duas abas e os três parâmetros nascem na
+> instalação, e é ela que semeia o bloco da competência aberta.
+
+## O que NÃO mudou
+
+**O Resumo.** Nenhuma coluna nova, nenhuma migração, nada a recalcular.
+
+**O hash de integridade.** A composição lista os campos um a um e nenhum deles
+foi tocado. Competências fechadas continuam validando — diferente do que
+aconteceu quando o Setor saiu na V4.7.2.
+
+**A senha.** `hashSenha_` continua SHA-256 de uma rodada com salt, por decisão
+do usuário.
+
+## Suítes
+
+| Arquivo | Provas |
+|---|---|
+| `conferir_rateio_competencia.js` | 25 |
+| `conferir_alerta_diario.js` | 23 |
+
+A prova central da primeira compara a **divisão loja por loja** de um mês
+fechado, antes e depois de mexer no mês seguinte. Um teste que só conferisse "a
+soma bate" passaria com o defeito de volta — era exatamente assim que ele
+sobrevivia.
+
+As duas foram validadas por mutação: reintroduzindo o comportamento da V4.8,
+9 das 25 provas falham, e a Loja 01 de junho pula de R$ 4.000 para R$ 9.000 só
+porque julho foi editado.
+
+### Duas armadilhas que apareceram escrevendo os testes
+
+**`Date` entre realms do `vm`.** Um `Date` construído fora do sandbox não passa
+no `instanceof Date` de dentro. Os testes de odômetro passavam com lista vazia —
+aprovando o código sem exercitar nada. Resolvido com uma fábrica de datas criada
+dentro do contexto.
+
+**A contagem do assunto do e-mail** é de *pontos de atenção*, não de pendências:
+"2 pendências em aberto" é uma linha só. O teste pedia "2 ponto" e estava errado,
+não o código.
+
+
+---
+
 # Pendente
 
 - **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo
   controla saldo e custo, não vencimento.
 - **Manutenção preventiva** — o KM é capturado no abastecimento, mas o lançamento
   de oficina não guarda o odômetro do momento. Sem isso não dá para alertar
-  "próxima troca em X km".
+  "próxima troca em X km". Desenho já acordado para a próxima versão: campo KM em
+  todo lançamento de oficina, **pré-preenchido** com o último odômetro conhecido
+  da placa (o operador confirma, não digita), opcional em geral e **obrigatório
+  quando o serviço está no plano** — sem KM, a troca não ancora o próximo ciclo.
+  O KM fica **só em Lançamentos**: mandá-lo para a aba Odômetro mexeria em KM,
+  KM/litro e R$/km do Resumo sem ninguém ter mudado um lançamento. Falta definir
+  o plano (a cada quantos km cada serviço, por categoria ou por veículo).
 - **Key stretching na senha** — `hashSenha_` é SHA-256 de uma rodada com salt.
   O salt impede rainbow table; falta custo contra força bruta.
 - **Sessão em `CacheService`** — pode ser despejada antes do TTL de 6 h, e o

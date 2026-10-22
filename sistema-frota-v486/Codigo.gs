@@ -40,6 +40,10 @@ const ABAS = {
   CARGA_BOMBA: 'Carga na Bomba',
   // V4.8: trilha de auditoria das despesas excluídas (com justificativa).
   EXCLUIDOS: 'Lançamentos Excluídos',
+  // V4.9: o % de rateio passou a ser gravado POR COMPETÊNCIA. Ver
+  // percentuaisDaCompetencia_ para o porquê.
+  RATEIO_MENSAL: 'Rateio Mensal',
+  ORCAMENTO: 'Orçamento',
 };
 
 /** Tipos de despesa aceitos no lancamento (ordem = ordem do dropdown). */
@@ -382,6 +386,9 @@ const PARAMETROS_PADRAO = [
   ['DIA_FIM_PERIODO', 25, 'Dia de fechamento do período (mês de referência)'],
   ['BASE_RATEIO', 'DEPÓSITO,EMPILHADEIRAS', 'Centros cujo custo é rateado para as filiais'],
   ['DOMINIOS_LOGIN', 'giassi.com.br', 'Domínios corporativos permitidos no login, separados por vírgula'],
+  ['EMAIL_ALERTAS', '', 'E-mails que recebem o alerta diário, separados por vírgula (vazio desliga)'],
+  ['HORA_ALERTA', 7, 'Hora do dia (0-23) em que o alerta diário é enviado'],
+  ['ESTOQUE_MINIMO_L', 500, 'Litros abaixo dos quais o tanque interno entra no alerta diário'],
 ];
 
 /** Linha da aba Parâmetros onde cada valor fica (a instalacao reescreve tudo). */
@@ -408,7 +415,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.8.6';
+const VERSAO_SISTEMA = '4.9.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1416,6 +1423,10 @@ CABECALHOS[ABAS.FORNECEDORES] = ['Fornecedor', 'CNPJ', 'Ramo', 'Ativo', 'Observa
 CABECALHOS[ABAS.CARGA_BOMBA] = ['Data', 'NF / Documento', 'Produto', 'Quantidade (L)',
   'Valor Total R$', 'R$ / Litro', 'Observação'];
 CABECALHOS[ABAS.HISTORICO] = ['Período', 'Total Geral R$', 'Qtd. Lançamentos', 'Hash Integridade', 'Fechado / Baseline em', 'Responsável / Origem'];
+CABECALHOS[ABAS.RATEIO_MENSAL] = ['Competência', 'Centro de Custo', '% Rateio',
+  'Recebe Rateio', 'Atualizado em', 'Responsável'];
+CABECALHOS[ABAS.ORCAMENTO] = ['Competência', 'Centro de Custo', 'Valor Previsto R$',
+  'Atualizado em', 'Responsável'];
 
 const LARGURAS = {};
 LARGURAS[ABAS.CENTROS] = [180, 140, 120];
@@ -1425,6 +1436,8 @@ LARGURAS[ABAS.ODOMETRO] = [95, 110, 130];
 LARGURAS[ABAS.FORNECEDORES] = [230, 160, 190, 70, 300];
 LARGURAS[ABAS.CARGA_BOMBA] = [95, 150, 130, 130, 140, 110, 380];
 LARGURAS[ABAS.HISTORICO] = [130, 150, 125, 360, 165, 220];
+LARGURAS[ABAS.RATEIO_MENSAL] = [110, 200, 110, 120, 150, 220];
+LARGURAS[ABAS.ORCAMENTO] = [110, 200, 150, 150, 220];
 
 /** Quantidade mínima de linhas de cada aba de dados (ver LIMITE_* em 00_Config). */
 const LINHAS_MINIMAS = {};
@@ -1435,6 +1448,9 @@ LINHAS_MINIMAS[ABAS.ODOMETRO] = LIMITE_LANCAMENTOS;
 LINHAS_MINIMAS[ABAS.HISTORICO] = 200;
 LINHAS_MINIMAS[ABAS.FORNECEDORES] = 500;
 LINHAS_MINIMAS[ABAS.CARGA_BOMBA] = LIMITE_CARGA_BOMBA;
+// 200 centros x 60 competências: cinco anos de histórico sem precisar ampliar.
+LINHAS_MINIMAS[ABAS.RATEIO_MENSAL] = 12000;
+LINHAS_MINIMAS[ABAS.ORCAMENTO] = 12000;
 
 /** Cria as abas de dados que ainda nao existem e padroniza o visual. */
 function montarAbasDeDados_() {
@@ -1443,7 +1459,7 @@ function montarAbasDeDados_() {
   garantirAbaPendencias_(true);
 
   [ABAS.CENTROS, ABAS.VEICULOS, ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.HISTORICO,
-   ABAS.FORNECEDORES, ABAS.CARGA_BOMBA]
+   ABAS.FORNECEDORES, ABAS.CARGA_BOMBA, ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO]
     .forEach(function (nome) {
       const sheet = aba_(nome, true);
       const minimoLinhas = (nome === ABAS.LANCAMENTOS || nome === ABAS.ODOMETRO)
@@ -4719,7 +4735,8 @@ function auditarProtecoesPerfil_() {
   }
 
   [ABAS.DASHBOARD,ABAS.RATEIO,ABAS.LOG,ABAS.PARAMETROS,ABAS.USUARIOS,
-   ABAS.VEICULOS,ABAS.CENTROS,ABAS.HISTORICO].forEach(function(n){ exigirFolha(n,admins,[]); });
+   ABAS.VEICULOS,ABAS.CENTROS,ABAS.HISTORICO,
+   ABAS.RATEIO_MENSAL,ABAS.ORCAMENTO].forEach(function(n){ exigirFolha(n,admins,[]); });
   exigirFolha(ABAS.RESUMO,operacionais,[]);
   exigirFolha(ABAS.CONSULTA,admins,['B3']);
   exigirFaixa(ABAS.CONSULTA,'B3',todos);
@@ -4946,6 +4963,11 @@ function instalar() {
     garantirCapacidadeLancamentos_(quantidadeLancamentosReais_() + 1);
   }
 
+  // Antes dos relatórios: congela os percentuais da competência aberta, para o
+  // mês de transição não ficar sem bloco próprio.
+  try { semearRateioCompetenciaAtual_(); }
+  catch (e) { registrarLog_('Semear rateio da competência - aviso', e.message); }
+
   toast_('Montando os relatórios…', 'Instalação');
   reconstruirRelatorios_();
   escreverConferencia_(coletarProblemas_());
@@ -4993,7 +5015,7 @@ function organizarAbas_() {
   const planilha = ss_();
   const ordem = [ABAS.CENTRAL_OPERACIONAL, ABAS.DASHBOARD, ABAS.RESUMO, ABAS.RELATORIOS, ABAS.RATEIO, ABAS.CONSULTA,
     ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.CARGA_BOMBA, ABAS.VEICULOS, ABAS.CENTROS,
-    ABAS.FORNECEDORES,
+    ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO, ABAS.FORNECEDORES,
     ABAS.HISTORICO, ABAS.PARAMETROS, ABAS.CONFERENCIA, ABAS.USUARIOS, ABAS.LOG];
   ordem.forEach(function (nome, i) {
     const sheet = planilha.getSheetByName(nome);
@@ -5013,6 +5035,8 @@ function organizarAbas_() {
   cores[ABAS.ODOMETRO] = CORES.LARANJA;
   cores[ABAS.VEICULOS] = CORES.GRAFITE;
   cores[ABAS.CENTROS] = CORES.GRAFITE;
+  cores[ABAS.RATEIO_MENSAL] = CORES.GRAFITE;
+  cores[ABAS.ORCAMENTO] = CORES.GRAFITE;
   cores[ABAS.FORNECEDORES] = CORES.GRAFITE;
   cores[ABAS.CARGA_BOMBA] = CORES.LARANJA;
   cores[ABAS.HISTORICO] = CORES.PRETO;
@@ -5974,7 +5998,7 @@ function webExcluirUsuario(token, email, confirmacao) {
 
 /** Telas que o app aceita como ponto de entrada (?p=...). */
 const TELAS_WEB = ['inicio', 'lancar', 'lancamentos', 'bomba', 'consulta', 'relatorios', 'resumo', 'rateio',
-  'veiculos', 'fornecedores', 'centros', 'pendencias', 'depreciacao', 'ipva', 'fechamento',
+  'orcamento', 'veiculos', 'fornecedores', 'centros', 'pendencias', 'depreciacao', 'ipva', 'fechamento',
   'saude', 'config', 'usuarios', 'log'];
 
 function doGet(e) {
@@ -7058,7 +7082,8 @@ function onEdit(e) {
     if (!e || !e.range) return;
     const sheet = e.range.getSheet();
     const nomeAba = sheet.getName();
-    if ([ABAS.PARAMETROS, ABAS.VEICULOS, ABAS.CENTROS, ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.USUARIOS].indexOf(nomeAba) !== -1) {
+    if ([ABAS.PARAMETROS, ABAS.VEICULOS, ABAS.CENTROS, ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.USUARIOS,
+         ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO].indexOf(nomeAba) !== -1) {
       invalidarCacheInicio_();
       invalidarCacheSaude_();
     }
@@ -7987,7 +8012,8 @@ function protegerAbasCalculadas_() {
 
   // -------------------- folhas integralmente administrativas / calculadas
   [ABAS.RATEIO, ABAS.DASHBOARD, ABAS.LOG,
-   ABAS.PARAMETROS, ABAS.USUARIOS, ABAS.VEICULOS, ABAS.CENTROS, ABAS.HISTORICO, ABAS.EXCLUIDOS]
+   ABAS.PARAMETROS, ABAS.USUARIOS, ABAS.VEICULOS, ABAS.CENTROS, ABAS.HISTORICO, ABAS.EXCLUIDOS,
+   ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO]
     .forEach(function(nome) {
       const sheet = planilha.getSheetByName(nome);
       if (sheet) protegerFolhaPerfil_(sheet, nome, admins, []);
@@ -9172,63 +9198,293 @@ function webResumo(token, filtros) {
   };
 }
 
-/** Rateio calculado do zero, com a mesma regra da aba. */
-function webRateio(token) {
-  exigirPerfilToken_(token, PERFIS_ACESSO);
-  const resumo = lerResumo_();
-  const centrosSheet = aba_(ABAS.CENTROS);
-  const centros = centrosSheet.getLastRow() < 2 ? []
-    : centrosSheet.getRange(2, 1, centrosSheet.getLastRow() - 1, 3).getValues()
-      .filter(function (l) { return l[0]; });
+// ============================================================ V4.9: rateio por competência
+/**
+ * Por que esta aba existe.
+ *
+ * Ate a V4.8 o percentual de rateio vivia em UMA coluna da aba Centros de Custo:
+ * o valor corrente, sobrescrito a cada alteracao. Como o operador ajusta os
+ * percentuais todo mes antes de fechar, no instante em que ele mexia no % de
+ * novembro o rateio de OUTUBRO passava a ser recalculado com os numeros de
+ * novembro — e ninguem percebia, porque o TOTAL continua fechando. So a divisao
+ * entre as lojas mudava. O proprio codigo ja admitia o vao, em
+ * rateioExportacaoPeriodo_: "rateio percentual historico exato so existe quando
+ * a exportacao e criada durante a competencia".
+ *
+ * Agora cada competencia guarda seu proprio bloco de percentuais. A aba Centros
+ * continua existindo e continua sendo a fonte das FORMULAS da planilha (aba
+ * Rateio por Centro, Dashboard): gravar a competencia corrente espelha nela, de
+ * modo que nada na planilha precisou ser reescrito.
+ */
 
-  // custo direto de cada centro, somado a partir do Resumo
-  const direto = {};
-  resumo.forEach(function (l) {
-    const centro = String(l[R_.CENTRO] || '').trim() || '(sem centro)';
-    direto[centro] = (direto[centro] || 0) + (Number(l[R_.TOTAL]) || 0);
+/**
+ * Escreve o cabecalho se a aba ainda nao tiver.
+ *
+ * A aba e criada pelo instalador, mas nada impede uma gravacao acontecer antes
+ * de o usuario rodar "Instalar / atualizar". Sem isto a aba ficaria com dados a
+ * partir da linha 2 e a linha 1 em branco — funciona, mas parece defeito.
+ */
+function garantirCabecalhoAba_(sheet, nome) {
+  const cabecalho = CABECALHOS[nome];
+  if (!cabecalho) return;
+  const atual = sheet.getRange(1, 1, 1, cabecalho.length).getValues()[0];
+  if (String(atual[0] || '').trim()) return;
+  sheet.getRange(1, 1, 1, cabecalho.length).setValues([cabecalho]);
+}
+
+const COL_RM = { COMPETENCIA: 1, CENTRO: 2, PERCENTUAL: 3, RECEBE: 4, ATUALIZADO: 5, RESPONSAVEL: 6 };
+const TOTAL_COL_RM = totalColunas_(COL_RM);
+
+let RATEIO_MENSAL_EXEC_CACHE_ = null;
+
+function lerRateioMensal_() {
+  if (RATEIO_MENSAL_EXEC_CACHE_) return RATEIO_MENSAL_EXEC_CACHE_;
+  const sheet = ss_().getSheetByName(ABAS.RATEIO_MENSAL);
+  RATEIO_MENSAL_EXEC_CACHE_ = (sheet && sheet.getLastRow() >= 2)
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, TOTAL_COL_RM).getValues()
+      .filter(function (l) { return l[COL_RM.COMPETENCIA - 1] && l[COL_RM.CENTRO - 1]; })
+    : [];
+  return RATEIO_MENSAL_EXEC_CACHE_;
+}
+
+function invalidarCacheRateioMensal_() { RATEIO_MENSAL_EXEC_CACHE_ = null; }
+
+/** Percentuais gravados na aba Centros — a fonte corrente e o lastro de origem. */
+function percentuaisDosCentros_() {
+  const mapa = {};
+  dadosCentrosExecucao_().forEach(function (c) {
+    const nome = normalizarCentroCusto_(String(c[0] || '').trim());
+    if (!nome) return;
+    mapa[nome] = {
+      percentual: Number(c[1]) || 0,
+      recebe: String(c[2] || '').trim().toUpperCase() !== 'NAO',
+    };
+  });
+  return mapa;
+}
+
+/**
+ * Percentuais vigentes numa competencia.
+ *
+ * Nao grava nada ao ler. Se a competencia ainda nao tem bloco proprio, herda do
+ * mes gravado mais recente ANTERIOR a ela — e, na falta de qualquer historico,
+ * da aba Centros. A origem volta junto para a tela poder dizer de onde veio:
+ * "herdado de 2026-09" e um aviso util, "3,83%" sozinho nao e.
+ */
+function percentuaisDaCompetencia_(mesRef) {
+  const alvo = normalizarMesReferencia_(mesRef);
+  const porMes = {};
+  lerRateioMensal_().forEach(function (l) {
+    const mes = normalizarMesReferencia_(l[COL_RM.COMPETENCIA - 1]);
+    const nome = normalizarCentroCusto_(String(l[COL_RM.CENTRO - 1] || '').trim());
+    if (!nome) return;
+    (porMes[mes] || (porMes[mes] = {}))[nome] = {
+      percentual: Number(l[COL_RM.PERCENTUAL - 1]) || 0,
+      recebe: String(l[COL_RM.RECEBE - 1] || '').trim().toUpperCase() !== 'NAO',
+    };
   });
 
+  if (porMes[alvo]) return { percentuais: porMes[alvo], origem: alvo, proprio: true };
+
+  const anteriores = Object.keys(porMes).filter(function (m) { return m < alvo; }).sort();
+  if (anteriores.length) {
+    const herdado = anteriores[anteriores.length - 1];
+    return { percentuais: porMes[herdado], origem: herdado, proprio: false };
+  }
+  return { percentuais: percentuaisDosCentros_(), origem: 'cadastro', proprio: false };
+}
+
+/** Competencias que ja tem bloco gravado, mais recente primeiro. */
+function competenciasComRateio_() {
+  const vistos = {};
+  lerRateioMensal_().forEach(function (l) {
+    vistos[normalizarMesReferencia_(l[COL_RM.COMPETENCIA - 1])] = true;
+  });
+  return Object.keys(vistos).sort().reverse();
+}
+
+/**
+ * Grava (substituindo) o bloco de percentuais de uma competencia.
+ *
+ * Reescreve a aba inteira sem as linhas daquele mes e acrescenta as novas no fim.
+ * Com 200 centros x 60 meses isso e uma escrita so — bem mais barato que procurar
+ * e atualizar linha a linha, e sem o risco de deixar metade do bloco antigo.
+ */
+function gravarPercentuaisCompetencia_(mesRef, itens, responsavel) {
+  exigirExecucaoMutacao_();
+  const alvo = normalizarMesReferencia_(mesRef);
+  const sheet = aba_(ABAS.RATEIO_MENSAL, true);
+  garantirColunas_(sheet, TOTAL_COL_RM);
+  garantirCabecalhoAba_(sheet, ABAS.RATEIO_MENSAL);
+
+  const mantidas = lerRateioMensal_().filter(function (l) {
+    return normalizarMesReferencia_(l[COL_RM.COMPETENCIA - 1]) !== alvo;
+  });
+  const agora = new Date();
+  const quem = String(responsavel || emailContextoAtual_() || 'sistema');
+  const novas = itens.map(function (i) {
+    const linha = new Array(TOTAL_COL_RM).fill('');
+    linha[COL_RM.COMPETENCIA - 1] = alvo;
+    linha[COL_RM.CENTRO - 1] = i.centro;
+    linha[COL_RM.PERCENTUAL - 1] = i.percentual; // fracao (0,0383), como a aba Centros
+    linha[COL_RM.RECEBE - 1] = i.recebe ? 'SIM' : 'NAO';
+    linha[COL_RM.ATUALIZADO - 1] = agora;
+    linha[COL_RM.RESPONSAVEL - 1] = quem;
+    return linha;
+  });
+
+  const todas = mantidas.concat(novas);
+  garantirLinhas_(sheet, Math.max(LINHAS_MINIMAS[ABAS.RATEIO_MENSAL], todas.length + 50));
+  const ultima = sheet.getLastRow();
+  if (ultima >= 2) sheet.getRange(2, 1, ultima - 1, TOTAL_COL_RM).clearContent();
+  if (todas.length) {
+    sheet.getRange(2, 1, todas.length, TOTAL_COL_RM).setValues(todas);
+    sheet.getRange(2, COL_RM.PERCENTUAL, todas.length, 1).setNumberFormat('0.000%');
+    sheet.getRange(2, COL_RM.ATUALIZADO, todas.length, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  }
+  invalidarCacheRateioMensal_();
+  return todas.length;
+}
+
+/**
+ * Espelha os percentuais de uma competencia na aba Centros de Custo.
+ *
+ * So faz sentido para a competencia CORRENTE: as formulas da planilha (aba Rateio
+ * por Centro, Dashboard, validarSistema_) leem Centros!B e nao sabem de competencia
+ * nenhuma. Sem o espelho, a planilha mostraria um rateio e o app mostraria outro.
+ */
+function espelharPercentuaisNosCentros_(percentuais) {
+  exigirExecucaoMutacao_();
+  const sheet = aba_(ABAS.CENTROS);
+  if (sheet.getLastRow() < 2) return 0;
+  const n = sheet.getLastRow() - 1;
+  const intervalo = sheet.getRange(2, 1, n, 3);
+  const valores = intervalo.getValues();
+  let alterados = 0;
+  valores.forEach(function (linha) {
+    const nome = normalizarCentroCusto_(String(linha[0] || '').trim());
+    const novo = nome && percentuais[nome];
+    if (!novo) return;
+    const recebe = novo.recebe ? 'SIM' : 'NAO';
+    if (Number(linha[1]) === novo.percentual && String(linha[2]).toUpperCase() === recebe) return;
+    linha[1] = novo.percentual;
+    linha[2] = recebe;
+    alterados++;
+  });
+  if (alterados) {
+    intervalo.setValues(valores);
+    sheet.getRange(2, 2, n, 1).setNumberFormat('0.000%');
+    CENTROS_EXEC_CACHE_ = null;
+  }
+  return alterados;
+}
+
+/**
+ * Custo direto por centro numa competencia qualquer.
+ *
+ * Para a competencia corrente usa o Resumo ja calculado (barato, vem do cache).
+ * Para meses passados RECALCULA com calcularLinhasResumo_, que e funcao pura
+ * sobre o periodo — e o que torna o historico util em vez de apenas arquivado.
+ *
+ * Ressalva honesta, devolvida junto em `aproximado`: emplacamento e seguro saem
+ * do cadastro ATUAL do veiculo, e veiculos excluidos do cadastro nao aparecem.
+ * Despesa lancada (combustivel, oficina, IPVA, depreciacao) e exata.
+ */
+function custoDiretoPorCentro_(mesRef) {
+  const alvo = normalizarMesReferencia_(mesRef);
+  const corrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const linhas = alvo === corrente ? lerResumo_() : calcularLinhasResumo_(periodoDoMes_(alvo));
+  const direto = {};
+  linhas.forEach(function (l) {
+    const centro = normalizarCentroCusto_(String(l[R_.CENTRO] || '').trim()) || '(sem centro)';
+    direto[centro] = (direto[centro] || 0) + (Number(l[R_.TOTAL]) || 0);
+  });
+  return { direto: direto, aproximado: alvo !== corrente, corrente: corrente };
+}
+
+/**
+ * Nucleo da apuracao do rateio de uma competencia.
+ *
+ * Extraido de webRateio porque o orcamento precisa EXATAMENTE do mesmo numero:
+ * se cada tela somasse o seu, "realizado" e "total do centro" divergiriam e
+ * ninguem saberia qual acreditar.
+ */
+function apurarRateio_(mesRef) {
+  const alvo = normalizarMesReferencia_(mesRef || param_('MES_REFERENCIA'));
+  const apuracao = custoDiretoPorCentro_(alvo);
+  const direto = apuracao.direto;
+  const vigente = percentuaisDaCompetencia_(alvo);
+  const percentuais = vigente.percentuais;
+
   const base = String(param_('BASE_RATEIO')).split(',')
-    .map(function (n) { return n.trim(); })
+    .map(function (n) { return normalizarCentroCusto_(n.trim()); })
     .filter(function (n) { return n; });
   const valorBase = base.reduce(function (soma, nome) { return soma + (direto[nome] || 0); }, 0);
 
   // Os percentuais herdados da planilha antiga somam 100,001%. Sem normalizar,
-  // o rateio distribuiria mais do que existe e não fecharia com o Resumo.
-  const somaPercentual = centros.reduce(function (s, c) { return s + (Number(c[1]) || 0); }, 0);
+  // o rateio distribuiria mais do que existe e nao fecharia com o Resumo.
+  const nomes = Object.keys(percentuais).sort();
+  const somaPercentual = nomes.reduce(function (s, n) { return s + percentuais[n].percentual; }, 0);
   const fator = somaPercentual > 0 ? 1 / somaPercentual : 0;
 
-  const linhas = centros.map(function (c) {
-    const nome = String(c[0]).trim();
-    const percentual = Number(c[1]) || 0;
-    const recebe = String(c[2]).toUpperCase() === 'SIM';
+  const linhas = nomes.map(function (nome) {
+    const percentual = percentuais[nome].percentual;
+    const recebe = percentuais[nome].recebe;
     const custoDireto = direto[nome] || 0;
     const rateio = recebe ? valorBase * percentual * fator : 0;
     const distribuido = base.indexOf(nome) !== -1 ? -custoDireto : 0;
-    return [nome, custoDireto, percentual * 100, rateio, distribuido,
-      custoDireto + rateio + distribuido];
+    return { centro: nome, direto: custoDireto, percentual: percentual, recebe: recebe,
+      rateio: rateio, distribuido: distribuido, total: custoDireto + rateio + distribuido,
+      orfao: false };
   });
 
-  // Um veículo cujo centro não está cadastrado sairia da tabela em silêncio e o
-  // rateio deixaria de fechar com o Resumo. Melhor mostrar a sobra do que escondê-la.
-  const cadastrados = {};
-  centros.forEach(function (c) { cadastrados[String(c[0]).trim()] = true; });
+  // Um veiculo cujo centro nao esta cadastrado sairia da tabela em silencio e o
+  // rateio deixaria de fechar com o Resumo. Melhor mostrar a sobra do que esconde-la.
   const orfaos = Object.keys(direto).filter(function (nome) {
-    return !cadastrados[nome] && direto[nome];
+    return !percentuais[nome] && direto[nome];
   });
   orfaos.forEach(function (nome) {
-    linhas.push([nome + '  ⚠ não cadastrado', direto[nome], 0, 0, 0, direto[nome]]);
+    linhas.push({ centro: nome, direto: direto[nome], percentual: 0, recebe: false,
+      rateio: 0, distribuido: 0, total: direto[nome], orfao: true });
   });
 
-  linhas.sort(function (a, b) { return b[5] - a[5]; });
+  linhas.sort(function (a, b) { return b.total - a.total; });
 
-  const avisos = [avisoPercentual_(somaPercentual)];
-  if (orfaos.length) {
-    avisos.push('⚠ ' + orfaos.length + ' centro(s) de custo aparecem nos veículos mas ' +
-      'não estão cadastrados: ' + orfaos.join(', ') + '.');
+  return { competencia: alvo, linhas: linhas, orfaos: orfaos, valorBase: valorBase,
+    somaPercentual: somaPercentual, origemPercentuais: vigente.origem,
+    proprio: vigente.proprio, aproximado: apuracao.aproximado };
+}
+
+function webRateio(token, mesRef) {
+  exigirPerfilToken_(token, PERFIS_ACESSO);
+  const a = apurarRateio_(mesRef);
+
+  const avisos = [avisoPercentual_(a.somaPercentual)];
+  if (!a.proprio) {
+    avisos.push(a.origemPercentuais === 'cadastro'
+      ? '⚠ Esta competência ainda não tem percentuais próprios; está usando os da aba ' +
+        ABAS.CENTROS + '. Salve na tela de centros para congelá-los aqui.'
+      : '⚠ Percentuais herdados de ' + a.origemPercentuais + ' — esta competência ainda não ' +
+        'tem os seus. Salve na tela de centros para congelá-los.');
+  }
+  if (a.aproximado) {
+    avisos.push('Competência encerrada, recalculada a partir dos lançamentos. Emplacamento ' +
+      'e seguro usam o cadastro atual do veículo.');
+  }
+  if (a.orfaos.length) {
+    avisos.push('⚠ ' + a.orfaos.length + ' centro(s) de custo aparecem nos veículos mas ' +
+      'não estão cadastrados: ' + a.orfaos.join(', ') + '.');
   }
 
+  const linhas = a.linhas.map(function (l) {
+    return [l.centro + (l.orfao ? '  ⚠ não cadastrado' : ''), l.direto,
+      l.percentual * 100, l.rateio, l.distribuido, l.total];
+  });
+
   return {
+    competencia: a.competencia,
+    competencias: competenciasDisponiveis_(),
+    origemPercentuais: a.origemPercentuais,
     colunas: [col_('Centro de Custo'), col_('Custo Direto', 'moeda'), col_('% Rateio', 'decimal'),
       col_('Rateio Recebido', 'moeda'), col_('Distribuído', 'moeda'), col_('TOTAL', 'moeda')],
     linhas: linhas,
@@ -9237,7 +9493,376 @@ function webRateio(token) {
       linhas.reduce(function (s, l) { return s + l[3]; }, 0),
       linhas.reduce(function (s, l) { return s + l[4]; }, 0),
       linhas.reduce(function (s, l) { return s + l[5]; }, 0)],
-    mensagem: avisos.filter(function (a) { return a; }).join(' '),
+    mensagem: avisos.filter(function (x) { return x; }).join(' '),
+  };
+}
+
+/** Competencias que o usuario pode escolher: as fechadas, as com rateio e a corrente. */
+function competenciasDisponiveis_() {
+  const vistos = {};
+  const corrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  vistos[corrente] = true;
+  competenciasComRateio_().forEach(function (m) { vistos[m] = true; });
+  const hist = ss_().getSheetByName(ABAS.HISTORICO);
+  if (hist && hist.getLastRow() >= 2) {
+    hist.getRange(2, 1, hist.getLastRow() - 1, 1).getValues().forEach(function (l) {
+      const m = String(l[0] || '').trim();
+      if (/^\d{4}-\d{2}$/.test(m)) vistos[m] = true;
+    });
+  }
+  return Object.keys(vistos).sort().reverse();
+}
+
+/**
+ * Lista de centros para edicao, com o percentual VIGENTE na competencia pedida.
+ *
+ * A tela era so leitura e mandava "edite na planilha". Como o ajuste e mensal e
+ * rotineiro, ele passou a caber aqui — ver webSalvarRateioLote.
+ */
+function webCentros(token, mesRef) {
+  exigirPerfilToken_(token, PERFIS_ACESSO);
+  const corrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const alvo = normalizarMesReferencia_(mesRef || corrente);
+  const vigente = percentuaisDaCompetencia_(alvo);
+  const percentuais = vigente.percentuais;
+  // A aba Centros define QUEM existe; a competencia define QUANTO. Um centro
+  // cadastrado depois do mes herdado apareceria zerado e passaria despercebido.
+  const cadastrados = percentuaisDosCentros_();
+  const nomes = Object.keys(cadastrados).concat(Object.keys(percentuais))
+    .filter(function (n, i, a) { return a.indexOf(n) === i; })
+    .sort();
+
+  const itens = nomes.map(function (nome) {
+    const p = percentuais[nome] || cadastrados[nome] || { percentual: 0, recebe: true };
+    return { centro: nome, percentual: p.percentual * 100, recebe: p.recebe,
+      novo: !percentuais[nome] };
+  });
+  const soma = itens.reduce(function (s, i) { return s + i.percentual; }, 0);
+
+  return {
+    competencia: alvo,
+    competencias: competenciasDisponiveis_(),
+    corrente: corrente,
+    editavel: alvo >= corrente,
+    origem: vigente.origem,
+    proprio: vigente.proprio,
+    itens: itens,
+    soma: soma,
+    colunas: [col_('Centro de Custo'), col_('% Rateio', 'decimal'), col_('Recebe Rateio')],
+    linhas: itens.map(function (i) { return [i.centro, i.percentual, i.recebe ? 'SIM' : 'NAO']; }),
+    totais: [null, soma, null],
+  };
+}
+
+/**
+ * Grava de uma vez todos os percentuais editados na tela.
+ *
+ * Em lote de proposito: o ajuste mensal mexe em varias lojas ao mesmo tempo, e
+ * salvar uma a uma deixaria a base num estado intermediario em que a soma nao
+ * fecha — exatamente o estado que o aviso de 100% existe para denunciar.
+ *
+ * O percentual chega em % (3,83) e e gravado como fracao (0,0383), que e o que a
+ * coluna guarda e o que o rateio soma. Gravar 3,83 ali faria o centro receber
+ * trezentas e oitenta e tres vezes a base.
+ */
+function webSalvarRateioLote(token, dados) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const corrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const alvo = normalizarMesReferencia_((dados && dados.competencia) || corrente);
+  if (alvo < corrente) {
+    return { ok: false, mensagem: 'A competência ' + alvo + ' já foi encerrada. ' +
+      'Os percentuais dela ficam como estão, que é o motivo de existirem por competência.' };
+  }
+  const itens = (dados && dados.itens) || [];
+  if (!itens.length) return { ok: false, mensagem: 'Nenhum centro foi enviado.' };
+
+  const cadastrados = percentuaisDosCentros_();
+  const limpos = [];
+  for (let i = 0; i < itens.length; i++) {
+    const nome = normalizarCentroCusto_(String(itens[i].centro || '').trim());
+    if (!nome) return { ok: false, mensagem: 'Linha ' + (i + 1) + ': centro de custo em branco.' };
+    if (!cadastrados[nome]) {
+      return { ok: false, mensagem: 'Centro não encontrado: ' + nome +
+        '. Centros novos são criados na aba "' + ABAS.CENTROS + '".' };
+    }
+    const bruto = String(itens[i].percentual === undefined ? '' : itens[i].percentual)
+      .trim().replace(',', '.');
+    const percentual = Number(bruto);
+    if (bruto === '' || !isFinite(percentual) || percentual < 0 || percentual > 100) {
+      return { ok: false, mensagem: nome + ': o percentual precisa ser um número entre 0 e 100.' };
+    }
+    limpos.push({ centro: nome, percentual: percentual / 100, recebe: itens[i].recebe !== false });
+  }
+
+  const anterior = percentuaisDaCompetencia_(alvo);
+  gravarPercentuaisCompetencia_(alvo, limpos, emailContextoAtual_());
+
+  // Espelha na aba Centros so quando e a competencia corrente: as formulas da
+  // planilha leem Centros!B e nao conhecem competencia.
+  const mapa = {};
+  limpos.forEach(function (i) { mapa[i.centro] = { percentual: i.percentual, recebe: i.recebe }; });
+  if (alvo === corrente) espelharPercentuaisNosCentros_(mapa);
+
+  invalidarCacheInicio_();
+  const mudancas = limpos.filter(function (i) {
+    const a = anterior.percentuais[i.centro];
+    return !a || Math.abs(a.percentual - i.percentual) > 1e-9 || a.recebe !== i.recebe;
+  });
+  registrarLog_('Rateio da competência ' + alvo,
+    mudancas.length + ' centro(s) alterado(s): ' + (mudancas.map(function (i) {
+      const a = anterior.percentuais[i.centro];
+      return i.centro + ' ' + ((a ? a.percentual : 0) * 100).toFixed(3) + '% -> ' +
+        (i.percentual * 100).toFixed(3) + '%';
+    }).join(' • ') || 'nenhum valor mudou'));
+
+  const soma = limpos.reduce(function (s, i) { return s + i.percentual; }, 0) * 100;
+  // A soma nao BLOQUEIA: o rateio e normalizado por Sigma% e fecha com o Resumo de
+  // qualquer jeito. Mas somar diferente de 100 quase sempre e digitacao pela metade,
+  // e o operador precisa saber disso agora, nao no fechamento.
+  const aviso = Math.abs(soma - 100) > 0.01
+    ? ' Atenção: os percentuais somam ' + soma.toFixed(3) + '%, não 100%. ' +
+      'O rateio é normalizado e continua fechando com o Resumo, mas confira se ficou faltando alguém.'
+    : '';
+  return {
+    ok: true,
+    soma: soma,
+    competencia: alvo,
+    alterados: mudancas.length,
+    mensagem: 'Rateio de ' + alvo + ' gravado — ' + mudancas.length +
+      ' centro(s) alterado(s).' + aviso,
+  };
+}
+
+// ============================================================ V4.9: orçamento por centro
+/**
+ * O sistema media o custo com precisao de centavo e nao tinha NADA com que
+ * compara-lo. "A Loja 08 gastou R$ 41.230" nao diz se foi bom ou ruim.
+ *
+ * O orcamento e gravado por competencia, igual ao rateio e pelo mesmo motivo: o
+ * previsto de outubro tem de continuar sendo o previsto de outubro depois que
+ * novembro for ajustado.
+ *
+ * O realizado NAO e o custo direto: e o TOTAL do centro depois do rateio — o
+ * mesmo numero da tela de rateio. Comparar previsto com custo direto deixaria de
+ * fora justamente a parcela do deposito que a loja recebe.
+ */
+const COL_ORC = { COMPETENCIA: 1, CENTRO: 2, VALOR: 3, ATUALIZADO: 4, RESPONSAVEL: 5 };
+const TOTAL_COL_ORC = totalColunas_(COL_ORC);
+
+let ORCAMENTO_EXEC_CACHE_ = null;
+
+function lerOrcamento_() {
+  if (ORCAMENTO_EXEC_CACHE_) return ORCAMENTO_EXEC_CACHE_;
+  const sheet = ss_().getSheetByName(ABAS.ORCAMENTO);
+  ORCAMENTO_EXEC_CACHE_ = (sheet && sheet.getLastRow() >= 2)
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, TOTAL_COL_ORC).getValues()
+      .filter(function (l) { return l[COL_ORC.COMPETENCIA - 1] && l[COL_ORC.CENTRO - 1]; })
+    : [];
+  return ORCAMENTO_EXEC_CACHE_;
+}
+
+function invalidarCacheOrcamento_() { ORCAMENTO_EXEC_CACHE_ = null; }
+
+/** Previsto por centro na competencia; herda do mes gravado anterior, como o rateio. */
+function orcamentoDaCompetencia_(mesRef) {
+  const alvo = normalizarMesReferencia_(mesRef);
+  const porMes = {};
+  lerOrcamento_().forEach(function (l) {
+    const mes = normalizarMesReferencia_(l[COL_ORC.COMPETENCIA - 1]);
+    const nome = normalizarCentroCusto_(String(l[COL_ORC.CENTRO - 1] || '').trim());
+    if (!nome) return;
+    (porMes[mes] || (porMes[mes] = {}))[nome] = Number(l[COL_ORC.VALOR - 1]) || 0;
+  });
+  if (porMes[alvo]) return { valores: porMes[alvo], origem: alvo, proprio: true };
+  const anteriores = Object.keys(porMes).filter(function (m) { return m < alvo; }).sort();
+  if (anteriores.length) {
+    const herdado = anteriores[anteriores.length - 1];
+    return { valores: porMes[herdado], origem: herdado, proprio: false };
+  }
+  return { valores: {}, origem: '', proprio: false };
+}
+
+function gravarOrcamentoCompetencia_(mesRef, itens, responsavel) {
+  exigirExecucaoMutacao_();
+  const alvo = normalizarMesReferencia_(mesRef);
+  const sheet = aba_(ABAS.ORCAMENTO, true);
+  garantirColunas_(sheet, TOTAL_COL_ORC);
+  garantirCabecalhoAba_(sheet, ABAS.ORCAMENTO);
+
+  const mantidas = lerOrcamento_().filter(function (l) {
+    return normalizarMesReferencia_(l[COL_ORC.COMPETENCIA - 1]) !== alvo;
+  });
+  const agora = new Date();
+  const quem = String(responsavel || emailContextoAtual_() || 'sistema');
+  const novas = itens.map(function (i) {
+    const linha = new Array(TOTAL_COL_ORC).fill('');
+    linha[COL_ORC.COMPETENCIA - 1] = alvo;
+    linha[COL_ORC.CENTRO - 1] = i.centro;
+    linha[COL_ORC.VALOR - 1] = i.valor;
+    linha[COL_ORC.ATUALIZADO - 1] = agora;
+    linha[COL_ORC.RESPONSAVEL - 1] = quem;
+    return linha;
+  });
+
+  const todas = mantidas.concat(novas);
+  garantirLinhas_(sheet, Math.max(LINHAS_MINIMAS[ABAS.ORCAMENTO], todas.length + 50));
+  const ultima = sheet.getLastRow();
+  if (ultima >= 2) sheet.getRange(2, 1, ultima - 1, TOTAL_COL_ORC).clearContent();
+  if (todas.length) {
+    sheet.getRange(2, 1, todas.length, TOTAL_COL_ORC).setValues(todas);
+    sheet.getRange(2, COL_ORC.VALOR, todas.length, 1).setNumberFormat('R$ #,##0.00');
+    sheet.getRange(2, COL_ORC.ATUALIZADO, todas.length, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  }
+  invalidarCacheOrcamento_();
+  return todas.length;
+}
+
+/**
+ * Fracao do periodo ja decorrida, usada na projecao.
+ *
+ * Devolve 1 para competencia encerrada (nada a projetar) e nunca menos que um
+ * dia: no primeiro dia do periodo, dividir por zero mandaria a projecao ao
+ * infinito e a tela mostraria "estouro" em toda loja que gastasse um real.
+ */
+function fracaoPeriodoDecorrida_(periodo, agora) {
+  const hoje = agora || new Date();
+  const dia = 24 * 60 * 60 * 1000;
+  const total = Math.max(1, Math.round((periodo.fim - periodo.inicio) / dia) + 1);
+  if (hoje >= periodo.fim) return { fracao: 1, decorridos: total, total: total };
+  if (hoje <= periodo.inicio) return { fracao: 1 / total, decorridos: 1, total: total };
+  const decorridos = Math.max(1, Math.round((hoje - periodo.inicio) / dia) + 1);
+  return { fracao: Math.min(1, decorridos / total), decorridos: decorridos, total: total };
+}
+
+function webOrcamento(token, mesRef) {
+  exigirPerfilToken_(token, PERFIS_ACESSO);
+  const corrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const alvo = normalizarMesReferencia_(mesRef || corrente);
+  const apuracao = apurarRateio_(alvo);
+  const previsto = orcamentoDaCompetencia_(alvo);
+  const periodo = periodoDoMes_(alvo);
+  const andamento = alvo === corrente
+    ? fracaoPeriodoDecorrida_(periodo)
+    : { fracao: 1, decorridos: 0, total: 0 };
+
+  // Realizado = TOTAL do centro depois do rateio, igual a tela de rateio.
+  const realizado = {};
+  apuracao.linhas.forEach(function (l) { realizado[l.centro] = l.total; });
+
+  const nomes = Object.keys(previsto.valores).concat(Object.keys(realizado))
+    .filter(function (n, i, a) { return a.indexOf(n) === i; })
+    .filter(function (n) { return (previsto.valores[n] || 0) > 0 || (realizado[n] || 0) !== 0; })
+    .sort();
+
+  const linhas = nomes.map(function (nome) {
+    const prev = Number(previsto.valores[nome]) || 0;
+    const real = Number(realizado[nome]) || 0;
+    const projetado = andamento.fracao > 0 ? real / andamento.fracao : real;
+    const desvio = real - prev;
+    const desvioPct = prev > 0 ? (desvio / prev) * 100 : 0;
+    let situacao;
+    if (prev <= 0) situacao = 'SEM ORÇAMENTO';
+    else if (real > prev) situacao = 'ESTOUROU';
+    else if (projetado > prev) situacao = 'VAI ESTOURAR';
+    else situacao = 'DENTRO';
+    return [nome, prev, real, desvio, desvioPct, projetado, situacao];
+  });
+
+  linhas.sort(function (a, b) { return b[4] - a[4]; });
+
+  const avisos = [];
+  if (!nomes.length) {
+    avisos.push('Nenhum orçamento lançado ainda. Informe o previsto de cada centro ' +
+      'para a tela passar a comparar.');
+  } else if (!previsto.proprio && previsto.origem) {
+    avisos.push('⚠ Orçamento herdado de ' + previsto.origem + ' — esta competência ainda ' +
+      'não tem o seu. Salve para congelá-lo aqui.');
+  }
+  if (alvo === corrente && andamento.total) {
+    avisos.push('Período ' + andamento.decorridos + '/' + andamento.total + ' dias. ' +
+      'A projeção repete até o fim o ritmo de gasto até aqui.');
+  }
+  if (apuracao.aproximado) {
+    avisos.push('Competência encerrada, recalculada a partir dos lançamentos.');
+  }
+
+  return {
+    competencia: alvo,
+    competencias: competenciasDisponiveis_(),
+    corrente: corrente,
+    editavel: alvo >= corrente,
+    origem: previsto.origem,
+    proprio: previsto.proprio,
+    // Para EDITAR vem a lista completa de centros cadastrados, nao a filtrada da
+    // tabela: um centro novo, ainda sem gasto nem previsto, nao apareceria em
+    // `nomes` e ficaria impossivel de orcar pela tela.
+    itens: Object.keys(percentuaisDosCentros_()).sort().map(function (n) {
+      return { centro: n, valor: Number(previsto.valores[n]) || 0 };
+    }),
+    colunas: [col_('Centro de Custo'), col_('Previsto', 'moeda'), col_('Realizado', 'moeda'),
+      col_('Desvio R$', 'moeda'), col_('Desvio %', 'decimal'),
+      col_('Projeção fim do período', 'moeda'), col_('Situação')],
+    linhas: linhas,
+    totais: [null,
+      linhas.reduce(function (s, l) { return s + l[1]; }, 0),
+      linhas.reduce(function (s, l) { return s + l[2]; }, 0),
+      linhas.reduce(function (s, l) { return s + l[3]; }, 0),
+      null,
+      linhas.reduce(function (s, l) { return s + l[5]; }, 0),
+      null],
+    mensagem: avisos.join(' '),
+  };
+}
+
+function webSalvarOrcamento(token, dados) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const corrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const alvo = normalizarMesReferencia_((dados && dados.competencia) || corrente);
+  if (alvo < corrente) {
+    return { ok: false, mensagem: 'A competência ' + alvo + ' já foi encerrada; ' +
+      'o orçamento dela fica como está.' };
+  }
+  const itens = (dados && dados.itens) || [];
+  if (!itens.length) return { ok: false, mensagem: 'Nenhum centro foi enviado.' };
+
+  const cadastrados = percentuaisDosCentros_();
+  const limpos = [];
+  for (let i = 0; i < itens.length; i++) {
+    const nome = normalizarCentroCusto_(String(itens[i].centro || '').trim());
+    if (!nome) return { ok: false, mensagem: 'Linha ' + (i + 1) + ': centro de custo em branco.' };
+    if (!cadastrados[nome]) {
+      return { ok: false, mensagem: 'Centro não encontrado: ' + nome +
+        '. Centros novos são criados na aba "' + ABAS.CENTROS + '".' };
+    }
+    const bruto = String(itens[i].valor === undefined ? '' : itens[i].valor).trim()
+      .replace(/\./g, '').replace(',', '.');
+    const valor = bruto === '' ? 0 : Number(bruto);
+    if (!isFinite(valor) || valor < 0) {
+      return { ok: false, mensagem: nome + ': o valor previsto precisa ser um número maior ou igual a zero.' };
+    }
+    limpos.push({ centro: nome, valor: valor });
+  }
+
+  const anterior = orcamentoDaCompetencia_(alvo);
+  gravarOrcamentoCompetencia_(alvo, limpos, emailContextoAtual_());
+  const mudancas = limpos.filter(function (i) {
+    return Math.abs((Number(anterior.valores[i.centro]) || 0) - i.valor) > 0.005;
+  });
+  registrarLog_('Orçamento da competência ' + alvo,
+    mudancas.length + ' centro(s): ' + (mudancas.map(function (i) {
+      return i.centro + ' ' + (Number(anterior.valores[i.centro]) || 0).toFixed(2) +
+        ' -> ' + i.valor.toFixed(2);
+    }).join(' • ') || 'nenhum valor mudou'));
+
+  const total = limpos.reduce(function (s, i) { return s + i.valor; }, 0);
+  return {
+    ok: true,
+    competencia: alvo,
+    alterados: mudancas.length,
+    total: total,
+    mensagem: 'Orçamento de ' + alvo + ' gravado — ' + mudancas.length +
+      ' centro(s) alterado(s). Previsto total: R$ ' +
+      total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '.',
   };
 }
 
@@ -9424,78 +10049,6 @@ function webVeiculo(token, placaOuPatrimonio) {
     depreciacao: l[5], emplacamento: l[6], seguro: l[7], bonus: l[8],
     precoCombustivel: l[9], ativo: String(l[10]).toUpperCase() !== 'NAO',
     aba: l[11], ipva: Number(l[12]) || 0,
-  };
-}
-
-/**
- * Altera o percentual de rateio e o "recebe rateio" de um centro ja cadastrado.
- *
- * Criar centro continua sendo pela aba: um centro novo sem percentual desequilibra
- * a base de rateio no mesmo instante, e isso merece a deliberacao de abrir a
- * planilha, nao um botao.
- *
- * O percentual chega em % (35) e e gravado como fracao (0,35), que e o que a
- * coluna guarda e o que webRateio soma. Gravar 35 ali faria o centro receber
- * trinta e cinco vezes a base.
- */
-function webSalvarCentro(token, dados) {
-  autorizarContextoWeb_(token, 'ADMIN');
-  const nome = normalizarCentroCusto_(String((dados && dados.centro) || '').trim());
-  if (!nome) return { ok: false, mensagem: 'Escolha o centro de custo.' };
-
-  let percentual = Number(String((dados && dados.percentual) !== undefined
-    ? dados.percentual : '').toString().replace(',', '.'));
-  if (!isFinite(percentual) || percentual < 0 || percentual > 100) {
-    return { ok: false, mensagem: 'O percentual de rateio precisa ser um número entre 0 e 100.' };
-  }
-  const recebe = dados && dados.recebe === false ? 'NAO' : 'SIM';
-
-  const sheet = aba_(ABAS.CENTROS);
-  if (sheet.getLastRow() < 2) return { ok: false, mensagem: 'Nenhum centro cadastrado ainda.' };
-  const linhas = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
-  let alvo = -1;
-  for (let i = 0; i < linhas.length; i++) {
-    if (normalizarCentroCusto_(String(linhas[i][0] || '').trim()) === nome) { alvo = i; break; }
-  }
-  if (alvo === -1) {
-    return { ok: false, mensagem: 'Centro não encontrado: ' + nome +
-      '. Centros novos são criados na aba "' + ABAS.CENTROS + '".' };
-  }
-
-  const anterior = Number(linhas[alvo][1]) || 0;
-  sheet.getRange(alvo + 2, 2, 1, 2).setValues([[percentual / 100, recebe]]);
-  sheet.getRange(alvo + 2, 2).setNumberFormat('0.000%');
-  CENTROS_EXEC_CACHE_ = null;
-  invalidarCacheInicio_();
-  registrarLog_('Rateio do centro', nome + ': ' +
-    (anterior * 100).toFixed(3) + '% -> ' + percentual.toFixed(3) + '% • recebe ' + recebe);
-
-  // A soma nao BLOQUEIA: webRateio normaliza por Sigma%, entao o rateio fecha com o
-  // Resumo de qualquer jeito. Mas somar diferente de 100 quase sempre e digitacao
-  // pela metade, e o operador precisa saber disso agora, nao no fechamento.
-  const soma = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues()
-    .reduce(function (t, l) { return t + (Number(l[0]) || 0); }, 0) * 100;
-  const aviso = Math.abs(soma - 100) > 0.01
-    ? ' Atenção: os percentuais somam ' + soma.toFixed(3) + '%, não 100%. ' +
-      'O rateio é normalizado e continua fechando com o Resumo, mas confira se ficou faltando alguém.'
-    : '';
-  return {
-    ok: true,
-    soma: soma,
-    mensagem: nome + ' agora rateia ' + percentual.toFixed(3).replace('.', ',') + '%.' + aviso,
-  };
-}
-
-function webCentros(token) {
-  exigirPerfilToken_(token, PERFIS_ACESSO);
-  const sheet = aba_(ABAS.CENTROS);
-  if (sheet.getLastRow() < 2) return { colunas: [], linhas: [] };
-  const dados = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues()
-    .filter(function (l) { return l[0]; });
-  return {
-    colunas: [col_('Centro de Custo'), col_('% Rateio', 'decimal'), col_('Recebe Rateio')],
-    linhas: dados.map(function (l) { return [l[0], (Number(l[1]) || 0) * 100, l[2]]; }),
-    totais: [null, dados.reduce(function (s, l) { return s + (Number(l[1]) || 0); }, 0) * 100, null],
   };
 }
 
@@ -10081,7 +10634,38 @@ function webSalvarParametro(token, nome, valor) {
     valor = String(valor || '').trim().slice(0, 500);
     if (!valor) return { ok: false, mensagem: 'BASE_RATEIO não pode ficar vazia.' };
   }
+  if (nome === 'EMAIL_ALERTAS') {
+    // Vazio e valido: e como se desliga o alerta diario.
+    valor = String(valor || '').trim().slice(0, 500);
+    if (valor) {
+      const invalidos = valor.split(/[,;]/).map(function (e) { return e.trim(); })
+        .filter(function (e) { return e && (e.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)); });
+      if (invalidos.length) {
+        return { ok: false, mensagem: 'E-mail inválido em EMAIL_ALERTAS: ' + invalidos.join(', ') + '.' };
+      }
+    }
+  }
+  if (nome === 'HORA_ALERTA') {
+    const hora = Math.floor(Number(valor));
+    if (!isFinite(hora) || hora < 0 || hora > 23) {
+      return { ok: false, mensagem: 'HORA_ALERTA precisa ser um número de 0 a 23.' };
+    }
+    valor = hora;
+  }
+  if (nome === 'ESTOQUE_MINIMO_L') {
+    const litros = Number(String(valor).replace(',', '.'));
+    if (!isFinite(litros) || litros < 0) {
+      return { ok: false, mensagem: 'ESTOQUE_MINIMO_L precisa ser um número maior ou igual a zero.' };
+    }
+    valor = litros;
+  }
   gravarParam_(nome, valor);
+  // O gatilho guarda a hora dentro dele; mudar o parametro sem recria-lo deixaria
+  // o alerta saindo no horario antigo para sempre.
+  if (nome === 'HORA_ALERTA') {
+    try { garantirTriggerAlertaDiario_(); }
+    catch (e) { console.error('recriar gatilho do alerta: ' + e.message); }
+  }
   if (recalcularCompetencia) {
     // gravarParam_ já zerou PARAM_EXEC_CACHE_, então aqui a fórmula nova
     // sai com o corte novo.
@@ -10656,6 +11240,279 @@ function removerTriggersLegados_() {
   return removidos;
 }
 
+// ============================================================ V4.9: alerta diário
+/**
+ * Tudo o que este alerta conta JA EXISTIA no sistema — e so aparecia para quem
+ * abrisse a tela e procurasse. Um tanque no fim, uma leitura de odometro que
+ * retrocedeu e um IPVA esquecido nao melhoram sozinhos: eles pioram em silencio
+ * ate o fechamento. O gatilho diario inverte isso.
+ *
+ * Duas regras de desenho:
+ *  - Nao manda nada quando nao ha nada. Um e-mail diario dizendo "tudo certo"
+ *    vira filtro no Outlook em duas semanas, e junto com ele some o dia em que
+ *    havia algo.
+ *  - Reusa os MESMOS criterios das telas. O alerta de custo por km, por exemplo,
+ *    e a regra identica a da formatacao condicional do Resumo (acima de 2x a
+ *    media da frota). Dois criterios parecidos mas diferentes seriam pior que
+ *    nenhum: a tela diria uma coisa e o e-mail outra.
+ */
+const FUNCAO_ALERTA_DIARIO_ = 'enviarAlertasDiariosAgendado_';
+const ESTOQUE_MINIMO_PADRAO_ = 500;
+
+/** Veiculos com custo por km ou consumo fora da curva na competencia aberta. */
+function alertasConsumo_() {
+  const linhas = lerResumo_().filter(function (l) { return Number(l[R_.KM]) > 0; });
+  if (!linhas.length) return [];
+
+  const kmTotal = linhas.reduce(function (s, l) { return s + (Number(l[R_.KM]) || 0); }, 0);
+  const custoTotal = linhas.reduce(function (s, l) { return s + (Number(l[R_.TOTAL]) || 0); }, 0);
+  const litrosTotal = linhas.reduce(function (s, l) { return s + (Number(l[R_.LITROS]) || 0); }, 0);
+  // Media da frota = total/total, nunca media das medias: um carro que rodou
+  // 200 km pesaria igual a um caminhao que rodou 20.000.
+  const custoKmFrota = kmTotal > 0 ? custoTotal / kmTotal : 0;
+  const kmLitroFrota = litrosTotal > 0 ? kmTotal / litrosTotal : 0;
+
+  const achados = [];
+  linhas.forEach(function (l) {
+    const placa = String(l[R_.PLACA] || '');
+    const custoKm = Number(l[R_.RS_KM]) || 0;
+    const kmLitro = Number(l[R_.KM_LITRO]) || 0;
+    if (custoKmFrota > 0 && custoKm > 2 * custoKmFrota) {
+      achados.push(placa + ' — custo por km R$ ' + custoKm.toFixed(3) +
+        ', mais que o dobro da média da frota (R$ ' + custoKmFrota.toFixed(3) + ')');
+    }
+    if (kmLitroFrota > 0 && kmLitro > 0 && kmLitro < kmLitroFrota / 2) {
+      achados.push(placa + ' — ' + kmLitro.toFixed(2) + ' km/l, menos da metade da ' +
+        'média da frota (' + kmLitroFrota.toFixed(2) + ' km/l)');
+    }
+  });
+  return achados;
+}
+
+/** Saldo baixo, saida sem lastro e pendencias de conferencia em aberto. */
+function alertasTanqueEPendencias_() {
+  const achados = [];
+  const minimo = Number(param_('ESTOQUE_MINIMO_L')) || ESTOQUE_MINIMO_PADRAO_;
+  PRODUTOS_BOMBA.forEach(function (produto) {
+    const e = estadoTanque_(produto, null);
+    if (e.litros < minimo) {
+      achados.push(produto + ' — saldo de ' + e.litros.toFixed(1) + ' L, abaixo do ' +
+        'mínimo de ' + minimo + ' L');
+    }
+    if (e.litrosSemLastro > 0.001) {
+      achados.push(produto + ' — ' + e.litrosSemLastro.toFixed(1) + ' L saíram sem carga ' +
+        'registrada; o custo desses litros não tem lastro');
+    }
+  });
+  const pendentes = contarPendenciasConferencia_();
+  if (pendentes > 0) {
+    achados.push(pendentes + ' pendência(s) de conferência em aberto');
+  }
+  return achados;
+}
+
+/** Leituras que retrocederam no periodo aberto e IPVA cadastrado sem parcela lancada. */
+function alertasOdometroEIpva_() {
+  const achados = [];
+  const periodo = periodoAtual_();
+  const leituras = lerOdometro_()
+    .map(function (o, i) { return { data: o[0], placa: normalizaPlaca_(o[1]), km: Number(o[2]), linha: i + 2 }; })
+    .filter(function (o) {
+      return o.data instanceof Date && !isNaN(o.data.getTime()) && o.placa && isFinite(o.km);
+    })
+    .sort(function (a, b) {
+      if (a.placa !== b.placa) return a.placa < b.placa ? -1 : 1;
+      return a.data - b.data;
+    });
+  for (let i = 1; i < leituras.length; i++) {
+    const atual = leituras[i];
+    const anterior = leituras[i - 1];
+    if (atual.placa !== anterior.placa) continue;
+    if (atual.data < periodo.inicio || atual.data > periodo.fim) continue;
+    if (atual.km < anterior.km) {
+      achados.push(atual.placa + ' — leitura de ' + formatarData_(atual.data) + ' é ' +
+        atual.km + ' km, menor que a anterior (' + anterior.km + ' km), linha ' + atual.linha);
+    }
+  }
+
+  dadosVeiculosExecucao_().forEach(function (v) {
+    const placa = String(v[COL_VEIC.PLACA - 1] || '').trim();
+    if (!placa) return;
+    if (String(v[COL_VEIC.ATIVO - 1] || '').trim().toUpperCase() === 'NAO') return;
+    const sugerido = Number(v[COL_VEIC.IPVA - 1]) || 0;
+    if (sugerido <= 0) return;
+    const grupos = gruposIpvaDaPlaca_(placa);
+    const parcelas = Object.keys(grupos).reduce(function (t, g) { return t + grupos[g].parcelas; }, 0);
+    if (!parcelas) {
+      achados.push(placa + ' — IPVA de R$ ' + sugerido.toFixed(2) + ' no cadastro e ' +
+        'nenhuma parcela lançada');
+    }
+  });
+  return achados;
+}
+
+/**
+ * Monta o alerta do dia. Devolve { blocos, total } — nunca envia nada.
+ * Separado do envio de proposito: assim da para conferir o conteudo pelo menu
+ * sem disparar e-mail para ninguem.
+ */
+function montarAlertasDiarios_() {
+  const blocos = [];
+  function bloco(titulo, itens) {
+    if (itens && itens.length) blocos.push({ titulo: titulo, itens: itens });
+  }
+  // Cada bloco e isolado: um erro em "tanque" nao pode impedir o aviso de odometro.
+  try { bloco('Consumo fora da curva', alertasConsumo_()); }
+  catch (e) { blocos.push({ titulo: 'Consumo fora da curva', itens: ['Não foi possível apurar: ' + e.message] }); }
+  try { bloco('Tanque e pendências', alertasTanqueEPendencias_()); }
+  catch (e) { blocos.push({ titulo: 'Tanque e pendências', itens: ['Não foi possível apurar: ' + e.message] }); }
+  try { bloco('Odômetro e IPVA', alertasOdometroEIpva_()); }
+  catch (e) { blocos.push({ titulo: 'Odômetro e IPVA', itens: ['Não foi possível apurar: ' + e.message] }); }
+
+  return {
+    blocos: blocos,
+    total: blocos.reduce(function (s, b) { return s + b.itens.length; }, 0),
+  };
+}
+
+/** Destinatarios do alerta, do parametro EMAIL_ALERTAS. Lista vazia desliga o envio. */
+function destinatariosAlerta_() {
+  return String(param_('EMAIL_ALERTAS') || '')
+    .split(/[,;]/)
+    .map(function (e) { return e.trim().toLowerCase(); })
+    .filter(function (e, i, a) {
+      return e && a.indexOf(e) === i && e.length <= 254 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+    })
+    .slice(0, 20);
+}
+
+function corpoAlertaHtml_(alertas, mesRef) {
+  const periodo = periodoDoMes_(mesRef);
+  const linhas = alertas.blocos.map(function (b) {
+    return '<h3 style="margin:18px 0 6px;font-size:15px;color:#222">' + b.titulo +
+      ' <span style="color:#888;font-weight:normal">(' + b.itens.length + ')</span></h3>' +
+      '<ul style="margin:0;padding-left:20px;color:#333;font-size:14px;line-height:1.6">' +
+      b.itens.map(function (i) { return '<li>' + i + '</li>'; }).join('') + '</ul>';
+  }).join('');
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:640px">' +
+    '<p style="font-size:14px;color:#333">Competência <b>' + mesRef + '</b> — período de ' +
+    formatarData_(periodo.inicio) + ' a ' + formatarData_(periodo.fim) + '.<br>' +
+    '<b>' + alertas.total + '</b> ponto(s) pedindo atenção hoje.</p>' +
+    linhas +
+    '<p style="color:#666;font-size:12px;margin-top:22px">Enviado pelo Sistema de Controle ' +
+    'de Custos de Frota. Para parar, esvazie o parâmetro EMAIL_ALERTAS na aba ' +
+    ABAS.PARAMETROS + '.</p></div>';
+}
+
+/**
+ * Funcao do gatilho diario. Nao lanca: um erro aqui mataria o gatilho em silencio.
+ * Devolve o que fez, para o teste e para o menu conseguirem conferir.
+ */
+function enviarAlertasDiariosAgendado_() {
+  try {
+    CONTEXTO_SISTEMA_INTERNO_ = true;
+    const destinos = destinatariosAlerta_();
+    if (!destinos.length) return { enviado: false, motivo: 'EMAIL_ALERTAS vazio' };
+
+    const alertas = montarAlertasDiarios_();
+    // Silencio quando esta tudo certo: e o que mantem o e-mail digno de ser aberto.
+    if (!alertas.total) return { enviado: false, motivo: 'nada a relatar', total: 0 };
+
+    const restante = MailApp.getRemainingDailyQuota();
+    if (restante < 1) {
+      console.error('alerta diário: cota de e-mail esgotada');
+      return { enviado: false, motivo: 'cota esgotada' };
+    }
+    const mesRef = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+    MailApp.sendEmail({
+      to: destinos.join(','),
+      subject: '[Frota] ' + alertas.total + ' ponto(s) de atenção — ' + mesRef,
+      htmlBody: corpoAlertaHtml_(alertas, mesRef),
+      name: String(param_('EMPRESA')),
+    });
+    registrarLog_('Alerta diário enviado', alertas.total + ' ponto(s) para ' + destinos.join(', '));
+    return { enviado: true, total: alertas.total, destinos: destinos.length };
+  } catch (e) {
+    console.error('alerta diário: ' + e.message);
+    return { enviado: false, motivo: e.message };
+  } finally {
+    CONTEXTO_SISTEMA_INTERNO_ = false;
+  }
+}
+
+/** Cria (ou recria, se a hora mudou) o gatilho diario do alerta. */
+function garantirTriggerAlertaDiario_() {
+  const hora = Math.max(0, Math.min(23, Math.floor(Number(param_('HORA_ALERTA'))) || 7));
+  const existentes = ScriptApp.getProjectTriggers().filter(function (t) {
+    return t.getHandlerFunction() === FUNCAO_ALERTA_DIARIO_;
+  });
+  // O gatilho nao expoe a hora configurada, entao nao da para comparar: na duvida
+  // recria. Sao duas chamadas por instalacao, nao por execucao.
+  existentes.forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger(FUNCAO_ALERTA_DIARIO_).timeBased().atHour(hora).everyDays(1).create();
+  return hora;
+}
+
+/** Previa do alerta na tela, sem enviar nada. */
+function webPreviaAlertas(token) {
+  exigirPerfilToken_(token, PERFIS_ACESSO);
+  const alertas = montarAlertasDiarios_();
+  const destinos = destinatariosAlerta_();
+  const linhas = [];
+  alertas.blocos.forEach(function (b) {
+    b.itens.forEach(function (i) { linhas.push([b.titulo, i]); });
+  });
+  return {
+    colunas: [col_('Bloco'), col_('Ponto de atenção')],
+    linhas: linhas,
+    total: alertas.total,
+    destinos: destinos,
+    mensagem: !destinos.length
+      ? '⚠ Nenhum destinatário configurado. Preencha EMAIL_ALERTAS na aba ' +
+        ABAS.PARAMETROS + ' para o alerta diário passar a ser enviado.'
+      : (alertas.total
+        ? 'Hoje o alerta seria enviado para ' + destinos.join(', ') + '.'
+        : 'Nada a relatar hoje — nesse caso o sistema não envia e-mail nenhum.'),
+  };
+}
+
+function triggerAlertaDiarioAtivo_() {
+  return ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === FUNCAO_ALERTA_DIARIO_;
+  });
+}
+
+/**
+ * Garante que a competencia ABERTA ja tenha bloco proprio de percentuais.
+ *
+ * Fecha o unico vao da transicao para a V4.9. Sem isto: instala em julho, nao
+ * mexe na tela, fecha julho. Em agosto o operador ajusta o rateio — agora agosto
+ * tem bloco e julho nao tem nenhum. Julho cairia no ultimo recurso, que e a aba
+ * Centros, que ja foi espelhada com os valores de AGOSTO. O mes de transicao
+ * herdaria do futuro, que e exatamente o defeito que esta versao veio consertar.
+ *
+ * Idempotente: so escreve quando a competencia ainda nao tem bloco.
+ */
+function semearRateioCompetenciaAtual_() {
+  exigirExecucaoMutacao_();
+  const mes = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  invalidarCacheRateioMensal_();
+  const vigente = percentuaisDaCompetencia_(mes);
+  if (vigente.proprio) return 0;
+
+  const percentuais = vigente.percentuais;
+  const itens = Object.keys(percentuais).sort().map(function (nome) {
+    return { centro: nome, percentual: percentuais[nome].percentual,
+      recebe: percentuais[nome].recebe };
+  });
+  if (!itens.length) return 0;
+  gravarPercentuaisCompetencia_(mes, itens, 'instalação');
+  registrarLog_('Rateio da competência ' + mes,
+    'bloco inicial gravado na instalação a partir de ' + vigente.origem +
+    ' (' + itens.length + ' centro(s))');
+  return itens.length;
+}
+
 function garantirAutomacoesSistema_() {
   const legadosRemovidos = removerTriggersLegados_();
   return {
@@ -10664,10 +11521,12 @@ function garantirAutomacoesSistema_() {
     auditoriaCriada: garantirTriggerAuditoriaEdicao_(),
     loginsCriado: garantirTriggerFlushLogins_(),
     aquecimentoCriado: garantirTriggerAquecerCaches_(),
+    alertaHora: garantirTriggerAlertaDiario_(),
     backupAtivo: triggerBackupAtivo_(),
     auditoriaAtiva: triggerAuditoriaEdicaoAtivo_(),
     loginsAtivo: triggerFlushLoginsAtivo_(),
-    aquecimentoAtivo: triggerAquecerCachesAtivo_()
+    aquecimentoAtivo: triggerAquecerCachesAtivo_(),
+    alertaAtivo: triggerAlertaDiarioAtivo_()
   };
 }
 
@@ -11024,6 +11883,9 @@ function restaurarDadosDeBackupSemLock_(backupId) {
   const opcionais = [
     [ABAS.FORNECEDORES, totalColunas_(COL_FORN)],
     [ABAS.CARGA_BOMBA, totalColunas_(COL_CARGA)],
+    // V4.9: backup anterior a esta versão simplesmente não as tem.
+    [ABAS.RATEIO_MENSAL, TOTAL_COL_RM],
+    [ABAS.ORCAMENTO, TOTAL_COL_ORC],
   ].filter(function (esp) { return !!origem.getSheetByName(esp[0]); });
 
   // Primeiro valida o backup inteiro; só depois começa a escrever na base atual.
@@ -11076,6 +11938,8 @@ function restaurarDadosDeBackupSemLock_(backupId) {
   PARAM_EXEC_CACHE_ = null;
   VEICULOS_EXEC_CACHE_ = null;
   CENTROS_EXEC_CACHE_ = null;
+  invalidarCacheRateioMensal_();
+  invalidarCacheOrcamento_();
   garantirCapacidadeLancamentos_(quantidadeLancamentosReais_() + 1);
   montarAbasDeDados_();
   montarLog_();
@@ -11143,7 +12007,10 @@ function webAtivarBackupAutomatico(token) {
     mensagem: 'Automações verificadas: backup diário ' + (a.backupAtivo ? 'ATIVO' : 'INATIVO') +
       ' • auditoria de edição ' + (a.auditoriaAtiva ? 'ATIVA' : 'INATIVA') +
       ' • consolidação de logins ' + (a.loginsAtivo ? 'ATIVA' : 'INATIVA') +
-      ' • aquecimento de cache ' + (a.aquecimentoAtivo ? 'ATIVO' : 'INATIVO') + '.'
+      ' • aquecimento de cache ' + (a.aquecimentoAtivo ? 'ATIVO' : 'INATIVO') +
+      ' • alerta diário ' + (a.alertaAtivo ? 'ATIVO às ' + a.alertaHora + 'h' : 'INATIVO') +
+      (a.alertaAtivo && !destinatariosAlerta_().length
+        ? ' (sem destinatário: preencha EMAIL_ALERTAS)' : '') + '.'
   };
 }
 
@@ -11715,6 +12582,10 @@ function zerarSistema_(escopo, confirmacao, opcoes) {
       limparLinhas(ABAS.VEICULOS, [[1, TOTAL_COL_VEIC]]);
       limparLinhas(ABAS.CENTROS, [[1, 3]]);
       limparLinhas(ABAS.FORNECEDORES, [[1, totalColunas_(COL_FORN)]]);
+      // Rateio e orçamento acompanham os centros: são configuração, não movimento.
+      // No escopo "só movimento" eles ficam, como fica o próprio cadastro de centros.
+      limparLinhas(ABAS.RATEIO_MENSAL, [[1, TOTAL_COL_RM]]);
+      limparLinhas(ABAS.ORCAMENTO, [[1, TOTAL_COL_ORC]]);
     }
     let fechadas = 0;
     planilha.getSheets().forEach(function (sheet) {
@@ -11735,6 +12606,7 @@ function zerarSistema_(escopo, confirmacao, opcoes) {
       gravarParam_('MES_REFERENCIA', mesReferenciaSugeridoHoje_());
       VEICULOS_EXEC_CACHE_ = null; CENTROS_EXEC_CACHE_ = null; PARAM_EXEC_CACHE_ = null;
       invalidarCacheFornecedores_(); invalidarCacheLancamentos_();
+      invalidarCacheRateioMensal_(); invalidarCacheOrcamento_();
       try { PropertiesService.getScriptProperties().deleteProperty(PROP_ALERTA_INTEGRIDADE_HISTORICO_); } catch (e) {}
       if (tudo) migrarCentroAcParaAdmCentral_(); // recria o centro ADM Central
       reconstruirRelatorios_();

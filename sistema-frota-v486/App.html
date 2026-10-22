@@ -794,7 +794,8 @@
     { grupo: 'Relatórios', itens: [
       { id: 'relatorios', icone: '📈', rotulo: 'Relatórios', busca: 'manutenção consumo ranking evolução', fn: telaRelatorios },
       { id: 'resumo', icone: '📋', rotulo: 'Resumo por veículo', busca: 'todos custo tabela', fn: telaResumo },
-      { id: 'rateio', icone: '🏬', rotulo: 'Rateio por centro', busca: 'loja combo depósito', fn: telaRateio }
+      { id: 'rateio', icone: '🏬', rotulo: 'Rateio por centro', busca: 'loja combo depósito', fn: telaRateio },
+      { id: 'orcamento', icone: '🎯', rotulo: 'Orçamento por centro', busca: 'previsto meta desvio estouro projeção verba', fn: telaOrcamento }
     ] },
     { grupo: 'Cadastros', itens: [
       { id: 'veiculos', icone: '🚛', rotulo: 'Veículos', busca: 'frota cadastro placa novo', fn: telaVeiculos },
@@ -1632,15 +1633,25 @@
       .webResumo(TOKEN, { centro: el('resCentro').value, categoria: el('resCategoria').value });
   }
 
-  function telaRateio() {
+  function telaRateio() { carregarRateio(''); }
+
+  function recarregarRateio() {
+    carregarRateio(el('ratMes') ? el('ratMes').value : '');
+  }
+
+  function carregarRateio(mes) {
     carregando('calculando o rateio…');
     google.script.run.withSuccessHandler(function (dados) {
       el('tela').innerHTML =
         '<h2 class="titulo">Rateio por centro de custo</h2>' +
-        '<p class="sub">Custo direto de cada centro + o rateio do depósito e das empilhadeiras.</p>' +
+        '<p class="sub">Custo direto de cada centro + o rateio do depósito e das empilhadeiras. ' +
+          'Cada competência usa os percentuais que estavam valendo nela.</p>' +
+        '<div class="barra"><div>' +
+          seletorCompetencia('ratMes', dados.competencias, dados.competencia, 'recarregarRateio()') +
+        '</div></div>' +
         (dados.mensagem ? '<div class="aviso">' + esc(dados.mensagem) + '</div>' : '') +
         tabela(dados);
-    }).withFailureHandler(falha).webRateio(TOKEN);
+    }).withFailureHandler(falha).webRateio(TOKEN, mes);
   }
 
   function telaConsulta() {
@@ -2118,80 +2129,220 @@
     }).withFailureHandler(function () {}).webLancamentosExcluidos(TOKEN, 20);
   }
 
+  // ------------------------------------------------- centros de custo (V4.9)
+  // A tela era so leitura, com um seletor que alterava UM centro por vez e mandava
+  // "edite na planilha" para o resto. Como o ajuste e mensal e mexe em varias lojas
+  // ao mesmo tempo, virou tabela editavel com gravacao em lote: salvar uma a uma
+  // deixaria a base num estado em que a soma nao fecha, que e exatamente o que o
+  // aviso de 100% existe para denunciar.
+  var CENTROS_DADOS = null;
+
+  function seletorCompetencia(id, lista, atual, acao) {
+    return '<label for="' + id + '">Competência</label><select id="' + id + '" onchange="' + acao + '">' +
+      (lista || []).map(function (m) {
+        return '<option value="' + esc(m) + '"' + (m === atual ? ' selected' : '') + '>' + esc(m) + '</option>';
+      }).join('') + '</select>';
+  }
+
+  function atualizarSomaCentros() {
+    var alvo = el('somaCentros');
+    if (!alvo || !CENTROS_DADOS) return;
+    var soma = 0;
+    CENTROS_DADOS.itens.forEach(function (_, i) {
+      var campo = el('pc' + i);
+      if (campo) soma += Number(String(campo.value).replace(',', '.')) || 0;
+    });
+    var fecha = Math.abs(soma - 100) <= 0.01;
+    alvo.className = fecha ? 'ok-caixa' : 'aviso';
+    alvo.innerHTML = 'Soma dos percentuais: <b>' + num(soma, 3) + '%</b>' +
+      (fecha ? ' — fecha em 100%.'
+             : ' — não fecha 100%. O rateio é normalizado e continua batendo com o Resumo, ' +
+               'mas confira se ficou faltando alguém.');
+  }
+
   function telaCentros() {
-    var admin = SESSAO && SESSAO.perfil === 'ADMIN';
     carregando();
-    google.script.run.withSuccessHandler(function (dados) {
-      el('tela').innerHTML =
-        '<h2 class="titulo">Centros de custo</h2>' +
-        '<p class="sub">Os percentuais precisam somar 100%. ' +
-          (admin ? 'Escolha o centro para alterar o rateio.'
-                 : 'Somente ADMIN altera o rateio.') + '</p>' +
-        (admin ?
-        '<div class="cartao" style="max-width:620px">' +
-          '<div class="linha">' +
-            '<div style="flex:2"><label for="ccCentro">Centro de custo</label>' +
-              seletor('ccCentro', OPCOES.centros) + '</div>' +
-            '<div><label for="ccPercentual">% de rateio</label>' +
-              '<input type="number" id="ccPercentual" step="0.001" min="0" max="100" inputmode="decimal"></div>' +
-            '<div><label for="ccRecebe">Recebe rateio</label>' +
-              seletor('ccRecebe', ['SIM', 'NAO']) + '</div>' +
-          '</div>' +
-          '<button class="acao" id="btnCentro" style="width:100%;margin-top:14px" ' +
-            'onclick="salvarCentro()">Salvar rateio</button>' +
+    google.script.run.withSuccessHandler(desenharCentros)
+      .withFailureHandler(falha).webCentros(TOKEN, '');
+  }
+
+  function recarregarCentros() {
+    carregando();
+    google.script.run.withSuccessHandler(desenharCentros)
+      .withFailureHandler(falha).webCentros(TOKEN, el('ccMes') ? el('ccMes').value : '');
+  }
+
+  function desenharCentros(dados) {
+    CENTROS_DADOS = dados;
+    var admin = SESSAO && SESSAO.perfil === 'ADMIN';
+    var editavel = admin && dados.editavel;
+
+    var origem = '';
+    if (!dados.proprio) {
+      origem = '<div class="aviso">' + (dados.origem === 'cadastro'
+        ? 'Esta competência ainda não tem percentuais próprios — está usando os da aba ' +
+          '“Centros de Custo”. Ao salvar, eles ficam congelados em ' + esc(dados.competencia) + '.'
+        : 'Percentuais herdados de <b>' + esc(dados.origem) + '</b>. Ao salvar, ficam congelados ' +
+          'em ' + esc(dados.competencia) + ' e ' + esc(dados.origem) + ' não muda mais.') + '</div>';
+    }
+    if (!dados.editavel) {
+      origem += '<div class="aviso">Competência encerrada: os percentuais de ' +
+        esc(dados.competencia) + ' ficam como estão. É para isso que eles existem por competência.</div>';
+    }
+
+    var linhas = dados.itens.map(function (item, i) {
+      return '<tr><td>' + esc(item.centro) +
+        (item.novo ? ' <span class="sub2">(novo nesta competência)</span>' : '') + '</td>' +
+        '<td class="num">' + (editavel
+          ? '<input type="number" id="pc' + i + '" step="0.001" min="0" max="100" ' +
+            'inputmode="decimal" style="width:110px;text-align:right" value="' +
+            Number(item.percentual).toFixed(3) + '" oninput="atualizarSomaCentros()">'
+          : num(item.percentual, 3)) + '</td>' +
+        '<td class="num">' + (editavel
+          ? '<input type="checkbox" id="rc' + i + '"' + (item.recebe ? ' checked' : '') + '>'
+          : (item.recebe ? 'SIM' : 'NAO')) + '</td></tr>';
+    }).join('');
+
+    el('tela').innerHTML =
+      '<h2 class="titulo">Centros de custo</h2>' +
+      '<p class="sub">O percentual é gravado <b>por competência</b>: ajustar o mês aberto ' +
+        'não mexe mais no rateio dos meses já apurados.</p>' +
+      '<div class="barra"><div>' +
+        seletorCompetencia('ccMes', dados.competencias, dados.competencia, 'recarregarCentros()') +
+      '</div></div>' + origem +
+      '<div class="cartao" style="padding:0;overflow:hidden"><div class="rolagem">' +
+        '<table><thead><tr><th>Centro de custo</th><th class="num">% de rateio</th>' +
+        '<th class="num">Recebe rateio</th></tr></thead><tbody>' + linhas + '</tbody></table>' +
+      '</div></div>' +
+      '<div id="somaCentros" style="margin-top:12px"></div>' +
+      (editavel
+        ? '<button class="acao" id="btnCentros" style="width:100%;margin-top:14px" ' +
+          'onclick="salvarCentros()">Salvar rateio de ' + esc(dados.competencia) + '</button>' +
           '<div class="sub2" style="margin-top:6px">Centros novos são criados na aba ' +
-            '"Centros de Custo" da planilha.</div>' +
-          '<div id="msgCentro" style="margin-top:10px"></div>' +
-        '</div>' : '') +
-        '<div id="listaCentros">' + tabela(dados) + '</div>';
-      if (admin) {
-        // Preenche os campos com o que o centro escolhido ja tem, para o operador
-        // ver o valor atual antes de trocar — e nao digitar por cima no escuro.
-        CENTROS_ATUAIS = dados;
-        el('ccCentro').addEventListener('change', preencherCentro);
-        preencherCentro();
-      }
-    }).withFailureHandler(falha).webCentros(TOKEN);
+          '“Centros de Custo” da planilha.</div>'
+        : (admin ? '' : '<div class="sub2" style="margin-top:10px">Somente ADMIN altera o rateio.</div>')) +
+      '<div id="msgCentros" style="margin-top:10px"></div>';
+    atualizarSomaCentros();
   }
 
-  var CENTROS_ATUAIS = null;
-
-  function preencherCentro() {
-    if (!CENTROS_ATUAIS || !CENTROS_ATUAIS.linhas) return;
-    var alvo = el('ccCentro').value;
-    var linha = CENTROS_ATUAIS.linhas.filter(function (l) { return String(l[0]) === alvo; })[0];
-    el('ccPercentual').value = linha ? Number(linha[1]).toFixed(3) : '';
-    if (linha) definirSelect('ccRecebe', String(linha[2]).toUpperCase() === 'NAO' ? 'NAO' : 'SIM');
-  }
-
-  function salvarCentro() {
-    var botao = el('btnCentro');
+  function salvarCentros() {
+    var botao = el('btnCentros');
+    var rotulo = 'Salvar rateio de ' + CENTROS_DADOS.competencia;
     botao.disabled = true;
     botao.textContent = 'Salvando…';
+    var itens = CENTROS_DADOS.itens.map(function (item, i) {
+      return { centro: item.centro, percentual: el('pc' + i).value, recebe: el('rc' + i).checked };
+    });
     google.script.run
       .withSuccessHandler(function (r) {
         botao.disabled = false;
-        botao.textContent = 'Salvar rateio';
-        el('msgCentro').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+        botao.textContent = rotulo;
+        el('msgCentros').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
           esc(r.mensagem) + '</div>';
-        if (r.ok) {
-          google.script.run.withSuccessHandler(function (dados) {
-            CENTROS_ATUAIS = dados;
-            el('listaCentros').innerHTML = tabela(dados);
-            preencherCentro();
-          }).withFailureHandler(falha).webCentros(TOKEN);
-        }
+        if (r.ok) recarregarCentros();
       })
       .withFailureHandler(function (e) {
         botao.disabled = false;
-        botao.textContent = 'Salvar rateio';
-        el('msgCentro').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+        botao.textContent = rotulo;
+        el('msgCentros').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
       })
-      .webSalvarCentro(TOKEN, {
-        centro: el('ccCentro').value,
-        percentual: el('ccPercentual').value,
-        recebe: el('ccRecebe').value !== 'NAO'
-      });
+      .webSalvarRateioLote(TOKEN, { competencia: CENTROS_DADOS.competencia, itens: itens });
+  }
+
+  // ------------------------------------------------------- orçamento (V4.9)
+  // O realizado aqui e o TOTAL do centro DEPOIS do rateio — o mesmo numero da tela
+  // de rateio, vindo da mesma funcao do servidor (apurarRateio_), para as duas nao
+  // divergirem. Comparar o previsto com o custo DIRETO deixaria de fora justamente
+  // a parcela do deposito que a loja recebe.
+  var ORCAMENTO_DADOS = null;
+
+  function telaOrcamento() {
+    carregando('apurando o orçamento…');
+    google.script.run.withSuccessHandler(desenharOrcamento)
+      .withFailureHandler(falha).webOrcamento(TOKEN, '');
+  }
+
+  function recarregarOrcamento() {
+    carregando('apurando o orçamento…');
+    google.script.run.withSuccessHandler(desenharOrcamento)
+      .withFailureHandler(falha).webOrcamento(TOKEN, el('orcMes') ? el('orcMes').value : '');
+  }
+
+  function desenharOrcamento(dados) {
+    ORCAMENTO_DADOS = dados;
+    var admin = SESSAO && SESSAO.perfil === 'ADMIN';
+    var editavel = admin && dados.editavel;
+
+    // Destaque antes da tabela: quem abre esta tela quer saber de quem estourou,
+    // nao percorrer trinta linhas procurando.
+    var estourou = dados.linhas.filter(function (l) { return l[6] === 'ESTOUROU'; });
+    var vaiEstourar = dados.linhas.filter(function (l) { return l[6] === 'VAI ESTOURAR'; });
+    var destaque = '';
+    if (estourou.length) {
+      destaque += '<div class="erro-caixa"><b>' + estourou.length + ' centro(s) estourou o ' +
+        'orçamento:</b> ' + esc(estourou.map(function (l) {
+          return l[0] + ' (+' + brl(l[3]) + ')';
+        }).join(' • ')) + '</div>';
+    }
+    if (vaiEstourar.length) {
+      destaque += '<div class="aviso"><b>' + vaiEstourar.length + ' centro(s) no caminho de ' +
+        'estourar até o fim do período:</b> ' + esc(vaiEstourar.map(function (l) {
+          return l[0] + ' (projeção ' + brl(l[5]) + ' contra ' + brl(l[1]) + ')';
+        }).join(' • ')) + '</div>';
+    }
+
+    var edicao = '';
+    if (editavel) {
+      var campos = dados.itens.map(function (item, i) {
+        return '<tr><td>' + esc(item.centro) + '</td><td class="num">' +
+          '<input type="number" id="ov' + i + '" step="0.01" min="0" inputmode="decimal" ' +
+          'style="width:140px;text-align:right" value="' + Number(item.valor).toFixed(2) +
+          '"></td></tr>';
+      }).join('');
+      edicao =
+        '<div class="cartao" style="margin-top:18px">' +
+          '<b>Definir o previsto de ' + esc(dados.competencia) + '</b>' +
+          '<div class="rolagem" style="margin-top:12px"><table><thead><tr>' +
+            '<th>Centro de custo</th><th class="num">Previsto R$</th>' +
+          '</tr></thead><tbody>' + campos + '</tbody></table></div>' +
+          '<button class="acao" id="btnOrcamento" style="width:100%;margin-top:14px" ' +
+            'onclick="salvarOrcamento()">Salvar orçamento de ' + esc(dados.competencia) + '</button>' +
+          '<div id="msgOrcamento" style="margin-top:10px"></div>' +
+        '</div>';
+    }
+
+    el('tela').innerHTML =
+      '<h2 class="titulo">Orçamento por centro de custo</h2>' +
+      '<p class="sub">Previsto × realizado. O realizado é o <b>total do centro depois do ' +
+        'rateio</b> — o mesmo número da tela de rateio.</p>' +
+      '<div class="barra"><div>' +
+        seletorCompetencia('orcMes', dados.competencias, dados.competencia, 'recarregarOrcamento()') +
+      '</div></div>' + destaque +
+      tabela(dados, 'Nada a comparar ainda nesta competência.') + edicao;
+  }
+
+  function salvarOrcamento() {
+    var botao = el('btnOrcamento');
+    var rotulo = 'Salvar orçamento de ' + ORCAMENTO_DADOS.competencia;
+    botao.disabled = true;
+    botao.textContent = 'Salvando…';
+    var itens = ORCAMENTO_DADOS.itens.map(function (item, i) {
+      return { centro: item.centro, valor: el('ov' + i).value };
+    });
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false;
+        botao.textContent = rotulo;
+        el('msgOrcamento').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+          esc(r.mensagem) + '</div>';
+        if (r.ok) recarregarOrcamento();
+      })
+      .withFailureHandler(function (e) {
+        botao.disabled = false;
+        botao.textContent = rotulo;
+        el('msgOrcamento').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      })
+      .webSalvarOrcamento(TOKEN, { competencia: ORCAMENTO_DADOS.competencia, itens: itens });
   }
 
   function classeStatusPendencia(status) {
@@ -2595,6 +2746,29 @@
     }).webRestaurarBackup(TOKEN, id, confirma);
   }
 
+  // Previa do alerta: mostra exatamente o que sairia por e-mail, sem enviar nada.
+  // Separado do envio de proposito — da para conferir o conteudo sem incomodar
+  // ninguem na lista.
+  function verPreviaAlertas(botao) {
+    botao.disabled = true;
+    botao.textContent = 'Apurando…';
+    el('previaAlertas').innerHTML = '<div class="carregando">apurando…</div>';
+    google.script.run
+      .withSuccessHandler(function (d) {
+        botao.disabled = false;
+        botao.textContent = '👁️ Ver o alerta de hoje';
+        el('previaAlertas').innerHTML =
+          '<div class="' + (d.total ? 'aviso' : 'ok-caixa') + '">' + esc(d.mensagem) + '</div>' +
+          (d.total ? tabela(d) : '');
+      })
+      .withFailureHandler(function (e) {
+        botao.disabled = false;
+        botao.textContent = '👁️ Ver o alerta de hoje';
+        el('previaAlertas').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      })
+      .webPreviaAlertas(TOKEN);
+  }
+
   function telaConfig() {
     carregando();
     google.script.run.withSuccessHandler(function (parametros) {
@@ -2615,6 +2789,14 @@
         '<div class="cartao" style="max-width:620px;border:2px solid #F47820" id="cartaoPeriodo">' +
           '<div class="sub2">carregando período…</div></div>' +
         '<div class="cartao" style="max-width:620px">' + campos + '</div>' +
+        '<div class="cartao" style="max-width:620px"><b>Alerta diário</b>' +
+          '<div class="sub2" style="margin-top:4px">O sistema só envia quando há algo a ' +
+            'dizer — um e-mail diário de “tudo certo” vira filtro no Outlook em duas semanas, ' +
+            'e junto com ele some o dia em que havia algo.</div>' +
+          '<button class="acao secundaria" style="margin-top:10px" ' +
+            'onclick="verPreviaAlertas(this)">👁️ Ver o alerta de hoje</button>' +
+          '<div id="previaAlertas" style="margin-top:10px"></div>' +
+        '</div>' +
         '<div class="cartao" style="max-width:620px"><b>Exportar</b>' +
           '<div class="linha" style="margin-top:8px">' +
             '<div><label for="expAba">Aba</label>' +
