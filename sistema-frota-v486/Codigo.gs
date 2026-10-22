@@ -416,6 +416,7 @@ const HORA_BACKUP_AUTOMATICO_ = 3; // gatilho roda dentro da janela das 03h
 const FUNCAO_BACKUP_AUTOMATICO_ = 'backupAutomaticoDiario_';
 const FUNCAO_AUDITORIA_EDICAO_ = 'auditoriaEdicaoInstalavel_';
 const FUNCAO_FLUSH_LOGINS_ = 'processarLoginsPendentesAgendado_';
+const FUNCAO_AQUECER_CACHES_ = 'aquecerCachesAgendado_';
 
 // ==========================================================================
 // 01_Utils.gs
@@ -438,7 +439,10 @@ let CENTROS_EXEC_CACHE_ = null;
 
 // Caches entre execuções do Web App. Evitam abrir a planilha em todo refresh.
 const CACHE_BOOTSTRAP_META_ = 'BOOTSTRAP_META_V47';
-const CACHE_BOOTSTRAP_META_SEGUNDOS_ = 300; // 5 min
+// TTLs alongados na V4.8.7 junto com o gatilho de aquecimento: sem quem reaqueca,
+// TTL longo so adia o erro de cache; COM o gatilho de 5 min, ele garante que a
+// entrada nunca vence entre uma passagem e outra.
+const CACHE_BOOTSTRAP_META_SEGUNDOS_ = 900; // 15 min (gatilho reaquece a cada 5)
 const CACHE_USUARIO_ACESSO_PREFIXO_ = 'USER_ACL_V46_';
 const CACHE_USUARIO_ACESSO_SEGUNDOS_ = 60;  // alteração de acesso propaga em até 1 min
 const CACHE_USUARIO_LOGIN_PREFIXO_ = 'USER_AUTH_V46_';
@@ -8269,7 +8273,7 @@ function lerLancamentos_() {
 // ------------------------------------------------------------------ início
 
 /** Estado geral do sistema, para a tela inicial do app. */
-const CACHE_INICIO_SEGUNDOS_ = 120;
+const CACHE_INICIO_SEGUNDOS_ = 600;   // 10 min (gatilho reaquece a cada 5)
 const CACHE_INICIO_PREFIXO_ = 'DASH_INICIO_V46_';
 const CACHE_INICIO_ATUAL_ = 'DASH_INICIO_ATUAL_V46';
 
@@ -10596,6 +10600,52 @@ function garantirTriggerFlushLogins_() {
   return true;
 }
 
+/**
+ * Mantem quentes os caches que o primeiro acesso do dia pagaria (V4.8.7).
+ *
+ * Medicao que originou isto, num login real: servidor 3.259 ms = login 956 +
+ * estrutura 896 + painel 1.187. Os tres foram ERRO DE CACHE. Os dois ultimos,
+ * 2.083 ms, sao recalculo que ninguem precisava ter esperado — bastava alguem
+ * ter aberto o sistema nos minutos anteriores.
+ *
+ * Quem paga esse custo e sempre o primeiro usuario da manha, que e justamente
+ * quem forma a impressao de que o sistema e lento.
+ *
+ * NAO aquece o login: a autenticacao depende do usuario e, de todo jeito, o
+ * maior pedaco daqueles 956 ms e abrir a planilha — custo que toda execucao
+ * paga por conta propria e nenhum gatilho adianta.
+ *
+ * Falha aqui nunca derruba nada: e so uma visita antecipada.
+ */
+function aquecerCachesAgendado_() {
+  const lock = LockService.getScriptLock();
+  // Sem fila: se outra passagem ainda roda, esta nao tem o que fazer.
+  if (!lock.tryLock(1000)) return;
+  try {
+    CONTEXTO_SISTEMA_INTERNO_ = true;
+    let ok = 0;
+    try { bootstrapMetaComCache_(true); ok++; } catch (e) { console.error('aquecer meta: ' + e.message); }
+    try { dadosInicioComCache_(true); ok++; } catch (e) { console.error('aquecer início: ' + e.message); }
+    return ok;
+  } finally {
+    CONTEXTO_SISTEMA_INTERNO_ = false;
+    lock.releaseLock();
+  }
+}
+
+function triggerAquecerCachesAtivo_() {
+  return ScriptApp.getProjectTriggers().some(function(t){
+    return t.getHandlerFunction() === FUNCAO_AQUECER_CACHES_;
+  });
+}
+
+function garantirTriggerAquecerCaches_() {
+  if (triggerAquecerCachesAtivo_()) return false;
+  ScriptApp.newTrigger(FUNCAO_AQUECER_CACHES_).timeBased().everyMinutes(5).create();
+  registrarLog_('Desempenho', 'gatilho de 5 min criado para manter os caches do app quentes');
+  return true;
+}
+
 function removerTriggersLegados_() {
   const legados = ['backupAutomaticoDiario', 'auditoriaEdicaoInstalavel', 'processarLoginsPendentesAgendado'];
   let removidos = 0;
@@ -10613,9 +10663,11 @@ function garantirAutomacoesSistema_() {
     backupCriado: garantirTriggerBackupDiario_(),
     auditoriaCriada: garantirTriggerAuditoriaEdicao_(),
     loginsCriado: garantirTriggerFlushLogins_(),
+    aquecimentoCriado: garantirTriggerAquecerCaches_(),
     backupAtivo: triggerBackupAtivo_(),
     auditoriaAtiva: triggerAuditoriaEdicaoAtivo_(),
-    loginsAtivo: triggerFlushLoginsAtivo_()
+    loginsAtivo: triggerFlushLoginsAtivo_(),
+    aquecimentoAtivo: triggerAquecerCachesAtivo_()
   };
 }
 
@@ -11090,7 +11142,8 @@ function webAtivarBackupAutomatico(token) {
     ok: true,
     mensagem: 'Automações verificadas: backup diário ' + (a.backupAtivo ? 'ATIVO' : 'INATIVO') +
       ' • auditoria de edição ' + (a.auditoriaAtiva ? 'ATIVA' : 'INATIVA') +
-      ' • consolidação de logins ' + (a.loginsAtivo ? 'ATIVA' : 'INATIVA') + '.'
+      ' • consolidação de logins ' + (a.loginsAtivo ? 'ATIVA' : 'INATIVA') +
+      ' • aquecimento de cache ' + (a.aquecimentoAtivo ? 'ATIVO' : 'INATIVO') + '.'
   };
 }
 
