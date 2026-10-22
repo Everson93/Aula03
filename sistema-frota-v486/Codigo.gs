@@ -2510,7 +2510,7 @@ function calcularLinhasResumo_(periodo) {
   const odo = ss_().getSheetByName(ABAS.ODOMETRO);
   if (odo && odo.getLastRow() >= 2) {
     const leituras = {};
-    odo.getRange(2, 1, odo.getLastRow() - 1, 3).getValues().forEach(function (o) {
+    lerOdometro_().forEach(function (o) {
       const data = o[0];
       if (!(data instanceof Date)) return;
       const t = data.getTime();
@@ -2551,7 +2551,33 @@ function calcularLinhasResumo_(periodo) {
  * Recalcula e grava os valores do Resumo. Uso interno (sem checagem de perfil): é
  * chamado depois de operações que já foram autorizadas. Devolve quantos veículos.
  */
+/**
+ * Recalcula e regrava o Resumo inteiro.
+ *
+ * TRAVADO desde a V4.8.7, e o motivo nao e teorico: lerResumo_ chama
+ * garantirResumoAtualizado_, entao ABRIR o dashboard pode disparar esta escrita.
+ * Dois usuarios abrindo ao mesmo tempo, depois de alguem editar a aba a mao,
+ * entravam os dois aqui. Entre o clearContent de um e o setValues do outro, um
+ * terceiro leitor encontrava o Resumo VAZIO — e caia no "Não foi possível
+ * calcular o Resumo", que e mensagem de falha grave para uma condicao passageira.
+ *
+ * Quem nao pega o lock NAO recalcula em paralelo: devolve -2 para o chamador
+ * reler o que o outro acabou de gravar. Recalcular junto e justamente o que
+ * produz a janela de aba vazia.
+ */
+const RESUMO_OCUPADO_ = -2;
+
 function atualizarResumo_() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) return RESUMO_OCUPADO_;
+  try {
+    return atualizarResumoSemLock_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function atualizarResumoSemLock_() {
   const sheet = ss_().getSheetByName(ABAS.RESUMO);
   if (!sheet) return 0;
   garantirColunas_(sheet, TOTAL_COL_RESUMO);
@@ -2619,7 +2645,16 @@ function atualizarResumoPlacaSeguro_(placa) {
     const naAba = i >= 0 ? normalizaPlaca_(sheet.getRange(linhaAba, 1).getValue()) : '';
     const totalAba = Math.max(sheet.getLastRow() - PRIMEIRA_LINHA_RESUMO_ + 1, 0);
     if (i < 0 || naAba !== alvo || totalAba !== linhas.length) return atualizarResumoSeguro_();
-    sheet.getRange(linhaAba, 1, 1, TOTAL_COL_RESUMO).setValues([linhas[i]]);
+    // Mesma trava do recalculo completo: esta grava uma linha so, mas pode cair
+    // no meio de um clearContent do recalculo inteiro e escrever numa aba que
+    // esta prestes a ser limpa.
+    const lockLinha = LockService.getScriptLock();
+    if (!lockLinha.tryLock(15000)) return atualizarResumoSeguro_();
+    try {
+      sheet.getRange(linhaAba, 1, 1, TOTAL_COL_RESUMO).setValues([linhas[i]]);
+    } finally {
+      lockLinha.releaseLock();
+    }
     try { CacheService.getScriptCache().remove(CACHE_INICIO_ATUAL_); } catch (e) {}
     return 1;
   } catch (erro) {
@@ -2658,10 +2693,20 @@ function marcarResumoDesatualizado_() {
 }
 
 /** Recalcula só se alguém editou as abas de dados à mão desde o último cálculo. */
+/** Espera quem esta recalculando terminar. Nao recalcula: so da a vez. */
+function aguardarResumoLivre_() {
+  const espera = LockService.getScriptLock();
+  try { espera.waitLock(25000); } catch (e) { /* segue com o que houver na aba */ }
+  finally { try { espera.releaseLock(); } catch (e) {} }
+}
+
 function garantirResumoAtualizado_() {
   let sujo = false;
   try { sujo = PropertiesService.getDocumentProperties().getProperty(PROP_RESUMO_DESATUALIZADO_) === '1'; } catch (e) {}
-  if (sujo) atualizarResumoSeguro_();
+  if (!sujo) return;
+  // Outro processo ja esta recalculando: esperar o lock dele e mais barato (e mais
+  // correto) do que recalcular por cima. Ao sair, a aba ja tem o resultado dele.
+  if (atualizarResumoSeguro_() === RESUMO_OCUPADO_) aguardarResumoLivre_();
 }
 
 function montarResumo_() {
@@ -3462,6 +3507,10 @@ function salvarLancamento_(dados, opcoesSalvar) {
       const linhaOdo = odometro.getLastRow() + 1;
       garantirLinhas_(odometro, linhaOdo);
       odometro.getRange(linhaOdo, 1, 1, 3).setValues([[data, placa, km]]);
+      // O cache tem de cair AQUI, nao so no fim da requisicao: o proprio fluxo
+      // de gravacao le o odometro depois (resumo, validacao), e serviria a
+      // leitura anterior a esta — cache velho e pior do que cache nenhum.
+      invalidarCacheOdometro_();
       mensagem += ' • KM ' + km;
     }
 
@@ -3613,6 +3662,7 @@ NÃO = cancelar sem alterar nada.`,
     if (resultado.odometros.length) {
       const sheet = aba_(ABAS.ODOMETRO);
       sheet.getRange(sheet.getLastRow() + 1, 1, resultado.odometros.length, 3).setValues(resultado.odometros);
+      invalidarCacheOdometro_();
     }
     cadastrarVeiculosNovos_(resultado.veiculos);
     formatarLancamentos_();
@@ -4023,7 +4073,7 @@ function snapshotIntegridadeBase_() {
   }
   const odo = ss_().getSheetByName(ABAS.ODOMETRO);
   if (odo && odo.getLastRow() >= 2) {
-    odo.getRange(2, 1, odo.getLastRow()-1, 3).getValues().forEach(function(l) {
+    lerOdometro_().forEach(function(l) {
       if (!l[1] || !(l[0] instanceof Date) || isNaN(l[0].getTime())) return;
       const mes = mesCompetenciaDaData_(l[0]);
       const g = grupo(mes);
@@ -4356,7 +4406,7 @@ function coletarProblemas_(opcoesColeta) {
   // quando a leitura problemática pertence ao período aberto (ou está no futuro).
   const odometro = aba_(ABAS.ODOMETRO);
   if (odometro.getLastRow() >= 2) {
-    const brutos = odometro.getRange(2, 1, odometro.getLastRow() - 1, 3).getValues();
+    const brutos = lerOdometro_();
     const dadosValidos = [];
     brutos.forEach(function(l, i) {
       const linhaPlanilha = i + 2;
@@ -5547,6 +5597,87 @@ function autenticarUsuario_(email, senha) {
   return { ok: true, usuario: usuario };
 }
 
+/**
+ * Lastro das sessoes em PropertiesService (V4.8.7).
+ *
+ * O CacheService e memoria com DESPEJO: a entrada pode sumir muito antes das 6
+ * horas de TTL, sob pressao do proprio Google. O sintoma e o usuario deslogar
+ * sozinho, sem padrao, no meio do expediente — reclamacao praticamente
+ * impossivel de diagnosticar, porque nao se reproduz.
+ *
+ * O cache continua sendo o caminho rapido. Isto aqui e so a rede: na falha de
+ * leitura, a sessao e reconstruida e o cache reidratado.
+ *
+ * A chave gravada e o HASH do token, nao o token. Quem conseguir ler as
+ * Properties leva hashes, nao credenciais utilizaveis — e o custo e um digest
+ * por acesso que ja errou o cache.
+ */
+const PREFIXO_LASTRO_SESSAO_ = 'SESL_';
+
+function chaveLastroSessao_(token) {
+  const bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8);
+  return PREFIXO_LASTRO_SESSAO_ + bytes.map(function (b) {
+    const v = b < 0 ? b + 256 : b;
+    return ('0' + v.toString(16)).slice(-2);
+  }).join('').slice(0, 32);
+}
+
+function gravarLastroSessao_(token, email) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      chaveLastroSessao_(token),
+      JSON.stringify({ email: email, exp: Date.now() + TEMPO_SESSAO_SEGUNDOS * 1000 }));
+  } catch (e) { /* lastro e melhoria, nao pode derrubar o login */ }
+}
+
+function removerLastroSessao_(token) {
+  try { PropertiesService.getScriptProperties().deleteProperty(chaveLastroSessao_(token)); }
+  catch (e) {}
+}
+
+/** Reconstroi a sessao a partir do lastro quando o cache despejou a entrada. */
+function sessaoDoLastro_(token) {
+  let bruto = null;
+  try { bruto = PropertiesService.getScriptProperties().getProperty(chaveLastroSessao_(token)); }
+  catch (e) { return null; }
+  if (!bruto) return null;
+  let dados;
+  try { dados = JSON.parse(bruto); } catch (e) { return null; }
+  if (!dados || !dados.email || !(Number(dados.exp) > Date.now())) {
+    removerLastroSessao_(token);
+    return null;
+  }
+  // O perfil NAO vem do lastro: vem do cadastro, agora. Guardar o perfil aqui
+  // faria uma sessao sobreviver a um rebaixamento de permissao.
+  const atual = estadoUsuarioAcesso_(dados.email);
+  if (!atual || !atual.ativo) {
+    removerLastroSessao_(token);
+    return null;
+  }
+  return {
+    email: dados.email, nome: atual.nome || '', perfil: atual.perfil,
+    telas: TELAS_POR_PERFIL[atual.perfil] || [],
+    trocarSenha: atual.trocarSenha === true,
+    authVersion: Number(atual.authVersion || 1),
+  };
+}
+
+/** Limpa lastros vencidos. Chamado pelo flush horario que ja existe. */
+function limparLastrosVencidos_() {
+  let props;
+  try { props = PropertiesService.getScriptProperties(); } catch (e) { return 0; }
+  const todas = props.getProperties();
+  let removidos = 0;
+  Object.keys(todas).forEach(function (chave) {
+    if (chave.indexOf(PREFIXO_LASTRO_SESSAO_) !== 0) return;
+    let exp = 0;
+    try { exp = Number(JSON.parse(todas[chave]).exp) || 0; } catch (e) { exp = 0; }
+    if (!(exp > Date.now())) { try { props.deleteProperty(chave); removidos++; } catch (e) {} }
+  });
+  return removidos;
+}
+
 function criarSessaoWeb_(usuario) {
   CONTEXTO_WEB_AUTORIZADO_ = true;
   const token = Utilities.getUuid() + Utilities.getUuid();
@@ -5558,6 +5689,7 @@ function criarSessaoWeb_(usuario) {
   CONTEXTO_WEB_USUARIO_ = sessao;
   CacheService.getScriptCache().put(
     'SESSAO_' + token, JSON.stringify(sessao), TEMPO_SESSAO_SEGUNDOS);
+  gravarLastroSessao_(token, usuario.email);
   aquecerCacheAcessoUsuario_(usuario);
   registrarLoginPendente_(usuario);
   return { token: token, sessao: sessao };
@@ -5575,15 +5707,23 @@ function sessaoPorToken_(token) {
   if (!token) throw new Error('Sessão ausente. Entre novamente no sistema.');
   const cache = CacheService.getScriptCache();
   const chave = 'SESSAO_' + String(token);
+  let sessao;
   const bruto = cache.get(chave);
-  if (!bruto) throw new Error('Sua sessão expirou. Entre novamente no sistema.');
-  const sessao = JSON.parse(bruto);
+  if (bruto) {
+    sessao = JSON.parse(bruto);
+  } else {
+    // Cache vazio nao significa sessao expirada: pode ter sido despejado.
+    sessao = sessaoDoLastro_(token);
+    if (!sessao) throw new Error('Sua sessão expirou. Entre novamente no sistema.');
+    cache.put(chave, JSON.stringify(sessao), TEMPO_SESSAO_SEGUNDOS);   // reidrata
+  }
 
   // Revalida o cadastro com ACL de curta duração. Evita reler Usuários a cada tela.
   const atual = estadoUsuarioAcesso_(sessao.email);
   if (!atual || !atual.ativo || atual.perfil !== sessao.perfil ||
       Number(atual.authVersion || 1) !== Number(sessao.authVersion || 1)) {
     cache.remove(chave);
+    removerLastroSessao_(token);
     throw new Error('Seu acesso, senha ou perfil foi alterado. Entre novamente.');
   }
 
@@ -5620,7 +5760,12 @@ function webSessao(token) {
 }
 
 function webLogout(token) {
-  if (token) CacheService.getScriptCache().remove('SESSAO_' + String(token));
+  if (token) {
+    CacheService.getScriptCache().remove('SESSAO_' + String(token));
+    // Sem isto o logout nao encerraria nada: o proximo acesso com o mesmo token
+    // reconstruiria a sessao pelo lastro.
+    removerLastroSessao_(token);
+  }
   return { ok: true };
 }
 
@@ -6988,7 +7133,7 @@ function onEdit(e) {
       const faixa=sheet.getRange(primeira,2,qtd,1);
       const vals=faixa.getDisplayValues(); let mudou=false;
       vals.forEach(function(l){const bruto=String(l[0]||'').trim();if(!bruto)return;const rv=resolverVeiculo_(bruto,false);if(rv.ok&&normalizaPlaca_(bruto)!==normalizaPlaca_(rv.veiculo.placa)){l[0]=rv.veiculo.placa;mudou=true;}});
-      if(mudou)faixa.setValues(vals);
+      if(mudou){faixa.setValues(vals);invalidarCacheOdometro_();}
     }
     // Alteração direta por ADMIN na aba Usuários revoga as sessões das linhas afetadas.
     if (nomeAba === ABAS.PARAMETROS && e.range.getColumn() === 2 && e.range.getNumRows() === 1) {
@@ -7341,9 +7486,7 @@ function linhasLancamentosPeriodo_(periodo) {
 }
 
 function linhasOdometroPeriodo_(periodo) {
-  const sheet = aba_(ABAS.ODOMETRO);
-  if (sheet.getLastRow()<2) return [];
-  return sheet.getRange(2,1,sheet.getLastRow()-1,3).getValues().filter(function(l) {
+  return lerOdometro_().filter(function(l) {
     const d=l[0]; return d instanceof Date && !isNaN(d.getTime()) && d>=periodo.inicio && d<=periodo.fim;
   });
 }
@@ -8022,7 +8165,10 @@ function lerResumo_() {
   const sheet = ss_().getSheetByName(ABAS.RESUMO);
   if (!sheet) return [];
   if (sheet.getLastRow() < 4) {
-    atualizarResumoSeguro_();
+    // Ocupado = outro processo esta gravando agora. Esperar a vez dele e reler
+    // e diferente de "falhou": tratar os dois igual acusaria erro grave numa
+    // condicao que se resolve sozinha em segundos.
+    if (atualizarResumoSeguro_() === RESUMO_OCUPADO_) aguardarResumoLivre_();
     if (sheet.getLastRow() < 4) {
       const temVeiculo = dadosVeiculosExecucao_().some(function (v) { return String(v[COL_VEIC.PLACA - 1] || '').trim(); });
       if (temVeiculo) {
@@ -8038,7 +8184,9 @@ function lerResumo_() {
   // V4.8: Resumo vazio com veículos no cadastro = cálculo pendente ou interrompido.
   // Recalcula na hora em vez de devolver relatório vazio.
   if (!linhas.length && dadosVeiculosExecucao_().some(function (v) { return String(v[COL_VEIC.PLACA - 1] || '').trim(); })) {
-    if (atualizarResumoSeguro_() > 0) {
+    const resultado = atualizarResumoSeguro_();
+    if (resultado === RESUMO_OCUPADO_) aguardarResumoLivre_();
+    if (resultado > 0 || resultado === RESUMO_OCUPADO_) {
       linhas = sheet.getRange(4, 1, Math.max(sheet.getLastRow() - 3, 1), TOTAL_COL_RESUMO).getValues()
         .filter(function (linha) { return linha[R_.PLACA]; });
     }
@@ -8066,6 +8214,32 @@ function lerResumo_() {
  *
  * Quem grava zera o cache por garantia (ver invalidarCacheLancamentos_).
  */
+/**
+ * Leituras de odometro, com cache de EXECUCAO (mesmo padrao de veiculos e
+ * lancamentos).
+ *
+ * Existia um cache aqui, mas privado do kmDoDia_: os outros seis pontos que
+ * precisavam das leituras varriam a aba inteira cada um. Numa requisicao que
+ * toque mais de um deles, a mesma aba era lida varias vezes.
+ *
+ * Devolve as linhas CRUAS [data, placa, km], sem filtrar: cada chamador tem um
+ * criterio diferente, e filtrar aqui obrigaria a reler para o proximo.
+ */
+let ODOMETRO_EXEC_CACHE_ = null;
+
+function lerOdometro_() {
+  if (ODOMETRO_EXEC_CACHE_) return ODOMETRO_EXEC_CACHE_;
+  const odo = ss_().getSheetByName(ABAS.ODOMETRO);
+  ODOMETRO_EXEC_CACHE_ = (odo && odo.getLastRow() >= 2)
+    ? odo.getRange(2, 1, odo.getLastRow() - 1, 3).getValues()
+    : [];
+  return ODOMETRO_EXEC_CACHE_;
+}
+
+function invalidarCacheOdometro_() {
+  ODOMETRO_EXEC_CACHE_ = null;
+}
+
 let LANCAMENTOS_EXEC_CACHE_ = null;
 
 function invalidarCacheLancamentos_() {
@@ -8111,6 +8285,7 @@ function invalidarCacheInicio_() {
   // o cache de execução da base de lançamentos também precisa cair.
   invalidarCacheLancamentos_();
   invalidarCacheFornecedores_();
+  invalidarCacheOdometro_();
 }
 
 function construirDadosInicio_(mesRef) {
@@ -8702,7 +8877,7 @@ function relatorioHistoricoKm_(centro, categoria, placa) {
   }
 
   const porPlaca = {};
-  sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues().forEach(function (l) {
+  lerOdometro_().forEach(function (l) {
     const data = l[0];
     const km = Number(l[2]);
     if (!(data instanceof Date) || isNaN(data.getTime())) return;
@@ -10547,8 +10722,13 @@ function auditoriaEdicaoInstalavel_(e) {
 function processarLoginsPendentesAgendado_() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) return;
-  try { descarregarLoginsPendentes_(); }
-  finally { lock.releaseLock(); }
+  try {
+    descarregarLoginsPendentes_();
+    // Aproveita a mesma passagem horaria para recolher os lastros de sessao
+    // vencidos. Sem isso eles so acumulam: as Properties tem teto de tamanho, e
+    // estourar o teto quebraria TODO setProperty do sistema, nao so o de sessao.
+    limparLastrosVencidos_();
+  } finally { lock.releaseLock(); }
 }
 
 /** Função executada pelo gatilho instalável. Não depende de sessão do Web App. */
@@ -11073,13 +11253,17 @@ function excluirLancamento_(id, justificativa, opcoes) {
       const odo = aba_(ABAS.ODOMETRO);
       const leituras = [];
       if (odo.getLastRow() >= 2) {
-        odo.getRange(2, 1, odo.getLastRow() - 1, 3).getValues().forEach(function (o, i) {
+        lerOdometro_().forEach(function (o, i) {
           if (normalizaPlaca_(o[1]) === placaAlvo && mesmoDia_(o[0], data)) leituras.push({ linha: i + 2, km: o[2] });
         });
       }
       if (outrosAbast === 0 && leituras.length === 1) {
         odometroRemovido = { data: data, placa: v[L_.PLACA], km: leituras[0].km };
         odo.deleteRow(leituras[0].linha);
+        // Critico aqui: logo abaixo o tanque e revalorizado e o Resumo recalculado,
+        // e os dois leem o odometro. Com o cache de antes da exclusao, o KM
+        // removido continuaria contando.
+        invalidarCacheOdometro_();
         avisoKm = ' A leitura de KM ' + leituras[0].km + ' desse dia também foi removida.';
       } else if (leituras.length) {
         avisoKm = ' Há ' + leituras.length + ' leitura(s) de KM nesse dia para a placa; confira a aba ' +
@@ -11159,6 +11343,7 @@ function corrigirLancamento_(id, ref, dados, justificativa) {
         const odo = aba_(ABAS.ODOMETRO);
         const lo = odo.getLastRow() + 1;
         odo.getRange(lo, 1, 1, 3).setValues([[r1.odometroRemovido.data, r1.odometroRemovido.placa, r1.odometroRemovido.km]]);
+        invalidarCacheOdometro_();
       }
       const exc = ss_().getSheetByName(ABAS.EXCLUIDOS);
       if (exc && exc.getLastRow() >= 2) exc.deleteRow(exc.getLastRow());
@@ -11197,15 +11382,10 @@ function webCorrigirLancamento(token, id, ref, dados, justificativa) {
 }
 
 /** Leitura de KM do veículo naquele dia, quando houver exatamente uma (para pré-preencher a correção). */
-let ODOMETRO_EXEC_CACHE_ = null;
 function kmDoDia_(placa, data) {
   if (!(data instanceof Date)) return '';
-  if (!ODOMETRO_EXEC_CACHE_) {
-    const odo = ss_().getSheetByName(ABAS.ODOMETRO);
-    ODOMETRO_EXEC_CACHE_ = odo && odo.getLastRow() >= 2 ? odo.getRange(2, 1, odo.getLastRow() - 1, 3).getValues() : [];
-  }
   const alvo = normalizaPlaca_(placa);
-  const doDia = ODOMETRO_EXEC_CACHE_.filter(function (o) { return normalizaPlaca_(o[1]) === alvo && mesmoDia_(o[0], data); });
+  const doDia = lerOdometro_().filter(function (o) { return normalizaPlaca_(o[1]) === alvo && mesmoDia_(o[0], data); });
   return doDia.length === 1 ? Number(doDia[0][2]) || '' : '';
 }
 
@@ -11368,6 +11548,7 @@ function excluirVeiculo_(placaOuPatrimonio, justificativa, apagarLancamentos) {
       for (let i = vals.length - 1; i >= 0; i--) {
         if (normalizaPlaca_(vals[i][0]) === alvo) { odo.deleteRow(i + 2); leituras++; }
       }
+      if (leituras) invalidarCacheOdometro_();
     }
 
     const sheet = aba_(ABAS.VEICULOS);
