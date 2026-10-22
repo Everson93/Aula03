@@ -416,6 +416,81 @@ não o código.
 
 ---
 
+# V4.9.1 — resolver a pendência, não só marcá-la
+
+A tela de pendências listava o problema e oferecia **Status** e **Observação**.
+Dava para escrever "serviço" na observação, marcar RESOLVIDO, e o lançamento
+continuava sem detalhe nenhum. A pendência saía da contagem, o dado ficava
+errado, e a conferência passava a mentir — que é o oposto do que ela existe
+para fazer.
+
+Agora, quando o problema é **um campo faltando numa linha conhecida**, o cartão
+traz o campo e grava a correção na base. A pendência some porque foi resolvida,
+não porque alguém disse que estava.
+
+O campo de correção vem **antes** do Status/Observação no cartão, de propósito:
+o caminho óbvio tem de ser o que conserta.
+
+## A proteção que mais importa
+
+O número da linha foi gravado quando a conferência rodou. Se alguém apagou uma
+linha de Lançamentos desde então, **"linha 35" aponta hoje para outro
+lançamento** — e gravar ali corromperia um registro que estava certo, sem
+nenhum sinal.
+
+Por isso, antes de escrever, o sistema confere se a linha alvo ainda é do mesmo
+veículo. Não sendo, recusa e manda revalidar. Há teste de mutação para isso:
+desligando a reverificação, o texto vai parar no lançamento de outro veículo e
+três provas falham.
+
+Depois de gravar, a conferência inteira é refeita — corrigir um campo pode
+resolver mais de uma pendência da mesma linha, e deixar as outras na tela seria
+mentira.
+
+## O que é corrigível
+
+| Aba | Problema | Campo |
+|---|---|---|
+| Lançamentos | Oficina sem natureza da despesa | lista |
+| Lançamentos | Oficina sem detalhe da peça/serviço | texto (mín. 3) |
+| Lançamentos | Oficina sem NF/OS/documento | texto |
+| Lançamentos | Lançamento incompleto (sem tipo) | lista |
+| Lançamentos | Tipo de despesa desconhecido | lista |
+| Lançamentos | Sem centro de custo congelado | lista |
+| Lançamentos | Sem categoria congelada | lista |
+| Lançamentos | Valor negativo | número ≥ 0 |
+| Lançamentos | Litros em tipo que não é abastecimento | número ≥ 0 |
+| Odômetro | KM/horímetro inválido | número |
+| Odômetro | Leitura menor que a anterior | número |
+| Veículos | Ativo sem centro de custo | lista, **ADMIN** |
+| Veículos | Ativo sem categoria | lista, **ADMIN** |
+
+As duas de Veículos são ADMIN porque `webSalvarVeiculo` é ADMIN no resto do
+sistema — seria incoerente o operador alterar o mesmo campo por outra porta.
+Nelas a linha é achada **pela placa**, não por número.
+
+## O que ficou de fora, e por quê
+
+- **Soma do rateio, placa duplicada, patrimônio duplicado** — não são de uma
+  linha só.
+- **Placa não cadastrada** — exige cadastro novo, não edição de campo.
+- **Datas.** Mudar a data de um lançamento muda a **competência** dele, podendo
+  jogá-lo para dentro ou para fora de um período fechado e alterando o hash de
+  integridade. Isso não pode acontecer num campo de preenchimento rápido; merece
+  tratamento próprio.
+- **ID de auditoria** — é gerado, não digitado.
+
+Quando o detalhe não traz `linha N`, o campo simplesmente não aparece. Na dúvida
+sobre qual linha é, melhor não oferecer do que gravar no lugar errado.
+
+## Suíte
+
+`conferir_corrigir_pendencia.js` — 29 provas, incluindo as três que só passam
+com a reverificação do alvo ligada.
+
+
+---
+
 # Pendente
 
 - **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo

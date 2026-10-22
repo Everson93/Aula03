@@ -415,7 +415,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.9.0';
+const VERSAO_SISTEMA = '4.9.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -10469,10 +10469,279 @@ function webPendencias(token) {
       linha: i + 3, origem: String(l[0] || ''), placa: String(l[1] || ''),
       problema: String(l[2] || ''), detalhe: String(l[3] || ''),
       status: status, observacao: String(l[5] || ''),
+      // V4.9.1: quando o problema e um campo faltando numa linha conhecida, a
+      // tela mostra o campo e grava a correcao — em vez de so deixar marcar
+      // RESOLVIDO com o dado ainda errado.
+      correcao: correcaoDaPendencia_(String(l[0] || ''), String(l[2] || ''),
+        String(l[3] || ''), String(l[1] || '')),
       validadoEm: l[6] instanceof Date ? Utilities.formatDate(l[6], timezone_(), 'dd/MM/yyyy HH:mm') : String(l[6] || '')
     });
   });
   return { total: pendentes + analise, pendentes: pendentes, analise: analise, linhas: linhas };
+}
+
+// ====================================================== V4.9.1: corrigir pendência na hora
+/**
+ * A tela de pendencias listava o problema e oferecia Status + Observacao. Dava
+ * para marcar RESOLVIDO escrevendo "serviço" na observacao — e o lancamento
+ * continuava sem detalhe nenhum. A pendencia sumia da contagem, o dado ficava
+ * errado, e a conferencia passava a mentir.
+ *
+ * Agora, quando o problema e um campo faltando numa linha conhecida, a tela traz
+ * o campo e grava a correcao na base. A pendencia some porque foi RESOLVIDA, nao
+ * porque alguem disse que estava.
+ *
+ * Nem todo problema entra aqui, de proposito. Ficam de fora:
+ *  - os que nao sao de uma linha so (soma de rateio, placa duplicada);
+ *  - os que exigem cadastro novo, nao edicao (placa nao cadastrada);
+ *  - datas. Mudar a data de um lancamento muda a COMPETENCIA dele, podendo
+ *    joga-lo para dentro ou para fora de um periodo fechado e alterando o hash
+ *    de integridade. Isso nao pode acontecer num campo de preenchimento rapido.
+ */
+const CORRECOES_PENDENCIA_ = {};
+
+function registrarCorrecaoPendencia_(problema, spec) { CORRECOES_PENDENCIA_[problema] = spec; }
+
+(function () {
+  const L = ABAS.LANCAMENTOS, O = ABAS.ODOMETRO, V = ABAS.VEICULOS;
+
+  registrarCorrecaoPendencia_('Oficina sem natureza da despesa', {
+    aba: L, coluna: COL_LANC.NATUREZA_OFICINA, tipo: 'lista', rotulo: 'Natureza da despesa',
+    ajuda: 'classifique como peça, serviço ou outra natureza',
+    opcoes: function () { return NATUREZAS_OFICINA.slice(); } });
+
+  registrarCorrecaoPendencia_('Oficina sem detalhe da peça/serviço', {
+    aba: L, coluna: COL_LANC.DETALHE_OFICINA, tipo: 'texto', rotulo: 'Detalhe da peça / serviço',
+    ajuda: 'descreva o que foi comprado ou executado', minimo: 3 });
+
+  registrarCorrecaoPendencia_('Oficina sem NF/OS/documento', {
+    aba: L, coluna: COL_LANC.DOCUMENTO, tipo: 'texto', rotulo: 'NF / OS / documento',
+    ajuda: 'informe o documento que comprova a despesa' });
+
+  registrarCorrecaoPendencia_('Lançamento incompleto (sem tipo de despesa)', {
+    aba: L, coluna: COL_LANC.TIPO, tipo: 'lista', rotulo: 'Tipo de despesa',
+    opcoes: function () { return TIPOS_DESPESA.slice(); } });
+
+  registrarCorrecaoPendencia_('Tipo de despesa desconhecido', {
+    aba: L, coluna: COL_LANC.TIPO, tipo: 'lista', rotulo: 'Tipo de despesa',
+    opcoes: function () { return TIPOS_DESPESA.slice(); } });
+
+  registrarCorrecaoPendencia_('Lançamento sem centro de custo congelado', {
+    aba: L, coluna: COL_LANC.CENTRO, tipo: 'lista', rotulo: 'Centro de custo',
+    opcoes: function () { return listaCentros_(); } });
+
+  registrarCorrecaoPendencia_('Lançamento sem categoria congelada', {
+    aba: L, coluna: COL_LANC.CATEGORIA, tipo: 'lista', rotulo: 'Categoria',
+    opcoes: function () { return listaCategorias_(); } });
+
+  registrarCorrecaoPendencia_('Valor negativo', {
+    aba: L, coluna: COL_LANC.VALOR, tipo: 'numero', rotulo: 'Valor R$', minimoNumero: 0,
+    ajuda: 'despesa é valor positivo; estorno se faz excluindo o lançamento' });
+
+  registrarCorrecaoPendencia_('Litros informados num tipo que não é abastecimento', {
+    aba: L, coluna: COL_LANC.LITROS, tipo: 'numero', rotulo: 'Litros', minimoNumero: 0,
+    ajuda: 'zere os litros, ou corrija o tipo de despesa no lançamento' });
+
+  registrarCorrecaoPendencia_('KM/horímetro inválido', {
+    aba: O, coluna: 3, tipo: 'numero', rotulo: 'KM / horímetro', minimoNumero: 0 });
+
+  registrarCorrecaoPendencia_('Leitura de KM menor que a anterior', {
+    aba: O, coluna: 3, tipo: 'numero', rotulo: 'KM / horímetro', minimoNumero: 0,
+    ajuda: 'confira o odômetro do veículo; leitura que retrocede quebra o KM rodado' });
+
+  // Veiculos nao tem numero de linha na pendencia: a linha e achada pela placa.
+  // Cadastro de veiculo e ADMIN em todo o resto do sistema (webSalvarVeiculo);
+  // seria incoerente o operador alterar o mesmo campo por esta porta.
+  registrarCorrecaoPendencia_('Veículo ativo sem centro de custo', {
+    aba: V, coluna: COL_VEIC.CENTRO, tipo: 'lista', rotulo: 'Centro de custo',
+    localizar: 'placa', perfil: 'ADMIN',
+    opcoes: function () { return listaCentros_(); } });
+
+  registrarCorrecaoPendencia_('Veículo ativo sem categoria', {
+    aba: V, coluna: COL_VEIC.CATEGORIA, tipo: 'lista', rotulo: 'Categoria',
+    localizar: 'placa', perfil: 'ADMIN',
+    opcoes: function () { return listaCategorias_(); } });
+})();
+
+/** Coluna da placa em cada aba, para a reverificacao do alvo. */
+function colunaPlacaDaAba_(aba) {
+  if (aba === ABAS.LANCAMENTOS) return COL_LANC.PLACA;
+  if (aba === ABAS.ODOMETRO) return 2;
+  if (aba === ABAS.VEICULOS) return COL_VEIC.PLACA;
+  return 0;
+}
+
+/**
+ * Numero da linha alvo, extraido do detalhe da pendencia ("linha 35 • ...").
+ *
+ * O formato e gerado pelo proprio coletor, sempre com esse prefixo. Quando nao
+ * casa, a pendencia simplesmente nao e corrigivel pela tela — que e o padrao
+ * seguro: melhor nao oferecer o campo do que gravar na linha errada.
+ */
+function linhaAlvoPendencia_(detalhe) {
+  const m = /^linha\s+(\d+)/.exec(String(detalhe || '').trim());
+  return m ? Number(m[1]) : 0;
+}
+
+/** Descricao da correcao possivel para uma pendencia, ou null. */
+function correcaoDaPendencia_(origem, problema, detalhe, placa) {
+  const spec = CORRECOES_PENDENCIA_[String(problema || '').trim()];
+  if (!spec) return null;
+  if (spec.aba !== origem) return null;
+  const porPlaca = spec.localizar === 'placa';
+  const linha = porPlaca ? 0 : linhaAlvoPendencia_(detalhe);
+  if (!porPlaca && linha < 2) return null;
+  if (porPlaca && !String(placa || '').trim()) return null;
+  return {
+    aba: spec.aba, linha: linha, tipo: spec.tipo, rotulo: spec.rotulo,
+    ajuda: spec.ajuda || '', opcoes: spec.opcoes ? spec.opcoes() : null,
+    somenteAdmin: spec.perfil === 'ADMIN',
+  };
+}
+
+/**
+ * Localiza e CONFERE a linha que a correcao vai tocar.
+ *
+ * A reverificacao nao e zelo excessivo. O numero da linha foi gravado quando a
+ * conferencia rodou; se alguem apagou uma linha de Lançamentos desde entao, a
+ * "linha 35" aponta hoje para outro lancamento — e gravar ali corromperia um
+ * registro que estava certo, em silencio. Conferir a placa antes de escrever e
+ * o que impede isso.
+ */
+function alvoCorrecaoPendencia_(spec, linhaAlvo, placaEsperada) {
+  const sheet = aba_(spec.aba);
+  const colPlaca = colunaPlacaDaAba_(spec.aba);
+  const esperada = normalizaPlaca_(placaEsperada);
+
+  if (spec.localizar === 'placa') {
+    if (!esperada) return { ok: false, mensagem: 'A pendência não tem placa para localizar o cadastro.' };
+    const ultima = sheet.getLastRow();
+    if (ultima < 2) return { ok: false, mensagem: 'A aba ' + spec.aba + ' está vazia.' };
+    const placas = sheet.getRange(2, colPlaca, ultima - 1, 1).getValues();
+    for (let i = 0; i < placas.length; i++) {
+      if (normalizaPlaca_(placas[i][0]) === esperada) return { ok: true, sheet: sheet, linha: i + 2 };
+    }
+    return { ok: false, mensagem: 'Placa ' + placaEsperada + ' não encontrada em ' + spec.aba + '.' };
+  }
+
+  if (linhaAlvo < 2 || linhaAlvo > sheet.getLastRow()) {
+    return { ok: false, mensagem: 'A linha ' + linhaAlvo + ' não existe mais em ' + spec.aba +
+      '. Clique em “Revalidar” para a lista ser refeita.' };
+  }
+  const atual = normalizaPlaca_(sheet.getRange(linhaAlvo, colPlaca).getValue());
+  if (esperada && atual !== esperada) {
+    return { ok: false, mensagem: 'A linha ' + linhaAlvo + ' de ' + spec.aba + ' não é mais do ' +
+      'veículo ' + placaEsperada + ' (está como ' + (atual || 'vazia') + '). A base mudou desde a ' +
+      'última conferência — clique em “Revalidar” antes de corrigir.' };
+  }
+  return { ok: true, sheet: sheet, linha: linhaAlvo };
+}
+
+/** Converte e valida o valor digitado conforme o tipo do campo. */
+function valorCorrecaoPendencia_(spec, bruto) {
+  if (spec.tipo === 'numero') {
+    const texto = String(bruto === undefined || bruto === null ? '' : bruto).trim()
+      .replace(/\./g, '').replace(',', '.');
+    const n = texto === '' ? NaN : Number(texto);
+    if (!isFinite(n)) return { ok: false, mensagem: spec.rotulo + ': informe um número.' };
+    if (spec.minimoNumero !== undefined && n < spec.minimoNumero) {
+      return { ok: false, mensagem: spec.rotulo + ': não pode ser menor que ' + spec.minimoNumero + '.' };
+    }
+    return { ok: true, valor: n };
+  }
+  const texto = String(bruto === undefined || bruto === null ? '' : bruto).trim();
+  if (spec.tipo === 'lista') {
+    const opcoes = spec.opcoes ? spec.opcoes() : [];
+    if (opcoes.indexOf(texto) === -1) {
+      return { ok: false, mensagem: spec.rotulo + ': escolha uma das opções da lista.' };
+    }
+    return { ok: true, valor: texto };
+  }
+  if (!texto) return { ok: false, mensagem: spec.rotulo + ' não pode ficar em branco.' };
+  if (spec.minimo && texto.length < spec.minimo) {
+    return { ok: false, mensagem: spec.rotulo + ': escreva pelo menos ' + spec.minimo + ' caracteres. ' +
+      'Um texto genérico não ajuda ninguém na hora de cobrar garantia.' };
+  }
+  return { ok: true, valor: texto.slice(0, 300) };
+}
+
+/**
+ * Grava a correcao na base e refaz a conferencia.
+ *
+ * Revalida no fim de proposito: a pendencia tem de sumir porque o problema
+ * acabou, nao porque alguem a marcou como resolvida.
+ */
+function webCorrigirPendencia(token, linhaPendencia, valorNovo) {
+  const sessao = autorizarContextoWeb_(token, ['OPERADOR', 'ADMIN']);
+  const sheetPend = garantirAbaPendencias_(false);
+  const alvoLinha = Math.floor(Number(linhaPendencia) || 0);
+  if (!sheetPend || alvoLinha < 3 || alvoLinha > sheetPend.getLastRow()) {
+    return { ok: false, mensagem: 'Pendência não encontrada. Clique em “Revalidar”.' };
+  }
+  const p = sheetPend.getRange(alvoLinha, 1, 1, 4).getValues()[0];
+  const origem = String(p[0] || '').trim();
+  const placa = String(p[1] || '').trim();
+  const problema = String(p[2] || '').trim();
+  const detalhe = String(p[3] || '').trim();
+
+  const spec = CORRECOES_PENDENCIA_[problema];
+  if (!spec || spec.aba !== origem) {
+    return { ok: false, mensagem: 'Esta pendência não se resolve por um campo só; ' +
+      'é preciso tratá-la na planilha.' };
+  }
+  if (spec.perfil === 'ADMIN' && sessao.perfil !== 'ADMIN') {
+    return { ok: false, mensagem: 'Esta correção mexe no cadastro do veículo — só ADMIN.' };
+  }
+
+  const convertido = valorCorrecaoPendencia_(spec, valorNovo);
+  if (!convertido.ok) return { ok: false, mensagem: convertido.mensagem };
+
+  const alvo = alvoCorrecaoPendencia_(spec, linhaAlvoPendencia_(detalhe), placa);
+  if (!alvo.ok) return { ok: false, mensagem: alvo.mensagem };
+
+  const celula = alvo.sheet.getRange(alvo.linha, spec.coluna);
+  const anterior = celula.getValue();
+  celula.setValue(convertido.valor);
+
+  invalidarCachesDaAba_(spec.aba);
+  registrarLog_('Corrigir pendência',
+    problema + ' • ' + spec.aba + ' linha ' + alvo.linha + ' • ' + spec.rotulo + ': "' +
+    String(anterior === '' ? '(vazio)' : anterior) + '" -> "' + convertido.valor + '"');
+
+  // Refaz a conferencia inteira: corrigir um campo pode resolver mais de uma
+  // pendencia da mesma linha, e deixar as outras na tela seria mentira.
+  const restantes = revalidarPendenciasSeguro_();
+  return {
+    ok: true,
+    mensagem: spec.rotulo + ' gravado em ' + spec.aba + ', linha ' + alvo.linha + '. ' +
+      (restantes === null ? 'Conferência não pôde ser refeita agora.'
+        : restantes + ' pendência(s) em aberto.'),
+    pendentes: restantes,
+  };
+}
+
+/** Invalida os caches de execucao afetados por uma escrita na aba. */
+function invalidarCachesDaAba_(aba) {
+  if (aba === ABAS.LANCAMENTOS) invalidarCacheLancamentos_();
+  if (aba === ABAS.ODOMETRO) invalidarCacheOdometro_();
+  if (aba === ABAS.VEICULOS) VEICULOS_EXEC_CACHE_ = null;
+  if (aba === ABAS.CENTROS) CENTROS_EXEC_CACHE_ = null;
+  invalidarCacheInicio_();
+  invalidarCacheSaude_();
+  marcarResumoDesatualizado_();
+}
+
+/** Refaz a conferencia sem deixar um erro dela derrubar a correcao ja gravada. */
+function revalidarPendenciasSeguro_() {
+  // Sem forcar CONTEXTO_SISTEMA_INTERNO_: quem chama ja passou por
+  // autorizarContextoWeb_, e manter o contexto do usuario preserva a autoria.
+  try {
+    escreverConferencia_(coletarProblemas_());
+    return contarPendenciasConferencia_();
+  } catch (e) {
+    console.error('revalidar pendências: ' + e.message);
+    return null;
+  }
 }
 
 function webAtualizarPendencia(token, linha, status, observacao) {
