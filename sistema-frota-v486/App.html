@@ -1,0 +1,2868 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    :root {
+      --laranja: #F47820;
+      --laranja-escuro: #D86512;
+      --laranja-texto: #7A3507;
+      --laranja-claro: #FDE9D9;
+      --preto: #231F20;
+      --grafite: #4A4546;
+      --borda: #DEDAD8;
+      --suave: #706B6C;
+      --verde: #1E7145;
+      --vermelho: #A52422;
+      --fundo: #F5F4F3;
+      --papel: #FFFFFF;
+      --texto: #231F20;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--fundo); color: var(--texto);
+      font-family: Roboto, -apple-system, "Segoe UI", Arial, sans-serif; font-size: 14px;
+    }
+    header {
+      background: var(--preto); color: #fff; padding: 10px 14px;
+      border-bottom: 3px solid var(--laranja);
+      position: sticky; top: 0; z-index: 30;
+      display: flex; align-items: center; gap: 12px;
+    }
+    header .marca { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    header .logo {
+      width: 32px; height: 32px; border-radius: 8px; background: var(--laranja);
+      display: grid; place-items: center; font-size: 16px; flex: 0 0 auto;
+    }
+    header h1 {
+      margin: 0; font-size: 14.5px; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    header .meta { font-size: 11px; opacity: .82; white-space: nowrap; }
+    .espaco { flex: 1; }
+    #btnMenu {
+      display: none; background: none; border: 1px solid rgba(255,255,255,.35);
+      color: #fff; border-radius: 7px; padding: 6px 10px; font-size: 15px; cursor: pointer;
+    }
+    .busca-caixa { position: relative; flex: 0 1 280px; }
+    #buscaMenu {
+      width: 100%; padding: 7px 10px 7px 30px; border-radius: 7px; font-size: 13px;
+      border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12); color: #fff;
+    }
+    #buscaMenu::placeholder { color: rgba(255,255,255,.6); }
+    #buscaMenu:focus {
+      outline: none; background: #fff; color: var(--texto);
+      border-color: #fff; box-shadow: none;
+    }
+    #buscaMenu:focus::placeholder { color: #9aa2ae; }
+    .busca-caixa .lupa {
+      position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+      font-size: 12px; opacity: .7; pointer-events: none;
+    }
+    .cta {
+      background: var(--laranja); color: var(--preto); border: none; border-radius: 7px;
+      padding: 8px 13px; font-weight: 700; font-size: 13px; cursor: pointer;
+      font-family: inherit; white-space: nowrap;
+    }
+    .cta:hover { background: var(--laranja-escuro); }
+
+    .app { display: grid; grid-template-columns: 224px 1fr; min-height: calc(100vh - 54px); }
+    nav {
+      background: var(--papel); border-right: 1px solid var(--borda);
+      padding: 10px 8px 24px; overflow-y: auto;
+    }
+    nav .grupo { margin-bottom: 4px; }
+    nav .titulo-grupo {
+      display: flex; align-items: center; gap: 6px; width: 100%; background: none;
+      border: none; cursor: pointer; font-family: inherit; padding: 8px 10px;
+      font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
+      color: var(--suave); font-weight: 700;
+    }
+    nav .titulo-grupo:hover { color: var(--laranja-texto); }
+    nav .titulo-grupo .seta { transition: transform .15s; font-size: 9px; }
+    nav .grupo.fechado .seta { transform: rotate(-90deg); }
+    nav .grupo.fechado .itens { display: none; }
+    nav .item {
+      display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+      background: none; border: none; padding: 9px 11px; border-radius: 7px;
+      cursor: pointer; font-family: inherit; font-size: 13.5px; color: #333;
+      margin-bottom: 1px; position: relative;
+    }
+    nav .item:hover { background: #FFF4EC; }
+    nav .item.ativo { background: var(--laranja); color: var(--preto); font-weight: 700; }
+    nav .item.ativo .icone { filter: none; }
+    nav .item .icone { width: 18px; text-align: center; flex: 0 0 auto; }
+    nav .item .selo {
+      margin-left: auto; background: var(--vermelho); color: #fff; font-size: 10px;
+      font-weight: 700; border-radius: 10px; padding: 1px 7px;
+    }
+    nav .item.ativo .selo { background: rgba(255,255,255,.25); }
+    nav .vazio { padding: 14px 12px; color: var(--suave); font-size: 12px; }
+    #veu {
+      display: none; position: fixed; inset: 54px 0 0; background: rgba(16,20,28,.4); z-index: 25;
+    }
+    #veu.aberto { display: block; }
+    main { padding: 16px; overflow-x: hidden; }
+    h2.titulo { margin: 0 0 4px; font-size: 17px; color: var(--preto); border-left: 4px solid var(--laranja); padding-left: 8px; }
+    p.sub { margin: 0 0 14px; color: var(--suave); font-size: 12.5px; }
+    .cartao {
+      background: var(--papel); border: 1px solid var(--borda); border-radius: 9px;
+      padding: 14px; margin-bottom: 14px;
+    }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .kpi { background: var(--papel); border: 1px solid var(--borda); border-radius: 9px; padding: 11px 13px; }
+    .kpi .rotulo { font-size: 10px; font-weight: 700; color: var(--suave); text-transform: uppercase; letter-spacing: .3px; }
+    .kpi .valor { font-size: 18px; font-weight: 700; color: var(--preto); margin-top: 4px; }
+    .kpi .valor.sobe { color: var(--vermelho); }
+    .kpi .valor.desce { color: var(--verde); }
+    label { display: block; font-weight: 600; margin: 10px 0 4px; font-size: 12.5px; }
+    input, select, textarea {
+      width: 100%; padding: 9px 10px; border: 1px solid var(--borda); border-radius: 7px;
+      font-size: 15px; font-family: inherit; background: #fff; color: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--laranja); box-shadow: 0 0 0 3px rgba(244,120,32,.14);
+    }
+    input:disabled { background: #f3f4f6; color: #9ca3af; }
+    .linha { display: flex; gap: 10px; flex-wrap: wrap; }
+    .linha > div { flex: 1 1 150px; }
+    button.acao {
+      padding: 11px 16px; border: none; border-radius: 7px; background: var(--laranja);
+      color: var(--preto); font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    button.acao.secundaria { background: #fff; color: var(--preto); border: 1px solid #B8B1AE; }
+    button.acao.perigo { background: var(--vermelho); color: #fff; }
+    button.acao:disabled { opacity: .5; cursor: default; }
+    .barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+    .barra > div { flex: 1 1 190px; }
+    .rolagem { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+    th {
+      background: var(--preto); color: #fff; font-size: 10.5px; text-transform: uppercase;
+      border-bottom: 2px solid var(--laranja);
+      letter-spacing: .3px; padding: 8px 10px; text-align: left; position: sticky; top: 0;
+    }
+    td { padding: 7px 10px; border-bottom: 1px solid #eef0f4; }
+    tbody tr:nth-child(even) { background: #FAF9F8; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tfoot td { font-weight: 700; background: var(--laranja-claro); border-top: 2px solid var(--laranja); }
+    .contagem { font-size: 11.5px; color: var(--suave); margin-top: 8px; }
+    .aviso { background: #fff4e5; border: 1px solid #f0c890; color: #7a4f00; border-radius: 7px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+    .erro-caixa { background: #fce4e4; border: 1px solid #e6b3b3; color: var(--vermelho); border-radius: 7px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+    .ok-caixa { background: #e2efda; border: 1px solid #b7d7a8; color: var(--verde); border-radius: 7px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+    .carregando { text-align: center; color: var(--suave); padding: 34px 0; }
+    .lista-item { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid #eef0f4; }
+    .lista-item:first-child { border-top: none; }
+    .sub2 { font-size: 11px; color: var(--suave); }
+    .chip { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; background: var(--laranja-claro); color: #7A3507; font-weight: 700; }
+    #status {
+      position: fixed; left: 0; right: 0; bottom: 0; padding: 11px 16px;
+      background: var(--preto); border-top: 3px solid var(--laranja); color: #fff; font-size: 13px; display: none; z-index: 40;
+    }
+    #status.erro { background: var(--vermelho); }
+    #status a { color: #FFD4B4; }
+    @media (max-width: 860px) {
+      .app { grid-template-columns: 1fr; }
+      nav {
+        display: none; position: fixed; top: 54px; bottom: 0; left: 0; width: 260px;
+        z-index: 26; box-shadow: 4px 0 20px rgba(0,0,0,.15);
+      }
+      nav.aberto { display: block; }
+      #btnMenu { display: block; }
+      .busca-caixa { flex: 1 1 auto; }
+      header .meta, .cta span.rotulo { display: none; }
+      main { padding: 12px; }
+    }
+    @media (max-width: 520px) {
+      .busca-caixa { display: none; }
+    }
+
+    .login-tela { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+      background: linear-gradient(135deg, #FFF8F3, #EDEAE8); padding: 20px; }
+    .login-caixa { width: min(420px, 100%); background: #fff; border: 1px solid var(--borda);
+      border-radius: 14px; padding: 26px; box-shadow: 0 18px 55px rgba(35,31,32,.16); }
+    .login-marca { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+    .login-logo { width:44px; height:44px; border-radius:11px; display:grid; place-items:center;
+      background:var(--laranja); color:var(--preto); font-size:22px; }
+    .login-caixa h2 { margin:0; color:var(--preto); font-size:19px; }
+    .login-caixa p { margin:3px 0 0; color:var(--suave); font-size:12px; }
+    .login-caixa button { width:100%; margin-top:16px; }
+    .usuario-topo { display:flex; align-items:center; gap:8px; font-size:11px; }
+    .usuario-topo button { background:transparent; color:#fff; border:1px solid rgba(255,255,255,.35);
+      border-radius:6px; padding:6px 8px; cursor:pointer; }
+  
+    /* ------------------------------------------------ Dashboard executivo */
+    .dash-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:14px; }
+    .dash-eyebrow { font-size:10px; font-weight:800; letter-spacing:.9px; color:var(--laranja-texto); text-transform:uppercase; margin-bottom:4px; }
+    .dash-head h2 { margin:0; font-size:23px; color:var(--preto); letter-spacing:-.3px; }
+    .dash-head p { margin:4px 0 0; color:var(--suave); font-size:12.5px; }
+    .dash-acoes { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+    .dash-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--borda); background:#fff; border-radius:999px; padding:7px 10px; font-size:11.5px; font-weight:700; color:#3c4655; }
+    .dash-chip.ok::before { content:''; width:7px; height:7px; background:#2e8b57; border-radius:50%; }
+    .dash-refresh { border:1px solid #F0B88E; background:#fff; color:var(--laranja-texto); border-radius:8px; padding:7px 11px; font-weight:700; cursor:pointer; font-family:inherit; }
+    .dash-refresh:hover { background:#FFF4EC; }
+    .dash-kpis { display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:10px; margin-bottom:10px; }
+    .dash-kpi { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:13px 14px; min-height:92px; position:relative; overflow:hidden; }
+    .dash-kpi::after { content:''; position:absolute; right:-18px; top:-22px; width:66px; height:66px; border-radius:50%; background:rgba(244,120,32,.07); }
+    .dash-kpi .label { font-size:10px; color:var(--suave); text-transform:uppercase; letter-spacing:.45px; font-weight:800; }
+    .dash-kpi .numero { margin-top:6px; font-size:20px; line-height:1.05; font-weight:800; color:var(--preto); font-variant-numeric:tabular-nums; }
+    .dash-kpi .nota { margin-top:6px; font-size:10.5px; color:var(--suave); }
+    .dash-kpi .delta { display:inline-block; margin-top:6px; font-size:11px; font-weight:800; border-radius:999px; padding:3px 7px; }
+    .dash-kpi .delta.alta { color:#9c1c1c; background:#fce8e8; }
+    .dash-kpi .delta.baixa { color:#1e7145; background:#e6f3ec; }
+    .dash-kpi .delta.neutro { color:#706B6C; background:#f2f4f7; }
+    .dash-mini { display:grid; grid-template-columns:repeat(4,minmax(120px,1fr)); gap:8px; margin-bottom:14px; }
+    .dash-mini .item { background:#FAF9F8; border:1px solid #E8E3E0; border-radius:9px; padding:9px 11px; }
+    .dash-mini .r { font-size:10px; color:var(--suave); text-transform:uppercase; font-weight:800; }
+    .dash-mini .v { margin-top:3px; color:var(--preto); font-size:15px; font-weight:800; }
+    .dash-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(300px,.75fr); gap:12px; margin-bottom:12px; }
+    .dash-grid.meio { grid-template-columns:1fr 1fr; }
+    .dash-card { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:14px; min-width:0; }
+    .dash-card-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:10px; }
+    .dash-card h3 { margin:0; color:var(--preto); font-size:12px; text-transform:uppercase; letter-spacing:.35px; }
+    .dash-card .hint { color:var(--suave); font-size:10.5px; margin-top:3px; }
+    .dash-chart { width:100%; min-height:225px; }
+    .dash-chart svg { width:100%; height:225px; display:block; overflow:visible; }
+    .dash-donut-wrap { display:grid; grid-template-columns:150px 1fr; gap:16px; align-items:center; min-height:220px; }
+    .dash-donut { width:142px; height:142px; border-radius:50%; position:relative; margin:auto; }
+    .dash-donut::after { content:''; position:absolute; inset:27px; background:#fff; border-radius:50%; box-shadow:inset 0 0 0 1px #eef1f5; }
+    .dash-donut-centro { position:absolute; inset:0; z-index:2; display:grid; place-content:center; text-align:center; pointer-events:none; }
+    .dash-donut-centro b { font-size:15px; color:var(--preto); }
+    .dash-donut-centro span { font-size:9.5px; color:var(--suave); text-transform:uppercase; font-weight:700; }
+    .dash-legenda { display:flex; flex-direction:column; gap:7px; }
+    .dash-legenda .linha-leg { display:grid; grid-template-columns:10px 1fr auto; gap:7px; align-items:center; font-size:11px; }
+    .dash-legenda .cor { width:8px; height:8px; border-radius:2px; }
+    .dash-legenda .nome { color:#5F5A5B; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .dash-legenda .valor { font-weight:700; color:var(--preto); font-variant-numeric:tabular-nums; }
+    .rank-list { display:flex; flex-direction:column; gap:9px; }
+    .rank-row { display:grid; grid-template-columns:minmax(110px,1.3fr) minmax(110px,2fr) auto; gap:10px; align-items:center; }
+    .rank-label { min-width:0; }
+    .rank-label b { display:block; font-size:11.5px; color:var(--preto); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .rank-label span { display:block; color:var(--suave); font-size:9.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px; }
+    .rank-track { height:7px; background:#EEEAE8; border-radius:999px; overflow:hidden; }
+    .rank-fill { height:100%; border-radius:999px; background:linear-gradient(90deg,var(--preto),var(--laranja)); }
+    .rank-value { font-size:10.5px; font-weight:800; color:var(--preto); white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .dash-alerta { display:flex; align-items:flex-start; gap:10px; background:#fff7e8; border:1px solid #f0cf96; color:#754b00; padding:10px 12px; border-radius:9px; margin-bottom:12px; font-size:12px; }
+    .dash-rodape { text-align:right; color:#9B9694; font-size:9.5px; margin-top:7px; }
+    .skeleton-dashboard { padding:2px 0; }
+    .sk-line,.sk-card { background:linear-gradient(90deg,#f0f2f5 25%,#f8f9fb 37%,#f0f2f5 63%); background-size:400% 100%; animation:sk 1.25s ease infinite; border-radius:8px; }
+    .sk-line { height:20px; width:220px; margin-bottom:12px; }
+    .sk-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+    .sk-card { height:92px; }
+    @keyframes sk { 0%{background-position:100% 0} 100%{background-position:0 0} }
+    @media (max-width:1100px) { .dash-kpis{grid-template-columns:repeat(2,1fr)} .dash-grid,.dash-grid.meio{grid-template-columns:1fr} }
+    @media (max-width:650px) { .dash-head{flex-direction:column} .dash-acoes{justify-content:flex-start} .dash-kpis,.dash-mini{grid-template-columns:repeat(2,1fr)} .dash-donut-wrap{grid-template-columns:1fr} .rank-row{grid-template-columns:minmax(100px,1.2fr) minmax(70px,1.2fr) auto} }
+</style>
+</head>
+<body>
+
+  <div id="loginTela" class="login-tela">
+    <div class="login-caixa">
+      <div class="login-marca"><div class="login-logo">🚚</div><div><h2>Sistema de Gestão Logística</h2><p>Grupo Giassi • acesso controlado</p></div></div>
+      <label for="loginEmail">E-mail</label>
+      <input type="email" id="loginEmail" autocomplete="username" placeholder="seu.email@empresa.com.br">
+      <label for="loginSenha">Senha</label>
+      <input type="password" id="loginSenha" autocomplete="current-password" placeholder="Sua senha">
+      <button class="acao" id="btnLogin" onclick="entrar()">Entrar</button>
+      <div id="loginMsg" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <div id="trocaSenhaTela" class="login-tela" style="display:none">
+    <div class="login-caixa">
+      <div class="login-marca"><div class="login-logo">🔑</div><div><h2>Defina sua senha</h2><p>Seu acesso está usando uma senha temporária.</p></div></div>
+      <div class="aviso">Por segurança, crie uma senha definitiva antes de acessar o sistema.</div>
+      <label for="trocaAtual">Senha temporária / atual</label>
+      <input type="password" id="trocaAtual" autocomplete="current-password" placeholder="Digite a senha usada no login">
+      <label for="trocaNova">Nova senha</label>
+      <input type="password" id="trocaNova" autocomplete="new-password" placeholder="Mínimo de 10 caracteres">
+      <label for="trocaConfirmar">Confirmar nova senha</label>
+      <input type="password" id="trocaConfirmar" autocomplete="new-password" placeholder="Repita a nova senha">
+      <button class="acao" id="btnTrocarSenha" onclick="confirmarTrocaObrigatoria()">Salvar nova senha</button>
+      <button class="acao secundaria" style="width:100%;margin-top:8px" onclick="sair()">Sair</button>
+      <div id="trocaSenhaMsg" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <header id="cabecalhoApp" style="display:none">
+    <button id="btnMenu" onclick="alternarMenu()" title="Menu">☰</button>
+    <div class="marca">
+      <div class="logo">🚚</div>
+      <div style="min-width:0">
+        <h1 id="titulo">Controle de Frota</h1>
+        <div class="meta" id="meta">carregando…</div>
+      </div>
+    </div>
+    <div class="espaco"></div>
+    <div class="busca-caixa">
+      <span class="lupa">🔎</span>
+      <input type="text" id="buscaMenu" placeholder="Buscar tela…  ( / )" autocomplete="off">
+    </div>
+    <div class="usuario-topo" id="usuarioTopo"></div>
+    <button class="cta" id="btnLancarTopo" onclick="abrir('lancar')">➕<span class="rotulo"> Lançar</span></button>
+  </header>
+
+  <div class="app" id="corpoApp" style="display:none">
+    <nav id="nav"></nav>
+    <main id="tela"><div class="carregando">carregando o sistema…</div></main>
+  </div>
+  <div id="veu" onclick="alternarMenu()"></div>
+
+  <div id="status"></div>
+
+<script>
+  var CONFIG = null;      // período, placas, tipos
+  var OPCOES = null;      // centros e categorias
+  var TELA = '<?= paginaInicial ?>';
+  var TOKEN = '';
+  var SESSAO = null;
+  var INICIO_CLIENTE = null;
+  var PENDENCIAS_CLIENTE = null;
+  var FILTRO_PEND_VEICULO = 'TODOS';
+  var FILTRO_PEND_TIPO = 'TODOS';
+
+  // ------------------------------------------------------------ utilidades
+  function el(id) { return document.getElementById(id); }
+  function esc(t) {
+    return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function brl(n, casas) {
+    return 'R$ ' + Number(n || 0).toLocaleString('pt-BR', {
+      minimumFractionDigits: casas === undefined ? 2 : casas,
+      maximumFractionDigits: casas === undefined ? 2 : casas
+    });
+  }
+  function num(n, casas) {
+    return Number(n || 0).toLocaleString('pt-BR', {
+      minimumFractionDigits: casas || 0, maximumFractionDigits: casas || 0
+    });
+  }
+  function dataBR(iso) {
+    var p = String(iso).split('-');
+    return p[2] + '/' + p[1] + '/' + p[0];
+  }
+  function formatar(valor, tipo) {
+    if (valor === null || valor === undefined || valor === '') return '';
+    switch (tipo) {
+      case 'moeda': return brl(valor);
+      case 'moeda3': return brl(valor, 3);
+      case 'numero': return num(valor);
+      case 'decimal': return num(valor, 2);
+      default: return esc(valor);
+    }
+  }
+  function numerico(tipo) {
+    return ['moeda', 'moeda3', 'numero', 'decimal'].indexOf(tipo) !== -1;
+  }
+  function status(texto, erro) {
+    var barra = el('status');
+    barra.textContent = texto;
+    barra.className = erro ? 'erro' : '';
+    barra.style.display = 'block';
+    if (!erro) setTimeout(function () { barra.style.display = 'none'; }, 7000);
+  }
+  function statusHtml(html) {
+    var barra = el('status');
+    barra.innerHTML = html;
+    barra.className = '';
+    barra.style.display = 'block';
+  }
+  function carregando(mensagem) {
+    el('tela').innerHTML = '<div class="carregando">' + esc(mensagem || 'carregando…') + '</div>';
+  }
+  function falha(erro) {
+    el('tela').innerHTML = '<div class="erro-caixa">' + esc(erro.message) + '</div>';
+  }
+
+  /** Monta uma tabela a partir do formato devolvido pela API. */
+  /**
+   * opcoes.html libera HTML na celula. E opt-in de proposito: por padrao tudo
+   * passa por esc(), e so a lista de veiculos — cujo conteudo o proprio app monta
+   * — pede o botao de editar.
+   */
+  function col(titulo, tipo) { return { titulo: titulo, tipo: tipo || 'texto' }; }
+
+  function tabela(dados, vazio, opcoes) {
+    var permitirHtml = !!(opcoes && opcoes.html);
+    // Linha de bloco: primeira celula preenchida e a segunda vazia. E como o
+    // relatorio de manutencao separa "cabecalho do veiculo" das linhas de servico
+    // sem precisar de um formato de dados diferente.
+    var destacarBloco = !!(opcoes && opcoes.destacarBloco);
+    if (!dados || !dados.linhas || !dados.linhas.length) {
+      return '<div class="cartao">' + esc(vazio || 'Nada para mostrar.') + '</div>';
+    }
+    var cabecalho = dados.colunas.map(function (c) {
+      return '<th class="' + (numerico(c.tipo) ? 'num' : '') + '">' + esc(c.titulo) + '</th>';
+    }).join('');
+
+    var corpo = dados.linhas.map(function (linha) {
+      var ehBloco = destacarBloco && linha.length > 1 &&
+        String(linha[0] || '') !== '' && String(linha[1] || '') === '';
+      return '<tr' + (ehBloco ? ' style="background:#FFF4EC;font-weight:800"' : '') + '>' +
+        linha.map(function (valor, i) {
+        var tipo = dados.colunas[i] ? dados.colunas[i].tipo : 'texto';
+        var ehBotao = permitirHtml && i === linha.length - 1 &&
+          typeof valor === 'string' && valor.indexOf('<button') === 0;
+        return '<td class="' + (numerico(tipo) ? 'num' : '') + '">' +
+          (ehBotao ? valor : formatar(valor, tipo)) + '</td>';
+      }).join('') + '</tr>';
+    }).join('');
+
+    var rodape = '';
+    if (dados.totais && dados.totais.length) {
+      rodape = '<tfoot><tr>' + dados.colunas.map(function (c, i) {
+        var valor = dados.totais[i];
+        var texto = i === 0 && (valor === null || valor === undefined)
+          ? 'TOTAL' : formatar(valor, c.tipo);
+        return '<td class="' + (numerico(c.tipo) ? 'num' : '') + '">' + texto + '</td>';
+      }).join('') + '</tr></tfoot>';
+    }
+
+    return '<div class="cartao" style="padding:0;overflow:hidden">' +
+      '<div class="rolagem"><table><thead><tr>' + cabecalho + '</tr></thead>' +
+      '<tbody>' + corpo + '</tbody>' + rodape + '</table></div></div>' +
+      '<div class="contagem">' + dados.linhas.length + ' linha(s)' +
+      (dados.mensagem ? ' • ' + esc(dados.mensagem) : '') + '</div>';
+  }
+
+  // ---------------------------------------------- carga na bomba e fornecedores
+
+  function telaBomba() {
+    el('tela').innerHTML =
+      '<h2 class="titulo">Carga na bomba</h2>' +
+      '<p class="sub">Entrada de combustível no tanque interno. O custo médio daqui ' +
+        'é o que valoriza cada abastecimento interno.</p>' +
+      '<div class="cartao" style="max-width:620px">' +
+        '<div class="linha">' +
+          '<div><label for="cbData">Data da NF</label>' +
+            '<input type="date" id="cbData" value="' + CONFIG.dataSugerida + '"></div>' +
+          '<div><label for="cbProduto">Produto</label>' +
+            '<select id="cbProduto">' +
+              (CONFIG.produtosBomba||['DIESEL S10','ARLA 32'])
+                .map(function(x){return '<option>'+esc(x)+'</option>';}).join('') +
+            '</select></div>' +
+        '</div>' +
+        '<div class="linha">' +
+          '<div><label for="cbQuantidade">Quantidade (L)</label>' +
+            '<input type="number" id="cbQuantidade" step="0.001" min="0" inputmode="decimal"></div>' +
+          '<div><label for="cbValor">Valor total da NF R$</label>' +
+            '<input type="number" id="cbValor" step="0.01" min="0" inputmode="decimal"></div>' +
+        '</div>' +
+        '<div class="sub2" id="cbPreco" style="margin-top:4px"></div>' +
+        '<label for="cbDocumento">NF / Documento</label>' +
+        '<input type="text" id="cbDocumento" placeholder="número da nota">' +
+        '<label for="cbObs">Observação</label><textarea id="cbObs" rows="2"></textarea>' +
+        '<button class="acao" id="btnCarga" style="width:100%;margin-top:14px" onclick="gravarCarga()">Registrar carga</button>' +
+        '<div id="msgCarga" style="margin-top:10px"></div>' +
+      '</div>' +
+      '<div class="cartao"><b>Situação dos tanques</b><div id="tanques"><div class="sub2">carregando…</div></div></div>' +
+      '<div class="cartao" style="max-width:620px"><b>📏 Ajuste de estoque</b>' +
+        '<p class="sub2" style="margin:6px 0 10px">Mediu o tanque e o saldo real é diferente do sistema? Informe o saldo ' +
+          'medido: a diferença entra como ajuste ao custo médio atual (o preço médio não muda).</p>' +
+        '<div class="linha">' +
+          '<div><label for="ajProduto">Produto</label><select id="ajProduto">' +
+            (CONFIG.produtosBomba||['DIESEL S10','ARLA 32']).map(function(x){return '<option>'+esc(x)+'</option>';}).join('') +
+          '</select></div>' +
+          '<div><label for="ajData">Data da medição</label><input type="date" id="ajData" value="' + CONFIG.dataSugerida + '"></div>' +
+          '<div><label for="ajSaldo">Saldo real (L)</label><input type="number" id="ajSaldo" step="0.001" min="0" inputmode="decimal"></div>' +
+        '</div>' +
+        '<label for="ajMotivo">Justificativa</label><input type="text" id="ajMotivo" placeholder="ex.: medição da régua em 25/09">' +
+        '<button class="acao secundaria" style="margin-top:10px" onclick="ajustarEstoque(this)">Ajustar estoque</button>' +
+        '<div id="msgAjuste" style="margin-top:8px"></div>' +
+      '</div>' +
+      '<div class="cartao"><b>Últimas cargas</b> <span class="sub2">— lançou errado? use Corrigir ou Excluir</span>' +
+        '<div id="painelCarga"></div><div id="cargas"><div class="sub2">carregando…</div></div></div>';
+
+    ['cbQuantidade', 'cbValor'].forEach(function (id) {
+      el(id).addEventListener('input', previaPrecoLitro);
+    });
+    previaPrecoLitro();
+    carregarTanques();
+    carregarCargas();
+  }
+
+  /** R$/litro e derivado; mostrar a previa evita NF digitada com valor trocado. */
+  function previaPrecoLitro() {
+    var q = Number(el('cbQuantidade').value || 0);
+    var v = Number(el('cbValor').value || 0);
+    el('cbPreco').textContent = (q > 0 && v > 0)
+      ? 'Preço da carga: R$ ' + (v / q).toFixed(4).replace('.', ',') + ' por litro.'
+      : '';
+  }
+
+  function carregarTanques() {
+    google.script.run.withSuccessHandler(function (d) {
+      if (el('tanques')) el('tanques').innerHTML = tabela(d);
+    }).withFailureHandler(falha).webTanques(TOKEN);
+  }
+
+  function carregarCargas() {
+    google.script.run.withSuccessHandler(function (d) {
+      if (!el('cargas')) return;
+      window.CARGAS_BOMBA = d.itens || [];
+      if (!window.CARGAS_BOMBA.length) { el('cargas').innerHTML = '<div class="sub2" style="margin-top:8px">Nenhuma carga registrada.</div>'; return; }
+      el('cargas').innerHTML = '<div class="rolagem" style="margin-top:8px"><table><thead><tr>' +
+        '<th>Data</th><th>NF</th><th>Produto</th><th class="num">Litros</th><th class="num">Valor</th><th class="num">R$/L</th><th>Obs.</th><th></th>' +
+        '</tr></thead><tbody>' + window.CARGAS_BOMBA.map(function (c, i) {
+          return '<tr><td>' + esc(dataBR(c.data)) + '</td><td>' + esc(c.documento) + '</td><td>' + esc(c.produto) + '</td>' +
+            '<td class="num">' + num(c.quantidade, 3) + '</td><td class="num">' + brl(c.valor) + '</td>' +
+            '<td class="num">' + (c.quantidade ? brl(c.valor / c.quantidade, 4) : '') + '</td>' +
+            '<td class="sub2" style="max-width:220px">' + esc(c.observacao) + '</td>' +
+            '<td style="white-space:nowrap"><button class="acao secundaria" style="padding:4px 8px" onclick="abrirCorrecaoCarga(' + i + ')">Corrigir</button> ' +
+            '<button class="acao perigo" style="padding:4px 8px" onclick="abrirExclusaoCarga(' + i + ')">Excluir</button></td></tr>';
+        }).join('') + '</tbody></table></div><div class="contagem">' + esc(d.mensagem || '') + '</div>';
+    }).withFailureHandler(falha).webCargasBomba(TOKEN, 30);
+  }
+
+  function abrirCorrecaoCarga(i) {
+    var c = window.CARGAS_BOMBA[i]; if (!c) return;
+    window.CARGA_SEL = c;
+    el('painelCarga').innerHTML =
+      '<div class="cartao" style="border:2px solid #F47820;max-width:620px;margin:10px 0">' +
+        '<b>Corrigir carga ' + esc(c.documento) + '</b>' +
+        '<div class="linha">' +
+          '<div><label for="ecData">Data</label><input type="date" id="ecData" value="' + esc(c.data) + '"></div>' +
+          '<div><label for="ecProduto">Produto</label><select id="ecProduto">' +
+            (CONFIG.produtosBomba||['DIESEL S10','ARLA 32']).map(function(x){return '<option' + (x===c.produto?' selected':'') + '>'+esc(x)+'</option>';}).join('') +
+          '</select></div></div>' +
+        '<div class="linha">' +
+          '<div><label for="ecQtd">Quantidade (L)</label><input type="number" id="ecQtd" step="0.001" value="' + c.quantidade + '"></div>' +
+          '<div><label for="ecValor">Valor total R$</label><input type="number" id="ecValor" step="0.01" value="' + c.valor + '"></div>' +
+          '<div><label for="ecDoc">NF</label><input type="text" id="ecDoc" value="' + esc(c.documento) + '"' + (c.ajuste ? ' disabled' : '') + '></div>' +
+        '</div>' +
+        '<label for="ecMotivo">Justificativa da correção</label><input type="text" id="ecMotivo" placeholder="ex.: valor da NF digitado errado">' +
+        '<div class="sub2" style="margin-top:6px">Os abastecimentos internos do período aberto feitos depois desta carga serão revalorizados pelo custo correto.</div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px"><button class="acao" id="btnEc" onclick="salvarCorrecaoCarga()">Salvar correção</button>' +
+          '<button class="acao secundaria" onclick="el(\'painelCarga\').innerHTML=\'\'">Cancelar</button></div>' +
+        '<div id="msgEc" style="margin-top:8px"></div></div>';
+  }
+
+  function salvarCorrecaoCarga() {
+    var c = window.CARGA_SEL; if (!c) return;
+    el('btnEc').disabled = true;
+    el('msgEc').innerHTML = '<div class="sub2">salvando e recalculando…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      el('btnEc').disabled = false;
+      el('msgEc').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' + esc(r.mensagem) + '</div>';
+      if (r.ok) { status('Carga corrigida.'); carregarTanques(); carregarCargas(); }
+    }).withFailureHandler(function (e) {
+      el('btnEc').disabled = false; el('msgEc').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webEditarCargaBomba(TOKEN, c.linha, c, {
+      data: el('ecData').value, produto: el('ecProduto').value, quantidade: el('ecQtd').value,
+      valor: el('ecValor').value, documento: el('ecDoc').value
+    }, el('ecMotivo').value);
+  }
+
+  function abrirExclusaoCarga(i) {
+    var c = window.CARGAS_BOMBA[i]; if (!c) return;
+    window.CARGA_SEL = c;
+    el('painelCarga').innerHTML =
+      '<div class="cartao" style="border:2px solid #A52422;max-width:620px;margin:10px 0">' +
+        '<b style="color:#A52422">Excluir esta carga?</b>' +
+        '<div style="margin:6px 0">' + esc(dataBR(c.data)) + ' • NF ' + esc(c.documento) + ' • ' + esc(c.produto) + ' • ' +
+          num(c.quantidade, 3) + ' L • ' + brl(c.valor) + '</div>' +
+        '<label for="xcMotivo">Justificativa</label><input type="text" id="xcMotivo" placeholder="ex.: carga lançada em duplicidade">' +
+        '<div style="display:flex;gap:8px;margin-top:10px"><button class="acao perigo" id="btnXc" onclick="confirmarExclusaoCarga()">Confirmar exclusão</button>' +
+          '<button class="acao secundaria" onclick="el(\'painelCarga\').innerHTML=\'\'">Cancelar</button></div>' +
+        '<div id="msgXc" style="margin-top:8px"></div></div>';
+  }
+
+  function confirmarExclusaoCarga() {
+    var c = window.CARGA_SEL; if (!c) return;
+    el('btnXc').disabled = true;
+    el('msgXc').innerHTML = '<div class="sub2">excluindo e recalculando…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      el('btnXc').disabled = false;
+      if (!r.ok) { el('msgXc').innerHTML = '<div class="erro-caixa">' + esc(r.mensagem) + '</div>'; return; }
+      el('painelCarga').innerHTML = '<div class="ok-caixa" style="margin:10px 0">' + esc(r.mensagem) + '</div>';
+      carregarTanques(); carregarCargas();
+    }).withFailureHandler(function (e) {
+      el('btnXc').disabled = false; el('msgXc').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webExcluirCargaBomba(TOKEN, c.linha, c, el('xcMotivo').value);
+  }
+
+  function ajustarEstoque(botao) {
+    if (el('ajSaldo').value === '') { el('msgAjuste').innerHTML = '<div class="erro-caixa">Informe o saldo real medido.</div>'; return; }
+    botao.disabled = true;
+    el('msgAjuste').innerHTML = '<div class="sub2">ajustando…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      botao.disabled = false;
+      el('msgAjuste').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' + esc(r.mensagem) + '</div>';
+      if (r.ok) { el('ajSaldo').value = ''; el('ajMotivo').value = ''; carregarTanques(); carregarCargas(); }
+    }).withFailureHandler(function (e) {
+      botao.disabled = false; el('msgAjuste').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webAjustarEstoqueBomba(TOKEN, el('ajProduto').value, el('ajSaldo').value, el('ajData').value, el('ajMotivo').value);
+  }
+
+  function gravarCarga(confirmarDuplicidade) {
+    var botao = el('btnCarga');
+    botao.disabled = true;
+    botao.textContent = 'Registrando…';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false;
+        botao.textContent = 'Registrar carga';
+        if (!r.ok && r.duplicidade && confirmarDuplicidade !== true) {
+          if (confirm(r.mensagem + '\n\nRegistrar mesmo assim?')) { gravarCarga(true); return; }
+        }
+        el('msgCarga').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+          esc(r.mensagem) + '</div>';
+        if (r.ok) {
+          ['cbQuantidade', 'cbValor', 'cbDocumento', 'cbObs'].forEach(function (id) { el(id).value = ''; });
+          previaPrecoLitro();
+          carregarTanques();
+          carregarCargas();
+        }
+      })
+      .withFailureHandler(function (e) {
+        botao.disabled = false;
+        botao.textContent = 'Registrar carga';
+        el('msgCarga').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      })
+      .webSalvarCargaBomba(TOKEN, {
+        data: el('cbData').value, produto: el('cbProduto').value,
+        quantidade: el('cbQuantidade').value, valor: el('cbValor').value,
+        documento: el('cbDocumento').value,
+        observacao: el('cbObs').value, confirmarDuplicidade: confirmarDuplicidade === true
+      });
+  }
+
+  function telaFornecedores() {
+    var admin = SESSAO.perfil === 'ADMIN';
+    el('tela').innerHTML =
+      '<h2 class="titulo">Fornecedores</h2>' +
+      '<p class="sub">Oficinas, postos e distribuidoras. O fornecedor é opcional no ' +
+        'lançamento, mas quando informado precisa existir aqui.</p>' +
+      (admin ?
+      '<div class="cartao" style="max-width:620px">' +
+        '<div class="linha">' +
+          '<div style="flex:2"><label for="fNome">Fornecedor</label>' +
+            '<input type="text" id="fNome" maxlength="180" placeholder="razão social ou nome usual"></div>' +
+          '<div><label for="fCnpj">CNPJ</label>' +
+            '<input type="text" id="fCnpj" maxlength="18" placeholder="só números"></div>' +
+        '</div>' +
+        '<div class="linha">' +
+          '<div><label for="fTipo">Ramo</label>' + seletor('fTipo', CONFIG.tiposFornecedor || []) + '</div>' +
+          '<div><label for="fAtivo">Ativo</label>' + seletor('fAtivo', ['SIM', 'NAO']) + '</div>' +
+        '</div>' +
+        '<label for="fObs">Observação</label><textarea id="fObs" rows="2"></textarea>' +
+        '<button class="acao" id="btnForn" style="width:100%;margin-top:14px" onclick="gravarFornecedor()">Salvar fornecedor</button>' +
+        '<div id="msgForn" style="margin-top:10px"></div>' +
+      '</div>' : '') +
+      '<div class="cartao"><input type="search" id="fBusca" placeholder="buscar por nome, CNPJ ou ramo" ' +
+        'oninput="carregarFornecedores()" style="margin-bottom:10px">' +
+        '<div id="listaForn"><div class="sub2">carregando…</div></div></div>';
+    carregarFornecedores();
+  }
+
+  function carregarFornecedores() {
+    google.script.run.withSuccessHandler(function (d) {
+      if (el('listaForn')) el('listaForn').innerHTML = tabela(d);
+    }).withFailureHandler(falha).webFornecedores(TOKEN, el('fBusca') ? el('fBusca').value : '');
+  }
+
+  function gravarFornecedor() {
+    var botao = el('btnForn');
+    botao.disabled = true;
+    botao.textContent = 'Salvando…';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false;
+        botao.textContent = 'Salvar fornecedor';
+        el('msgForn').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+          esc(r.mensagem) + '</div>';
+        if (r.ok) {
+          ['fNome', 'fCnpj', 'fObs'].forEach(function (id) { el(id).value = ''; });
+          carregarFornecedores();
+        }
+      })
+      .withFailureHandler(function (e) {
+        botao.disabled = false;
+        botao.textContent = 'Salvar fornecedor';
+        el('msgForn').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      })
+      .webSalvarFornecedor(TOKEN, {
+        nome: el('fNome').value, cnpj: el('fCnpj').value, tipo: el('fTipo').value,
+        ativo: el('fAtivo').value !== 'NAO', observacao: el('fObs').value
+      });
+  }
+
+  // ------------------------------------------------------------ IPVA anual
+
+  function telaIpva() {
+    el('tela').innerHTML =
+      '<h2 class="titulo">Lançar IPVA anual</h2>' +
+      '<p class="sub">Informe o valor <b>anual</b>. O sistema grava as 12 parcelas, ' +
+        'uma por competência — é isso que entra no mapa, mês a mês.</p>' +
+      '<div class="cartao" style="max-width:620px">' +
+        '<div class="linha">' +
+          '<div style="flex:2"><label for="ipPlaca">Veículo</label>' +
+            selectVeiculos('ipPlaca', false) + '</div>' +
+          '<div><label for="ipValor">Valor anual R$</label>' +
+            '<input type="number" id="ipValor" step="0.01" min="0" inputmode="decimal"></div>' +
+        '</div>' +
+        '<div class="linha">' +
+          '<div><label for="ipDoc">Documento (DUA / guia)</label>' +
+            '<input type="text" id="ipDoc" placeholder="número da guia"></div>' +
+          '<div><label for="ipMes">Competência inicial</label>' +
+            '<input type="month" id="ipMes" value="' + esc(CONFIG.mes || '') + '"></div>' +
+        '</div>' +
+        '<div class="sub2" id="ipPrevia" style="margin-top:6px"></div>' +
+        '<button class="acao" id="btnIpva" style="width:100%;margin-top:14px" ' +
+          'onclick="lancarIpva()">Lançar as 12 parcelas</button>' +
+        '<div id="msgIpva" style="margin-top:10px"></div>' +
+      '</div>' +
+      '<div class="cartao"><b>Situação por veículo</b>' +
+        '<div id="situacaoIpva"><div class="sub2">carregando…</div></div></div>';
+
+    // O valor sugerido do cadastro entra como ponto de partida, nao como verdade:
+    // a guia do ano pode ter mudado.
+    el('ipPlaca').addEventListener('change', sugerirIpva);
+    el('ipValor').addEventListener('input', previaIpva);
+    sugerirIpva();
+    carregarSituacaoIpva();
+  }
+
+  function sugerirIpva() {
+    var placa = el('ipPlaca').value;
+    var v = (CONFIG.veiculos || []).filter(function (x) { return x.placa === placa; })[0];
+    if (v && Number(v.ipva) > 0 && !el('ipValor').value) el('ipValor').value = Number(v.ipva).toFixed(2);
+    previaIpva();
+  }
+
+  /** Mostra as parcelas ANTES de gravar, inclusive a última com a sobra do centavo. */
+  function previaIpva() {
+    var total = Math.round(Number(el('ipValor').value || 0) * 100);
+    if (!(total > 0)) { el('ipPrevia').textContent = ''; return; }
+    var base = Math.floor(total / 12);
+    var ultima = total - base * 11;
+    el('ipPrevia').textContent = base === ultima
+      ? '12 parcelas de ' + brl(base / 100) + '.'
+      : '11 parcelas de ' + brl(base / 100) + ' e a última de ' + brl(ultima / 100) +
+        ', para fechar o centavo.';
+  }
+
+  function carregarSituacaoIpva() {
+    google.script.run.withSuccessHandler(function (d) {
+      if (el('situacaoIpva')) el('situacaoIpva').innerHTML = tabela(d);
+    }).withFailureHandler(falha).webSituacaoIpva(TOKEN);
+  }
+
+  function lancarIpva(confirmarDuplicidade) {
+    var botao = el('btnIpva');
+    botao.disabled = true;
+    botao.textContent = 'Lançando…';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false;
+        botao.textContent = 'Lançar as 12 parcelas';
+        if (!r.ok && r.duplicidade && confirmarDuplicidade !== true) {
+          if (confirm(r.mensagem + '\n\nLançar mesmo assim?')) { lancarIpva(true); return; }
+        }
+        el('msgIpva').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+          esc(r.mensagem) + '</div>';
+        if (r.ok) {
+          el('ipValor').value = '';
+          el('ipDoc').value = '';
+          previaIpva();
+          carregarSituacaoIpva();
+        }
+      })
+      .withFailureHandler(function (e) {
+        botao.disabled = false;
+        botao.textContent = 'Lançar as 12 parcelas';
+        el('msgIpva').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      })
+      .webLancarIpva(TOKEN, {
+        placa: el('ipPlaca').value, valorAnual: el('ipValor').value,
+        documento: el('ipDoc').value, mesInicial: el('ipMes').value,
+        confirmarDuplicidade: confirmarDuplicidade === true
+      });
+  }
+
+  // ------------------------------------------------------------- navegação
+  var MENU = [
+    { grupo: 'Operação', itens: [
+      { id: 'inicio', icone: '🏠', rotulo: 'Início', busca: 'painel indicadores home', fn: telaInicio },
+      { id: 'lancar', icone: '➕', rotulo: 'Novo lançamento', busca: 'despesa abastecimento gastar', fn: telaLancar },
+      { id: 'lancamentos', icone: '🗑️', rotulo: 'Corrigir / excluir lançamento', busca: 'apagar remover errado despesa estornar justificativa', fn: telaLancamentos },
+      { id: 'bomba', icone: '⛽', rotulo: 'Carga na bomba', busca: 'tanque diesel arla abastecer nota estoque combustível', fn: telaBomba },
+      { id: 'consulta', icone: '🔍', rotulo: 'Consultar veículo', busca: 'placa extrato', fn: telaConsulta }
+    ] },
+    { grupo: 'Relatórios', itens: [
+      { id: 'relatorios', icone: '📈', rotulo: 'Relatórios', busca: 'manutenção consumo ranking evolução', fn: telaRelatorios },
+      { id: 'resumo', icone: '📋', rotulo: 'Resumo por veículo', busca: 'todos custo tabela', fn: telaResumo },
+      { id: 'rateio', icone: '🏬', rotulo: 'Rateio por centro', busca: 'loja combo depósito', fn: telaRateio }
+    ] },
+    { grupo: 'Cadastros', itens: [
+      { id: 'veiculos', icone: '🚛', rotulo: 'Veículos', busca: 'frota cadastro placa novo', fn: telaVeiculos },
+      { id: 'fornecedores', icone: '🏪', rotulo: 'Fornecedores', busca: 'oficina posto distribuidora cnpj peças', fn: telaFornecedores },
+      { id: 'centros', icone: '🏢', rotulo: 'Centros de custo', busca: 'percentual rateio loja', fn: telaCentros }
+    ] },
+    { grupo: 'Administração', itens: [
+      { id: 'pendencias', icone: '⚠️', rotulo: 'Pendências', busca: 'conferência revisar inconsistência problema', fn: telaPendencias },
+      { id: 'depreciacao', icone: '📉', rotulo: 'Depreciação mensal', busca: 'depreciação competência veículos patrimônio', fn: telaDepreciacao },
+      { id: 'ipva', icone: '🧾', rotulo: 'Lançar IPVA anual', busca: 'ipva imposto licenciamento parcelas doze anual', fn: telaIpva },
+      { id: 'fechamento', icone: '🔒', rotulo: 'Fechamento', busca: 'validar fechar mês período', fn: telaFechamento },
+      { id: 'saude', icone: '🛡️', rotulo: 'Saúde do sistema', busca: 'diagnóstico reparo backup segurança manutenção', fn: telaSaude },
+      { id: 'config', icone: '⚙️', rotulo: 'Configurações', busca: 'parâmetros pdf e-mail exportar', fn: telaConfig },
+      { id: 'usuarios', icone: '👥', rotulo: 'Usuários', busca: 'acesso perfil senha permissão', fn: telaUsuarios },
+      { id: 'log', icone: '🧾', rotulo: 'Atividade', busca: 'log auditoria quem', fn: telaLog }
+    ] }
+  ];
+
+  /** Todos os itens numa lista só, para busca e navegação. */
+  function itensDoMenu() {
+    return MENU.reduce(function (lista, grupo) { return lista.concat(grupo.itens); }, []);
+  }
+
+  function telaPorId(id) {
+    return itensDoMenu().filter(function (t) { return t.id === id; })[0];
+  }
+
+  /** Grupos que o usuário recolheu ficam guardados na sessão do navegador. */
+  function gruposFechados() {
+    try { return JSON.parse(sessionStorage.getItem('gruposFechados') || '[]'); }
+    catch (e) { return []; }
+  }
+  function guardarGrupos(lista) {
+    try { sessionStorage.setItem('gruposFechados', JSON.stringify(lista)); } catch (e) {}
+  }
+
+  function montarMenu(filtro) {
+    var termo = String(filtro || '').toLowerCase().trim();
+    var fechados = gruposFechados();
+    var achou = 0;
+
+    var html = MENU.map(function (grupo) {
+      var itens = grupo.itens.filter(function (item) {
+        if (SESSAO && SESSAO.telas && SESSAO.telas.indexOf(item.id) === -1) return false;
+        if (!termo) return true;
+        return (item.rotulo + ' ' + item.busca).toLowerCase().indexOf(termo) !== -1;
+      });
+      if (!itens.length) return '';
+      achou += itens.length;
+
+      // durante a busca todos os grupos aparecem abertos
+      var fechado = !termo && fechados.indexOf(grupo.grupo) !== -1;
+      return '<div class="grupo' + (fechado ? ' fechado' : '') +
+        '" data-grupo="' + esc(grupo.grupo) + '">' +
+        '<button class="titulo-grupo" onclick="alternarGrupo(\'' + esc(grupo.grupo) + '\')">' +
+          '<span class="seta">▼</span>' + esc(grupo.grupo) + '</button>' +
+        '<div class="itens">' + itens.map(function (item) {
+          return '<button class="item" data-tela="' + item.id +
+            '" onclick="abrir(\'' + item.id + '\')">' +
+            '<span class="icone">' + item.icone + '</span>' + esc(item.rotulo) +
+            (item.selo ? '<span class="selo">' + item.selo + '</span>' : '') +
+            '</button>';
+        }).join('') + '</div></div>';
+    }).join('');
+
+    el('nav').innerHTML = achou ? html
+      : '<div class="vazio">Nada encontrado para “' + esc(termo) + '”.</div>';
+    marcarAtivo();
+  }
+
+  function marcarAtivo() {
+    Array.prototype.forEach.call(el('nav').querySelectorAll('.item'), function (botao) {
+      botao.classList.toggle('ativo', botao.getAttribute('data-tela') === TELA);
+    });
+  }
+
+  function alternarGrupo(nome) {
+    var fechados = gruposFechados();
+    var i = fechados.indexOf(nome);
+    if (i === -1) fechados.push(nome); else fechados.splice(i, 1);
+    guardarGrupos(fechados);
+    montarMenu(el('buscaMenu') ? el('buscaMenu').value : '');
+  }
+
+  function abrir(id) {
+    var item = telaPorId(id);
+    if (!item) return;
+    if (!SESSAO || !SESSAO.telas || SESSAO.telas.indexOf(id) === -1) { status('Seu perfil não possui acesso a esta tela.', true); return; }
+    TELA = id;
+    marcarAtivo();
+    fecharMenuNoCelular();
+    item.fn();
+  }
+
+  function alternarMenu() {
+    var aberto = el('nav').classList.toggle('aberto');
+    el('veu').classList.toggle('aberto', aberto);
+  }
+
+  function fecharMenuNoCelular() {
+    if (window.innerWidth <= 860) {
+      el('nav').classList.remove('aberto');
+      el('veu').classList.remove('aberto');
+    }
+  }
+
+  /** Marca quantas pendências existem diretamente no módulo de Pendências. */
+  function atualizarSelo(pendencias) {
+    var item = telaPorId('pendencias');
+    if (!item) return;
+    item.selo = pendencias > 0 ? String(pendencias) : null;
+    montarMenu(el('buscaMenu') ? el('buscaMenu').value : '');
+  }
+
+  // ----- busca do menu: filtra enquanto digita, Enter abre o primeiro resultado
+  document.addEventListener('input', function (evento) {
+    if (evento.target.id === 'buscaMenu') montarMenu(evento.target.value);
+  });
+
+  document.addEventListener('keydown', function (evento) {
+    var busca = el('buscaMenu');
+    if (!busca) return;
+
+    // "/" em qualquer lugar foca a busca (menos enquanto se digita num campo)
+    var digitando = ['INPUT', 'SELECT', 'TEXTAREA'].indexOf(
+      document.activeElement.tagName) !== -1;
+    if (evento.key === '/' && !digitando) {
+      evento.preventDefault();
+      busca.focus();
+      busca.select();
+      return;
+    }
+    if (document.activeElement !== busca) return;
+
+    if (evento.key === 'Enter') {
+      var primeiro = el('nav').querySelector('.item');
+      if (primeiro) {
+        abrir(primeiro.getAttribute('data-tela'));
+        busca.blur();
+      }
+    }
+    if (evento.key === 'Escape') {
+      busca.value = '';
+      montarMenu('');
+      busca.blur();
+    }
+  });
+
+  // ------------------------------------------------------------ autenticação e carga
+  function mostrarLogin(mensagem) {
+    el('loginTela').style.display = 'grid';
+    el('trocaSenhaTela').style.display = 'none';
+    el('cabecalhoApp').style.display = 'none';
+    el('corpoApp').style.display = 'none';
+    if (mensagem) el('loginMsg').innerHTML = '<div class="erro-caixa">' + esc(mensagem) + '</div>';
+  }
+
+  function mostrarTrocaSenha() {
+    el('loginTela').style.display = 'none';
+    el('trocaSenhaTela').style.display = 'grid';
+    el('cabecalhoApp').style.display = 'none';
+    el('corpoApp').style.display = 'none';
+    el('trocaSenhaMsg').innerHTML = '';
+    el('trocaAtual').value = '';
+    el('trocaNova').value = '';
+    el('trocaConfirmar').value = '';
+    setTimeout(function(){ el('trocaAtual').focus(); }, 50);
+  }
+
+  function confirmarTrocaObrigatoria() {
+    var atual = el('trocaAtual').value;
+    var nova = el('trocaNova').value;
+    var confirmar = el('trocaConfirmar').value;
+    var msg = el('trocaSenhaMsg');
+    if (!atual || !nova || !confirmar) {
+      msg.innerHTML = '<div class="erro-caixa">Preencha os três campos.</div>'; return;
+    }
+    if (nova.length < 10) {
+      msg.innerHTML = '<div class="erro-caixa">A nova senha precisa ter pelo menos 10 caracteres.</div>'; return;
+    }
+    if (nova !== confirmar) {
+      msg.innerHTML = '<div class="erro-caixa">A confirmação não corresponde à nova senha.</div>'; return;
+    }
+    if (nova === atual) {
+      msg.innerHTML = '<div class="erro-caixa">A nova senha precisa ser diferente da senha temporária/atual.</div>'; return;
+    }
+    var botao = el('btnTrocarSenha');
+    botao.disabled = true; botao.textContent = 'Salvando…';
+    google.script.run
+      .withSuccessHandler(function(r){
+        botao.disabled = false; botao.textContent = 'Salvar nova senha';
+        if (!r.ok) { msg.innerHTML = '<div class="erro-caixa">' + esc(r.mensagem) + '</div>'; return; }
+        SESSAO = r.usuario || SESSAO;
+        msg.innerHTML = '<div class="ok-caixa">' + esc(r.mensagem) + '</div>';
+        setTimeout(function(){ el('trocaSenhaTela').style.display='none'; carregarSistema(); }, 600);
+      })
+      .withFailureHandler(function(e){
+        botao.disabled=false; botao.textContent='Salvar nova senha';
+        msg.innerHTML='<div class="erro-caixa">'+esc(e.message)+'</div>';
+      })
+      .webTrocarMinhaSenha(TOKEN, atual, nova);
+  }
+
+  function aplicarBootstrapCliente(pacote, inicial) {
+    if (!pacote || !pacote.ok) {
+      mostrarLogin(pacote && pacote.mensagem ? pacote.mensagem : 'Não foi possível carregar o sistema.');
+      return false;
+    }
+    SESSAO = pacote.usuario || SESSAO;
+    if (pacote.trocarSenha === true || (SESSAO && SESSAO.trocarSenha === true)) {
+      mostrarTrocaSenha(); return false;
+    }
+
+    CONFIG = pacote.config;
+    OPCOES = pacote.filtros || { centros:[], categorias:[] };
+    INICIO_CLIENTE = pacote.inicio || null;
+    if (!CONFIG) { mostrarLogin('Configuração do sistema indisponível.'); return false; }
+
+    el('loginTela').style.display = 'none';
+    el('trocaSenhaTela').style.display = 'none';
+    el('cabecalhoApp').style.display = 'flex';
+    el('corpoApp').style.display = 'grid';
+    el('meta').textContent = dataBR(CONFIG.inicio) + ' a ' + dataBR(CONFIG.fim) + '  •  ' + CONFIG.mes;
+    el('usuarioTopo').innerHTML = '<span>' + esc(SESSAO.nome || SESSAO.email) + ' • ' + esc(SESSAO.perfil) + '</span>' +
+      '<button onclick="sair()">Sair</button>';
+    el('btnLancarTopo').style.display = SESSAO.telas.indexOf('lancar') !== -1 ? '' : 'none';
+    montarMenu();
+
+    if (SESSAO.telas.indexOf(inicial) === -1) inicial = 'inicio';
+    if (inicial === 'inicio' && INICIO_CLIENTE) {
+      TELA = 'inicio'; marcarAtivo(); renderizarInicio(INICIO_CLIENTE);
+    } else {
+      abrir(inicial);
+    }
+    return true;
+  }
+
+  function entrar() {
+    var email = el('loginEmail').value.trim();
+    var senha = el('loginSenha').value;
+    if (!email || !senha) { mostrarLogin('Informe e-mail e senha.'); return; }
+    var inicial = (TELA === 'painel' ? 'inicio' : TELA);
+    var botao = el('btnLogin');
+    botao.disabled = true; botao.textContent = 'Entrando…';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false; botao.textContent = 'Entrar';
+        if (!r || !r.ok) { mostrarLogin(r && r.mensagem ? r.mensagem : 'Não foi possível entrar.'); return; }
+        TOKEN = r.token; SESSAO = r.usuario;
+        try { sessionStorage.setItem('tokenFrota', TOKEN); } catch (e) {}
+        if (r.trocarSenha === true || (SESSAO && SESSAO.trocarSenha === true)) mostrarTrocaSenha();
+        else aplicarBootstrapCliente(r, inicial);
+      })
+      .withFailureHandler(function (erro) { botao.disabled=false; botao.textContent='Entrar'; mostrarLogin(erro.message); })
+      .webLoginBootstrap(email, senha, inicial);
+  }
+
+  function sair() {
+    var antigo = TOKEN;
+    TOKEN = ''; SESSAO = null;
+    try { sessionStorage.removeItem('tokenFrota'); } catch (e) {}
+    google.script.run.withSuccessHandler(function () { location.reload(); }).webLogout(antigo);
+  }
+
+  function carregarSistema() {
+    var inicial = (TELA === 'painel' ? 'inicio' : TELA);
+    google.script.run
+      .withSuccessHandler(function (pacote) {
+        aplicarBootstrapCliente(pacote, inicial);
+      })
+      .withFailureHandler(function (erro) {
+        TOKEN=''; SESSAO=null; INICIO_CLIENTE=null;
+        try { sessionStorage.removeItem('tokenFrota'); } catch(e) {}
+        mostrarLogin(erro.message);
+      })
+      .webBootstrap(TOKEN, inicial);
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && el('loginTela').style.display !== 'none' &&
+        (document.activeElement === el('loginEmail') || document.activeElement === el('loginSenha'))) entrar();
+  });
+
+  try { TOKEN = sessionStorage.getItem('tokenFrota') || ''; } catch (e) {}
+  if (TOKEN) carregarSistema();
+  else mostrarLogin();
+
+  // ------------------------------------------------------------ telas
+  function dashboardSkeleton() {
+    return '<div class="skeleton-dashboard"><div class="sk-line"></div>' +
+      '<div class="sk-grid"><div class="sk-card"></div><div class="sk-card"></div>' +
+      '<div class="sk-card"></div><div class="sk-card"></div></div></div>';
+  }
+
+  function mesCurto(chave) {
+    var p = String(chave || '').split('-');
+    if (p.length !== 2) return String(chave || '');
+    var nomes = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+    return nomes[Math.max(0, Number(p[1]) - 1)] + '/' + String(p[0]).slice(-2);
+  }
+
+  function graficoEvolucao(d) {
+    var serie = (d.evolucao || []).slice(-11);
+    if (!serie.length || String(serie[serie.length - 1].periodo) !== String(d.mes)) {
+      serie.push({ periodo:d.mes, total:Number(d.total || 0), atual:true });
+    }
+    if (!serie.length) return '<div class="sub2">Sem histórico para exibir.</div>';
+    var W=680,H=225,L=52,R=18,T=18,B=38;
+    var vals=serie.map(function(x){return Number(x.total||0);});
+    var max=Math.max.apply(null,vals.concat([1]));
+    var min=0;
+    var dx=serie.length>1?(W-L-R)/(serie.length-1):0;
+    function y(v){return T+(H-T-B)*(1-(v-min)/(max-min||1));}
+    var pts=serie.map(function(x,i){return (L+i*dx).toFixed(1)+','+y(vals[i]).toFixed(1);}).join(' ');
+    var area='M '+L+' '+(H-B)+' L '+pts.split(' ').join(' L ')+' L '+(L+(serie.length-1)*dx)+' '+(H-B)+' Z';
+    var grids='';
+    for(var g=0;g<=4;g++){
+      var gy=T+(H-T-B)*g/4; var gv=max*(1-g/4);
+      grids+='<line x1="'+L+'" y1="'+gy+'" x2="'+(W-R)+'" y2="'+gy+'" stroke="#EEEAE8" stroke-width="1"/>'+
+        '<text x="'+(L-8)+'" y="'+(gy+4)+'" text-anchor="end" font-size="9" fill="#9B9694">'+
+        (gv>=1000000?(gv/1000000).toFixed(1)+'M':gv>=1000?(gv/1000).toFixed(0)+'k':gv.toFixed(0))+'</text>';
+    }
+    var labels='',circulos='';
+    serie.forEach(function(x,i){
+      var px=L+i*dx, py=y(vals[i]);
+      var mostrar=serie.length<=7 || i%2===0 || i===serie.length-1;
+      if(mostrar) labels+='<text x="'+px+'" y="'+(H-13)+'" text-anchor="middle" font-size="9" fill="#706B6C">'+esc(mesCurto(x.periodo))+'</text>';
+      circulos+='<circle cx="'+px+'" cy="'+py+'" r="'+(i===serie.length-1?4.5:3)+'" fill="'+(i===serie.length-1?'#F47820':'#9B9694')+'"><title>'+esc(mesCurto(x.periodo))+' • '+esc(brl(vals[i]))+'</title></circle>';
+    });
+    return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Evolução mensal dos custos">'+
+      '<defs><linearGradient id="areaDash" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F47820" stop-opacity=".24"/><stop offset="100%" stop-color="#F47820" stop-opacity=".02"/></linearGradient></defs>'+
+      grids+'<path d="'+area+'" fill="url(#areaDash)"/><polyline points="'+pts+'" fill="none" stroke="#F47820" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+circulos+labels+'</svg>';
+  }
+
+  function graficoDonut(d) {
+    var itens=(d.composicao||[]).filter(function(x){return Number(x.valor)>0;});
+    if(!itens.length) return '<div class="sub2">Sem custos para compor.</div>';
+    var cores=['#F47820','#231F20','#5A5556','#8C8582','#B7AEA8','#D8CFC9','#F6A35C'];
+    var total=itens.reduce(function(s,x){return s+Number(x.valor||0);},0)||1;
+    var acum=0,partes=[];
+    itens.forEach(function(x,i){var ini=acum; acum+=Number(x.valor||0)/total*100; partes.push(cores[i%cores.length]+' '+ini.toFixed(2)+'% '+acum.toFixed(2)+'%');});
+    var legenda=itens.map(function(x,i){var pct=Number(x.valor||0)/total*100; return '<div class="linha-leg"><span class="cor" style="background:'+cores[i%cores.length]+'"></span><span class="nome">'+esc(x.nome)+' <small>('+pct.toFixed(1).replace('.',',')+'%)</small></span><span class="valor">'+brl(x.valor)+'</span></div>';}).join('');
+    return '<div class="dash-donut-wrap"><div class="dash-donut" style="background:conic-gradient('+partes.join(',')+')"><div class="dash-donut-centro"><b>'+itens.length+'</b><span>grupos</span></div></div><div class="dash-legenda">'+legenda+'</div></div>';
+  }
+
+  function rankingBarras(itens, tipo) {
+    itens=itens||[];
+    if(!itens.length) return '<div class="sub2">Sem dados para o ranking.</div>';
+    var max=Math.max.apply(null,itens.map(function(x){return Number(tipo==='veiculo'?x.total:x.valor)||0;}).concat([1]));
+    return '<div class="rank-list">'+itens.map(function(x){
+      var valor=Number(tipo==='veiculo'?x.total:x.valor)||0;
+      var nome=tipo==='veiculo'?x.placa:x.nome;
+      var sub=tipo==='veiculo'?((x.descricao||'')+(x.centro?' • '+x.centro:'')):'';
+      return '<div class="rank-row"><div class="rank-label"><b>'+esc(nome)+'</b><span>'+esc(sub)+'</span></div><div class="rank-track"><div class="rank-fill" style="width:'+Math.max(2,valor/max*100).toFixed(1)+'%"></div></div><div class="rank-value">'+brl(valor)+'</div></div>';
+    }).join('')+'</div>';
+  }
+
+  function diagnosticoRodape(d) {
+    var x = d && d.diagnostico;
+    if (!x) return '';
+    var login = x.loginMs === null || x.loginMs === undefined ? ''
+      : ' • login '+num(x.loginMs||0)+' ms'+(x.loginCache?' ✓':'');
+    return login +
+      ' • sessão '+num(x.sessaoMs||0)+' ms'+(x.usuarioCache?' ✓':'')+
+      ' • estrutura '+num(x.metaMs||0)+' ms'+(x.metaCache?' ✓':'')+
+      ' • painel '+num(x.inicioMs||0)+' ms'+(x.dashboardCache?' ✓':'');
+  }
+
+  function renderizarInicio(d) {
+    INICIO_CLIENTE = d;
+    el('titulo').textContent = d.empresa;
+    atualizarSelo(d.pendencias);
+    var delta=d.variacao===null||d.variacao===undefined?null:Number(d.variacao);
+    var deltaTxt=delta===null?'Sem base anterior':(delta>0?'▲ ':'▼ ')+Math.abs(delta*100).toFixed(1).replace('.',',')+'% vs. anterior';
+    var deltaCls=delta===null?'neutro':(delta>0?'alta':'baixa');
+    var pend = Number(d.pendencias||0);
+    var alerta = pend>0 ? '<div class="dash-alerta"><span style="font-size:17px">⚠️</span><div style="flex:1"><b>'+pend+' pendência(s) de conferência</b><br><span>Existem itens que precisam ser revisados antes do fechamento.</span></div><button class="acao secundaria" onclick="abrir(\'pendencias\')">Ver pendências</button></div>' : '';
+
+    el('tela').innerHTML =
+      '<div class="dash-head"><div><div class="dash-eyebrow">Visão executiva da frota</div><h2>'+esc(d.mesExtenso)+'</h2><p>Período operacional '+esc(d.periodo)+'</p></div>'+
+      '<div class="dash-acoes"><span class="dash-chip ok">Período aberto</span><button class="dash-refresh" onclick="telaInicio(true)">↻ Atualizar</button></div></div>'+alerta+
+      '<div class="dash-kpis">'+
+        '<div class="dash-kpi"><div class="label">Custo total do período</div><div class="numero">'+brl(d.total)+'</div><span class="delta '+deltaCls+'">'+esc(deltaTxt)+'</span></div>'+
+        '<div class="dash-kpi"><div class="label">Custo por KM</div><div class="numero">'+brl(d.custoKm,3)+'</div><div class="nota">'+num(d.km)+' km rodados</div></div>'+
+        '<div class="dash-kpi"><div class="label">Eficiência média</div><div class="numero">'+num(d.kmLitro,2)+' km/L</div><div class="nota">'+num(d.litros,0)+' litros consumidos</div></div>'+
+        '<div class="dash-kpi"><div class="label">Custo médio / veículo</div><div class="numero">'+brl(d.custoMedioVeiculo)+'</div><div class="nota">'+num(d.veiculosComCusto)+' veículos com custo</div></div>'+
+      '</div>'+
+      '<div class="dash-mini">'+
+        '<div class="item"><div class="r">Veículos ativos</div><div class="v">'+num(d.veiculos)+'</div></div>'+
+        '<div class="item"><div class="r">Lançamentos no período</div><div class="v">'+num(d.lancamentosPeriodo)+'</div></div>'+
+        '<div class="item"><div class="r">Preço médio / litro</div><div class="v">'+brl(d.precoLitro,3)+'</div></div>'+
+        '<div class="item"><div class="r">Oficina / manutenção</div><div class="v">'+brl(d.oficina)+'</div></div>'+
+      '</div>'+
+      '<div class="dash-grid"><div class="dash-card"><div class="dash-card-head"><div><h3>Evolução mensal</h3><div class="hint">Histórico fechado + competência atual</div></div><span class="chip">12 meses</span></div><div class="dash-chart">'+graficoEvolucao(d)+'</div></div>'+
+      '<div class="dash-card"><div class="dash-card-head"><div><h3>Composição do custo</h3><div class="hint">Participação das principais rubricas</div></div></div>'+graficoDonut(d)+'</div></div>'+
+      '<div class="dash-grid meio"><div class="dash-card"><div class="dash-card-head"><div><h3>Maiores custos por veículo</h3><div class="hint">Top 8 da competência</div></div></div>'+rankingBarras(d.top,'veiculo')+'</div>'+
+      '<div class="dash-card"><div class="dash-card-head"><div><h3>Custo por centro</h3><div class="hint">Centros com maior participação</div></div></div>'+rankingBarras(d.centros,'centro')+'</div></div>'+
+      '<div class="dash-rodape">Indicadores calculados em '+esc(d.geradoEm||'')+' • servidor '+num(d.tempoServidorMs||0)+' ms'+(d.cacheHit?' • cache':'')+diagnosticoRodape(d)+'</div>';
+  }
+
+  function telaInicio(forcarAtualizacao) {
+    if (!forcarAtualizacao && INICIO_CLIENTE) { renderizarInicio(INICIO_CLIENTE); return; }
+    el('tela').innerHTML = dashboardSkeleton();
+    google.script.run.withSuccessHandler(function (d) {
+      renderizarInicio(d);
+    }).withFailureHandler(falha).webInicio(TOKEN, forcarAtualizacao === true);
+  }
+
+  function telaLancar() {
+    el('tela').innerHTML =
+      '<h2 class="titulo">Novo lançamento</h2>' +
+      '<p class="sub">Período aberto: ' + dataBR(CONFIG.inicio) + ' a ' + dataBR(CONFIG.fim) + '</p>' +
+      '<div class="cartao" style="max-width:620px">' +
+        '<div class="linha">' +
+          '<div><label for="data">Data</label><input type="date" id="data" min="' +
+            CONFIG.inicio + '" max="' + CONFIG.fim + '" value="' + CONFIG.dataSugerida + '"></div>' +
+          '<div><label for="placa">Veículo / patrimônio</label>' +
+            '<input type="text" id="placa" list="listaVeiculosLanc" autocomplete="off" placeholder="placa ou nº patrimônio">' +
+            datalistVeiculos('listaVeiculosLanc', true) +
+            '<div class="sub2">Digite a placa/ID ou o Código Patrimônio.</div></div>' +
+        '</div>' +
+        '<label for="tipo">Tipo de despesa</label><select id="tipo">' +
+          CONFIG.tipos.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('') +
+          '</select>' +
+          '<div class="sub2" id="dicaTipo" style="margin-top:4px"></div>' +
+        '<div id="blocoOficina" style="display:none;background:#FFF9F4;border:1px solid #F0B88E;border-radius:8px;padding:10px;margin-top:10px">' +
+          '<div style="font-weight:800;margin-bottom:6px">Detalhamento da oficina</div>' +
+          '<div class="linha"><div><label for="naturezaOficina">Natureza da despesa</label><select id="naturezaOficina">' +
+            (CONFIG.naturezasOficina||[]).map(function(n){return '<option>'+esc(n)+'</option>';}).join('') + '</select></div>' +
+          '<div style="flex:2"><label for="detalheOficina">Peça / serviço realizado</label>' +
+            '<input type="text" id="detalheOficina" maxlength="500" placeholder="ex.: pastilha de freio dianteira / reparo alternador"></div></div>' +
+          '<div class="sub2">Para despesas de oficina, informe também a NF/OS/documento e o valor.</div>' +
+        '</div>' +
+        '<div id="blocoAbastecimento" style="display:none;background:#F4F8FF;border:1px solid #A9C4EE;border-radius:8px;padding:10px;margin-top:10px">' +
+          '<div style="font-weight:800;margin-bottom:6px">Abastecimento</div>' +
+          '<label for="tipoAbastecimento">Origem do combustível</label>' +
+          '<select id="tipoAbastecimento">' +
+            (CONFIG.tiposAbastecimento||['Interno','Externo']).map(function(t){return '<option>'+esc(t)+'</option>';}).join('') +
+          '</select>' +
+          '<div class="sub2" id="dicaBomba" style="margin-top:6px"></div>' +
+        '</div>' +
+        '<div class="linha">' +
+          '<div><label for="litros" id="rotuloLitros">Litros</label><input type="number" id="litros" step="0.001" min="0" inputmode="decimal"></div>' +
+          '<div><label for="valor">Valor R$</label><input type="number" id="valor" step="0.01" min="0" inputmode="decimal"></div>' +
+        '</div>' +
+        '<div id="blocoKm">' +
+          '<label for="km">KM / horímetro</label>' +
+          '<input type="number" id="km" step="1" min="0" inputmode="numeric">' +
+          '<div class="sub2" id="dicaKm" style="margin-top:4px"></div>' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">' +
+            '<input type="checkbox" id="forcarKm" style="width:auto">' +
+            '<label for="forcarKm" style="margin:0;font-weight:400">Forçar KM menor que a última leitura</label>' +
+          '</div>' +
+        '</div>' +
+        '<div class="linha">' +
+          // Lista fechada, nao texto com sugestao: o servidor so aceita fornecedor
+          // cadastrado, entao deixar digitar livre so produz erro depois de preencher.
+          '<div><label for="fornecedor">Fornecedor <span style="font-weight:400">(opcional)</span></label>' +
+            '<select id="fornecedor">' +
+              '<option value="">— sem fornecedor —</option>' +
+              (CONFIG.fornecedores||[]).map(function(f){return '<option>'+esc(f)+'</option>';}).join('') +
+            '</select>' +
+            ((CONFIG.fornecedores||[]).length ? '' :
+              '<div class="sub2">Nenhum fornecedor cadastrado ainda.</div>') + '</div>' +
+          '<div id="campoDocumento"><label for="documento">NF / OS / Documento</label>' +
+            '<input type="text" id="documento" placeholder="número da NF, OS ou documento"></div>' +
+        '</div>' +
+        '<label for="observacao">Observação</label><textarea id="observacao" rows="2"></textarea>' +
+        '<button class="acao" id="btnGravar" style="width:100%;margin-top:14px" onclick="gravar()">Gravar lançamento</button>' +
+        '<div id="msgLanc" style="margin-top:10px"></div>' +
+      '</div>' +
+      '<div class="cartao" style="max-width:620px"><b>Últimos lançamentos</b>' +
+        '<div id="ultimos"><div class="sub2">carregando…</div></div>' +
+        '<div style="margin-top:10px"><button class="acao secundaria" onclick="abrir(\'lancamentos\')">' +
+          '🗑️ Lançou errado? Corrigir / excluir</button></div></div>';
+
+    // V4.8: o campo de veículo começa VAZIO (vir com a 1ª placa fazia lançar no veículo errado).
+    el('placa').value = ''; el('placa').focus();
+    el('tipo').addEventListener('change', function(){
+      ajustarLitros(); ajustarOficina(); ajustarAbastecimento(); ajustarDicaTipo();
+    });
+    el('placa').addEventListener('change', consultarOdometro);
+    el('tipoAbastecimento').addEventListener('change', ajustarAbastecimento);
+    el('data').addEventListener('change', function(){
+      if (ehCombustivel()) consultarCustoBomba();
+    });
+    el('litros').addEventListener('input', atualizarValorInterno);
+    ajustarLitros();
+    ajustarOficina();
+    ajustarAbastecimento();
+    ajustarDicaTipo();
+    consultarOdometro();
+    carregarUltimos();
+  }
+
+  /** V4.8: avisa antes de gravar quando o tipo é ativo (não soma no custo) ou exige NF. */
+  function ajustarDicaTipo() {
+    var dica = el('dicaTipo');
+    if (!dica) return;
+    var tipo = el('tipo').value;
+    var partes = [];
+    if ((CONFIG.tiposAtivo || []).indexOf(tipo) !== -1) {
+      partes.push('Classificado como ATIVO (imobilizado): aparece no Resumo, mas não soma no custo operacional.');
+    }
+    if ((CONFIG.tiposExigemDocumento || []).indexOf(tipo) !== -1) partes.push('Informe a NF / documento.');
+    dica.textContent = partes.join(' ');
+  }
+
+  function ehCombustivel() {
+    return (CONFIG.tiposCombustivel || []).indexOf(el('tipo').value) !== -1;
+  }
+
+  /**
+   * Item 3 do escopo: KM so aparece em combustivel. Manutencao, multa e pedagio
+   * nao movem odometro, e o servidor recusa — mas recusar depois de digitar e a
+   * pior forma de avisar.
+   */
+  function ajustarAbastecimento() {
+    var combustivel = ehCombustivel();
+    var doTanque = (CONFIG.tiposDoTanque || []).indexOf(el('tipo').value) !== -1;
+    // KM so em combustivel; a origem Interno/Externo tambem vale para ARLA, que
+    // sai do mesmo tanque mas nao movimenta odometro.
+    el('blocoKm').style.display = combustivel ? 'block' : 'none';
+    el('blocoAbastecimento').style.display = doTanque ? 'block' : 'none';
+    if (!doTanque) {
+      el('km').value = '';
+      el('forcarKm').checked = false;
+      el('valor').disabled = false;
+      el('valor').placeholder = '';
+      el('dicaBomba').textContent = '';
+      el('campoDocumento').style.display = '';
+      return;
+    }
+    // Interno nao tem preco proprio: o custo e o do tanque, calculado no servidor.
+    // O campo fica travado para ninguem digitar um valor que sera sobrescrito.
+    var interno = el('tipoAbastecimento').value === 'Interno';
+    el('valor').disabled = interno;
+    // Interno nao tem NF propria: a nota e a da carga do tanque, ja lancada em
+    // "Carga na bomba". O campo some para ninguem inventar um numero.
+    el('campoDocumento').style.display = interno ? 'none' : '';
+    if (interno) {
+      el('valor').value = '';
+      el('valor').placeholder = 'calculado pela bomba';
+      el('documento').value = '';
+      consultarCustoBomba();
+    } else {
+      el('valor').placeholder = 'valor da NF';
+      el('dicaBomba').textContent = 'Abastecimento externo exige NF e valor.';
+    }
+  }
+
+  var CUSTO_BOMBA = null;
+
+  function consultarCustoBomba() {
+    var dica = el('dicaBomba');
+    if (!dica) return;
+    CUSTO_BOMBA = null;
+    dica.textContent = 'consultando o custo do tanque…';
+    google.script.run.withSuccessHandler(function (r) {
+      if (!el('dicaBomba')) return;
+      if (!r || !r.disponivel) {
+        CUSTO_BOMBA = null;
+        el('dicaBomba').innerHTML = '<span style="color:#A52422">Nenhuma carga de ' +
+          esc(r && r.produto ? r.produto : 'combustível') + ' registrada até esta data. ' +
+          'Lance a NF em "Carga na bomba" antes deste abastecimento.</span>';
+        return;
+      }
+      CUSTO_BOMBA = r.custoMedio;
+      el('dicaBomba').textContent = 'Custo médio do tanque: R$ ' +
+        Number(r.custoMedio).toFixed(4).replace('.', ',') + '/L • saldo ' +
+        num(r.saldo) + ' L de ' + r.produto + '.';
+      atualizarValorInterno();
+    }).withFailureHandler(function () {
+      if (el('dicaBomba')) el('dicaBomba').textContent = '';
+    }).webCustoBomba(TOKEN, el('data').value);
+  }
+
+  /** Previa do valor: o numero que vale e o que o servidor calcula ao gravar. */
+  function atualizarValorInterno() {
+    if (el('blocoAbastecimento').style.display === 'none') return;
+    if (el('tipoAbastecimento').value !== 'Interno') return;
+    if (CUSTO_BOMBA === null) return;
+    var litros = Number(el('litros').value || 0);
+    el('valor').value = litros > 0 ? (litros * CUSTO_BOMBA).toFixed(2) : '';
+  }
+
+  function ajustarLitros() {
+    // V4.8: gás é medido em quilos.
+    if (el('rotuloLitros')) el('rotuloLitros').textContent =
+      (CONFIG.tiposKg || []).indexOf(el('tipo').value) !== -1 ? 'Quantidade (kg)' : 'Litros';
+    var aceita = CONFIG.tiposComLitros.indexOf(el('tipo').value) !== -1;
+    el('litros').disabled = !aceita;
+    if (!aceita) el('litros').value = '';
+  }
+
+  function ajustarOficina() {
+    var bloco = el('blocoOficina');
+    if (!bloco) return;
+    var eh = (CONFIG.tiposOficina || []).indexOf(el('tipo').value) !== -1;
+    bloco.style.display = eh ? 'block' : 'none';
+    if (!eh) {
+      if (el('detalheOficina')) el('detalheOficina').value = '';
+      if (el('naturezaOficina') && el('naturezaOficina').options.length) el('naturezaOficina').selectedIndex = 0;
+    }
+  }
+
+  function consultarOdometro() {
+    var dica = el('dicaKm');
+    if (!dica) return;
+    if (!String(el('placa').value || '').trim()) { dica.textContent = 'Digite a placa para ver a última leitura.'; return; }
+    dica.textContent = 'consultando última leitura…';
+    google.script.run.withSuccessHandler(function (ultimo) {
+      dica.textContent = ultimo
+        ? 'Última leitura: ' + num(ultimo.km) + ' em ' + ultimo.data
+        : 'Sem leitura anterior registrada.';
+    }).webUltimoOdometro(TOKEN, el('placa').value);
+  }
+
+  function carregarUltimos() {
+    google.script.run.withSuccessHandler(function (itens) {
+      var alvo = el('ultimos');
+      if (!alvo) return;
+      alvo.innerHTML = itens.length ? itens.map(function (l) {
+        return '<div class="lista-item"><div>' + esc(l.placa) +
+          '<div class="sub2">' + esc(l.data) + ' • ' + esc(l.tipo) + '</div></div>' +
+          '<div>' + brl(l.valor) + '</div></div>';
+      }).join('') : '<div class="sub2">Nenhum lançamento ainda.</div>';
+    }).webUltimosLancamentos(TOKEN, 8);
+  }
+
+  function gravar(permitirDuplicado) {
+    var botao = el('btnGravar');
+    botao.disabled = true;
+    botao.textContent = 'Gravando…';
+    var dados = {
+      data: el('data').value, placa: String(el('placa').value || '').trim(), tipo: el('tipo').value,
+      litros: el('litros').value, valor: el('valor').value, km: el('km').value,
+      forcarKm: el('forcarKm').checked,
+      fornecedor: el('fornecedor') ? el('fornecedor').value : '',
+      tipoAbastecimento: el('blocoAbastecimento') &&
+        el('blocoAbastecimento').style.display !== 'none' && el('tipoAbastecimento')
+        ? el('tipoAbastecimento').value : '',
+      documento: el('documento').value, observacao: el('observacao').value,
+      naturezaOficina: el('naturezaOficina') ? el('naturezaOficina').value : '',
+      detalheOficina: el('detalheOficina') ? el('detalheOficina').value : '',
+      permitirDuplicado: permitirDuplicado === true
+    };
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false;
+        botao.textContent = 'Gravar lançamento';
+        if (!r.ok && r.duplicidade && permitirDuplicado !== true) {
+          if (confirm(r.mensagem + '\n\nSe você conferiu e este é realmente um segundo lançamento legítimo, deseja gravar mesmo assim?')) {
+            gravar(true);
+            return;
+          }
+        }
+        el('msgLanc').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+          esc(r.mensagem) + '</div>';
+        if (r.ok) {
+          ['litros', 'valor', 'km', 'documento', 'observacao', 'detalheOficina'].forEach(function (id) { if(el(id)) el(id).value = ''; });
+          if (ehCombustivel()) consultarCustoBomba();
+          if(el('naturezaOficina') && el('naturezaOficina').options.length) el('naturezaOficina').selectedIndex = 0;
+          el('forcarKm').checked = false;
+          consultarOdometro();
+          carregarUltimos();
+        }
+      })
+      .withFailureHandler(function (erro) {
+        botao.disabled = false;
+        botao.textContent = 'Gravar lançamento';
+        el('msgLanc').innerHTML = '<div class="erro-caixa">' + esc(erro.message) + '</div>';
+      })
+      .webSalvarLancamento(TOKEN, dados);
+  }
+
+  function seletor(id, itens, primeiro) {
+    return '<select id="' + id + '">' +
+      (primeiro ? '<option>' + primeiro + '</option>' : '') +
+      itens.map(function (i) { return '<option>' + esc(i) + '</option>'; }).join('') +
+      '</select>';
+  }
+
+
+  function datalistVeiculos(idLista, somenteAtivos) {
+    var itens = (CONFIG && CONFIG.veiculos) ? CONFIG.veiculos : (CONFIG && CONFIG.placas ? CONFIG.placas.map(function(p){return {placa:p,patrimonio:'',descricao:''};}) : []);
+    if (somenteAtivos === true) itens = itens.filter(function(v){ return v.ativo !== false; });
+    var html = [];
+    itens.forEach(function(v){
+      var placa=String(v.placa||''), pat=String(v.patrimonio||''), desc=String(v.descricao||'');
+      html.push('<option value="'+esc(placa)+'" label="'+esc((pat?'Patrimônio '+pat+' • ':'')+desc)+'"></option>');
+      if(pat) html.push('<option value="'+esc(pat)+'" label="'+esc(placa+(desc?' • '+desc:''))+'"></option>');
+    });
+    return '<datalist id="'+idLista+'">'+html.join('')+'</datalist>';
+  }
+
+  function telaRelatorios() {
+    google.script.run.withSuccessHandler(function (lista) {
+      el('tela').innerHTML =
+        '<h2 class="titulo">Relatórios</h2>' +
+        '<p class="sub" id="descRel">Escolha o relatório e os filtros.</p>' +
+        '<div class="barra">' +
+          '<div><label for="relTipo">Relatório</label>' +
+            '<select id="relTipo">' + lista.map(function (r) {
+              return '<option>' + esc(r.nome) + '</option>'; }).join('') + '</select></div>' +
+          '<div><label for="relCentro">Centro de custo</label>' +
+            seletor('relCentro', OPCOES.centros, 'TODOS') + '</div>' +
+          '<div><label for="relCategoria">Categoria</label>' +
+            seletor('relCategoria', OPCOES.categorias, 'TODAS') + '</div>' +
+          '<div><label for="relVeiculo">Veículo (placa ou patrimônio)</label>' +
+            '<input type="text" id="relVeiculo" list="listaVeiculosRel" autocomplete="off" ' +
+              'placeholder="TODOS — digite a placa ou o patrimônio">' +
+            datalistVeiculos('listaVeiculosRel', false) + '</div>' +
+          '<div id="campoTermo" style="display:none;flex:2">' +
+            '<label for="relTermo">Peça ou serviço</label>' +
+            '<input type="text" id="relTermo" placeholder="ex.: alternador, embreagem, pastilha">' +
+          '</div>' +
+        '</div>' +
+        '<div id="saidaRel"><div class="carregando">carregando…</div></div>';
+
+      var descricoes = {};
+      FILTROS_RELATORIO = {};
+      lista.forEach(function (r) {
+        descricoes[r.nome] = r.descricao;
+        FILTROS_RELATORIO[r.nome] = r.filtros || [];
+      });
+      ['relTipo', 'relCentro', 'relCategoria', 'relVeiculo'].forEach(function (id) {
+        el(id).addEventListener('change', function () { ajustarTermo(); rodarRelatorio(descricoes); });
+      });
+      // Placa digitada: roda ao apertar Enter (ou ao sair do campo, pelo "change").
+      el('relVeiculo').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); rodarRelatorio(descricoes); }
+      });
+      // Busca por texto nao dispara a cada tecla: cada rodada le a base inteira.
+      el('relTermo').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); rodarRelatorio(descricoes); }
+      });
+      el('relTermo').addEventListener('blur', function () { rodarRelatorio(descricoes); });
+      ajustarTermo();
+      rodarRelatorio(descricoes);
+    }).withFailureHandler(falha).webListaRelatorios(TOKEN);
+  }
+
+  var FILTROS_RELATORIO = {};
+
+  /** O campo de busca so aparece no relatorio que sabe usa-lo. */
+  function ajustarTermo() {
+    var usa = (FILTROS_RELATORIO[el('relTipo').value] || []).indexOf('termo') !== -1;
+    el('campoTermo').style.display = usa ? '' : 'none';
+    if (usa) el('relTermo').focus();
+  }
+
+  /**
+   * Lista suspensa de veiculos.
+   *
+   * Era <input list=datalist>: o navegador so mostra as opcoes depois de digitar,
+   * entao quem nao sabia a placa de cor ficava sem lista. <select> abre a frota
+   * inteira num clique — e o proprio navegador aceita digitar para saltar.
+   */
+  function selectVeiculos(id, somenteAtivos) {
+    var itens = (CONFIG && CONFIG.veiculos) ? CONFIG.veiculos.slice() : [];
+    if (somenteAtivos === true) itens = itens.filter(function (v) { return v.ativo !== false; });
+    itens.sort(function (a, b) { return String(a.placa).localeCompare(String(b.placa)); });
+    return '<select id="' + id + '"><option>TODOS</option>' +
+      itens.map(function (v) {
+        var rotulo = String(v.placa || '') +
+          (v.patrimonio ? ' • ' + v.patrimonio : '') +
+          (v.descricao ? ' — ' + v.descricao : '');
+        return '<option value="' + esc(String(v.placa || '')) + '">' + esc(rotulo) + '</option>';
+      }).join('') + '</select>';
+  }
+
+  function rodarRelatorio(descricoes) {
+    var tipo = el('relTipo').value;
+    el('descRel').textContent = descricoes[tipo] || '';
+    el('saidaRel').innerHTML = '<div class="carregando">calculando…</div>';
+    google.script.run
+      .withSuccessHandler(function (dados) {
+        // Alguns relatorios trazem um consolidado por veiculo alem das linhas.
+        // Ele vai ANTES da tabela: e o que responde "quem esta consumindo
+        // manutencao" sem obrigar a rolar centenas de servicos.
+        var resumo = '';
+        if (dados && dados.porVeiculo && dados.porVeiculo.length) {
+          resumo = tabela({
+            colunas: [col('Placa'), col('Veículo'), col('Serviços', 'numero'),
+              col('Natureza que mais pesou'), col('Total', 'moeda')],
+            linhas: dados.porVeiculo.map(function (v) {
+              return [v.placa, v.descricao, v.itens, v.naturezaPrincipal, v.valor];
+            }),
+            totais: [null, null,
+              dados.porVeiculo.reduce(function (t, v) { return t + v.itens; }, 0),
+              null,
+              dados.porVeiculo.reduce(function (t, v) { return t + v.valor; }, 0)],
+            mensagem: 'Consolidado por veículo, do que mais consumiu para o que menos.',
+          });
+        }
+        el('saidaRel').innerHTML = resumo +
+          tabela(dados, (dados && dados.mensagem) || 'Nenhum resultado para os filtros escolhidos.', { destacarBloco: true });
+      })
+      .withFailureHandler(function (erro) {
+        el('saidaRel').innerHTML = '<div class="erro-caixa">' + esc(erro.message) + '</div>';
+      })
+      .webRelatorio(TOKEN, tipo, {
+        centro: el('relCentro').value, categoria: el('relCategoria').value,
+        // Campo vazio = todos os veículos.
+        veiculo: String(el('relVeiculo').value || '').trim() || 'TODOS',
+        termo: el('relTermo') ? el('relTermo').value : ''
+      });
+  }
+
+  function telaResumo() {
+    el('tela').innerHTML =
+      '<h2 class="titulo">Resumo por veículo</h2>' +
+      '<p class="sub">Uma linha por veículo, no período aberto.</p>' +
+      '<div class="barra">' +
+        '<div><label for="resCentro">Centro de custo</label>' +
+          seletor('resCentro', OPCOES.centros, 'TODOS') + '</div>' +
+        '<div><label for="resCategoria">Categoria</label>' +
+          seletor('resCategoria', OPCOES.categorias, 'TODAS') + '</div>' +
+      '</div>' +
+      '<div id="saidaResumo"><div class="carregando">carregando…</div></div>';
+    ['resCentro', 'resCategoria'].forEach(function (id) {
+      el(id).addEventListener('change', rodarResumo);
+    });
+    rodarResumo();
+  }
+
+  function rodarResumo() {
+    el('saidaResumo').innerHTML = '<div class="carregando">calculando…</div>';
+    google.script.run
+      .withSuccessHandler(function (dados) { el('saidaResumo').innerHTML = tabela(dados, dados && dados.mensagem); })
+      .withFailureHandler(function (erro) {
+        el('saidaResumo').innerHTML = '<div class="erro-caixa">' + esc(erro.message) + '</div>';
+      })
+      .webResumo(TOKEN, { centro: el('resCentro').value, categoria: el('resCategoria').value });
+  }
+
+  function telaRateio() {
+    carregando('calculando o rateio…');
+    google.script.run.withSuccessHandler(function (dados) {
+      el('tela').innerHTML =
+        '<h2 class="titulo">Rateio por centro de custo</h2>' +
+        '<p class="sub">Custo direto de cada centro + o rateio do depósito e das empilhadeiras.</p>' +
+        (dados.mensagem ? '<div class="aviso">' + esc(dados.mensagem) + '</div>' : '') +
+        tabela(dados);
+    }).withFailureHandler(falha).webRateio(TOKEN);
+  }
+
+  function telaConsulta() {
+    el('tela').innerHTML =
+      '<h2 class="titulo">Consultar veículo</h2>' +
+      '<p class="sub">Indicadores e extrato do período aberto.</p>' +
+      '<div class="barra"><div><label for="consPlaca">Placa / patrimônio</label>' +
+        '<input type="text" id="consPlaca" list="listaVeiculosConsulta" autocomplete="off" placeholder="placa ou nº patrimônio">' + datalistVeiculos('listaVeiculosConsulta', false) + '</div>' +
+        '<div style="flex:0 0 auto;align-self:flex-end"><button class="acao secundaria" onclick="rodarConsulta()">🔍 Buscar</button></div></div>' +
+      '<div id="saidaConsulta"><div class="carregando">carregando…</div></div>';
+    if (CONFIG.veiculos && CONFIG.veiculos.length) el('consPlaca').value=CONFIG.veiculos[0].placa||'';
+    else if (CONFIG.placas && CONFIG.placas.length) el('consPlaca').value=CONFIG.placas[0];
+    el('consPlaca').addEventListener('change', rodarConsulta);
+    el('consPlaca').addEventListener('keydown', function(e){if(e.key==='Enter'){e.preventDefault();rodarConsulta();}});
+    rodarConsulta();
+  }
+
+  function rodarConsulta() {
+    el('saidaConsulta').innerHTML = '<div class="carregando">buscando…</div>';
+    google.script.run.withSuccessHandler(function (d) {
+      if (!d.ok) {
+        el('saidaConsulta').innerHTML = '<div class="aviso">' + esc(d.mensagem) + '</div>';
+        return;
+      }
+      var i = d.indicadores;
+      var kpis = [
+        ['Custo total', brl(i.total)], ['KM rodados', num(i.km)],
+        ['R$ por KM', brl(i.rsKm, 3)], ['KM por litro', num(i.kmLitro, 2)],
+        ['Litros', num(i.litros, 3)], ['Combustível', brl(i.combustivel)],
+        ['Oficina', brl(i.oficina)], ['Depreciação', brl(i.depreciacao)]
+      ]
+      // IPVA so entra quando o veiculo tem valor cadastrado: um KPI zerado em
+      // toda a frota vira ruido e ensina o olho a ignorar o painel.
+      .concat(Number(i.ipva) > 0 ? [['IPVA (1/12)', brl(i.ipva)]] : [])
+      .map(function (k) {
+        return '<div class="kpi"><div class="rotulo">' + k[0] + '</div>' +
+          '<div class="valor">' + k[1] + '</div></div>';
+      }).join('');
+
+      var extrato = {
+        colunas: [{ titulo: 'Data' }, { titulo: 'Tipo de Despesa' },
+          { titulo: 'Natureza da Oficina' }, { titulo: 'Peça / Serviço' },
+          { titulo: 'NF / OS / Documento' }, { titulo: 'Litros', tipo: 'decimal' },
+          { titulo: 'Valor', tipo: 'moeda' }],
+        linhas: d.lancamentos.map(function (l) {
+          return [l.data, l.tipo, l.naturezaOficina || '', l.detalheOficina || '', l.documento,
+            l.litros, l.valor];
+        }),
+        // Coluna 0 nula: quem escreve "TOTAL" no rodapé é o renderizador logo acima.
+        totais: [null, null, null, null, null,
+          d.lancamentos.reduce(function (s, l) { return s + l.litros; }, 0),
+          d.lancamentos.reduce(function (s, l) { return s + l.valor; }, 0)]
+      };
+
+      el('saidaConsulta').innerHTML =
+        '<div class="cartao"><b>' + esc(d.placa) + '</b>' + (d.patrimonio ? ' • Patrimônio ' + esc(d.patrimonio) : '') + ' — ' + esc(d.descricao) +
+        ' <span class="chip">' + esc(d.categoria) + '</span> ' +
+        '<span class="chip">' + esc(d.centro) + '</span>' +
+        (d.ultimoOdometro ? '<div class="sub2" style="margin-top:6px">Última leitura: ' +
+          num(d.ultimoOdometro.km) + ' km em ' + esc(d.ultimoOdometro.data) + '</div>' : '') +
+        '</div>' +
+        '<div class="kpis">' + kpis + '</div>' +
+        tabela(extrato, 'Sem lançamentos no período.');
+    }).withFailureHandler(falha).webConsultaVeiculo(TOKEN, el('consPlaca').value);
+  }
+
+  function telaVeiculos() {
+    el('tela').innerHTML =
+      '<h2 class="titulo">Veículos</h2>' +
+      '<p class="sub">Cadastro que alimenta todos os relatórios.</p>' +
+      '<div class="barra">' +
+        '<div><label for="busca">Buscar por placa, patrimônio, modelo ou centro</label>' +
+          '<input type="text" id="busca" placeholder="ex.: 15482, FIORINO, Loja 08, RYP"></div>' +
+        (SESSAO && SESSAO.perfil === 'ADMIN' ? '<div style="flex:0 0 auto"><button class="acao" onclick="abrirFormVeiculo()">➕ Novo veículo</button></div>' : '') +
+      '</div>' +
+      '<div id="formVeiculo"></div>' +
+      '<div id="saidaVeiculos"><div class="carregando">carregando…</div></div>';
+    var timer = null;
+    el('busca').addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(rodarVeiculos, 300);
+    });
+    rodarVeiculos();
+  }
+
+  function rodarVeiculos() {
+    google.script.run
+      .withSuccessHandler(function (dados) {
+        // Coluna de acao so para ADMIN: quem nao pode salvar nao ganha um botao
+        // que vai falhar no servidor.
+        if (SESSAO && SESSAO.perfil === 'ADMIN' && dados.linhas && dados.linhas.length) {
+          dados = {
+            colunas: dados.colunas.concat([{ titulo: '' }]),
+            linhas: dados.linhas.map(function (l) {
+              return l.concat(['<button class="acao secundaria" style="padding:4px 10px" ' +
+                'onclick="editarVeiculo(\'' + esc(String(l[0])).replace(/'/g, '') + '\')">editar</button>']);
+            }),
+            totais: dados.totais ? dados.totais.concat([null]) : null,
+            mensagem: dados.mensagem,
+          };
+        }
+        el('saidaVeiculos').innerHTML = tabela(dados, undefined, { html: true });
+      })
+      .withFailureHandler(falha)
+      .webVeiculos(TOKEN, el('busca') ? el('busca').value : '');
+  }
+
+  /**
+   * Abre o formulario para cadastro OU edicao.
+   *
+   * Antes so existia "Novo veiculo": o webSalvarVeiculo do servidor sempre soube
+   * editar (localiza pela placa e preserva o que nao vem no formulario), mas a
+   * tela nunca carregava um veiculo existente. Trocar o centro de custo ou
+   * desativar um veiculo so dava na mao, direto na aba.
+   */
+  function abrirFormVeiculo(veiculo) {
+    var v = veiculo || {};
+    var edicao = !!v.placa;
+    el('formVeiculo').innerHTML =
+      '<div class="cartao" style="max-width:660px">' +
+        '<b>' + (edicao ? 'Editar ' + esc(v.placa) : 'Novo veículo') + '</b>' +
+        '<div class="linha">' +
+          '<div><label for="vPlaca">Placa / ID</label><input type="text" id="vPlaca"' +
+            (edicao ? ' value="' + esc(v.placa) + '" readonly style="background:#F3F1F0"' : '') + '></div>' +
+          '<div><label for="vDescricao">Descrição</label><input type="text" id="vDescricao" value="' +
+            esc(v.descricao || '') + '"></div>' +
+        '</div>' +
+        '<div class="linha">' +
+          '<div><label for="vCategoria">Categoria</label>' +
+            seletor('vCategoria', OPCOES.categorias) + '</div>' +
+          '<div><label for="vCentro">Centro de custo</label>' +
+            seletor('vCentro', OPCOES.centros) + '</div>' +
+        '</div>' +
+        '<div class="linha">' +
+          '<div><label for="vDepreciacao">Depreciação mensal</label>' +
+            '<input type="number" id="vDepreciacao" step="0.01" min="0" value="' + (Number(v.depreciacao) || 0) + '"></div>' +
+          '<div><label for="vEmplacamento">Emplacamento</label>' +
+            '<input type="number" id="vEmplacamento" step="0.01" min="0" value="' + (Number(v.emplacamento) || 0) + '"></div>' +
+          '<div><label for="vSeguro">Seguro</label>' +
+            '<input type="number" id="vSeguro" step="0.01" min="0" value="' + (Number(v.seguro) || 0) + '"></div>' +
+        '</div>' +
+        '<div class="linha">' +
+          '<div><label for="vIpva">IPVA anual</label>' +
+            '<input type="number" id="vIpva" step="0.01" min="0" value="' + (Number(v.ipva) || 0) + '">' +
+            '<div class="sub2">O mapa cobra 1/12 por mês.</div></div>' +
+          '<div><label for="vPreco">Preço comb. próprio</label>' +
+            '<input type="number" id="vPreco" step="0.001" min="0" value="' + (Number(v.precoCombustivel) || 0) + '"></div>' +
+          '<div><label for="vCodigo">Código patrimônio</label>' +
+            '<input type="text" id="vCodigo" value="' + esc(v.codigo || '') + '"></div>' +
+        '</div>' +
+        '<div class="linha">' +
+          '<div><label for="vAtivo">Situação</label>' +
+            seletor('vAtivo', ['ATIVO', 'INATIVO']) + '</div>' +
+          '<div style="flex:2"><div class="sub2" style="margin-top:26px">' +
+            'Veículo inativo não aceita lançamento novo, mas continua no histórico.</div></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">' +
+          '<button class="acao" onclick="salvarVeiculo()">Salvar</button>' +
+          '<button class="acao secundaria" onclick="el(\'formVeiculo\').innerHTML=\'\'">Cancelar</button>' +
+          (edicao ? '<button class="acao perigo" style="margin-left:auto" onclick="excluirVeiculo()">🗑️ Excluir veículo</button>' : '') +
+        '</div>' +
+        '<div id="msgVeiculo" style="margin-top:10px"></div>' +
+      '</div>';
+    // seletor() nao aceita valor inicial: posicionar depois de montar e o que
+    // impede um veiculo inativo de reaparecer como ativo ao ser editado.
+    if (edicao) {
+      definirSelect('vCategoria', v.categoria);
+      definirSelect('vCentro', v.centro);
+      definirSelect('vAtivo', v.ativo === false ? 'INATIVO' : 'ATIVO');
+    }
+    el('formVeiculo').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function definirSelect(id, valor) {
+    var campo = el(id);
+    if (!campo || valor === undefined || valor === null) return;
+    var alvo = String(valor).trim().toUpperCase();
+    for (var i = 0; i < campo.options.length; i++) {
+      if (String(campo.options[i].value).trim().toUpperCase() === alvo) {
+        campo.selectedIndex = i;
+        return;
+      }
+    }
+  }
+
+  /** Carrega o cadastro completo antes de abrir o formulario de edicao. */
+  function editarVeiculo(placa) {
+    google.script.run
+      .withSuccessHandler(function (v) {
+        if (!v) { status('Veículo não encontrado: ' + placa); return; }
+        abrirFormVeiculo(v);
+      })
+      .withFailureHandler(falha)
+      .webVeiculo(TOKEN, placa);
+  }
+
+  function salvarVeiculo() {
+    google.script.run
+      .withSuccessHandler(function (r) {
+        el('msgVeiculo').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+          esc(r.mensagem) + '</div>';
+        if (r.ok) {
+          rodarVeiculos();
+          status(r.mensagem);
+        }
+      })
+      .withFailureHandler(function (erro) {
+        el('msgVeiculo').innerHTML = '<div class="erro-caixa">' + esc(erro.message) + '</div>';
+      })
+      .webSalvarVeiculo(TOKEN, {
+        placa: el('vPlaca').value, descricao: el('vDescricao').value,
+        categoria: el('vCategoria').value, centro: el('vCentro').value,
+        codigo: el('vCodigo').value, depreciacao: el('vDepreciacao').value,
+        emplacamento: el('vEmplacamento').value, seguro: el('vSeguro').value,
+        precoCombustivel: el('vPreco').value,
+        ipva: el('vIpva') ? el('vIpva').value : 0,
+        ativo: !el('vAtivo') || el('vAtivo').value !== 'INATIVO'
+      });
+  }
+
+  /**
+   * V4.8: exclusão de veículo. O servidor recusa quando há histórico em período fechado
+   * (aí o caminho é INATIVAR) e pede confirmação extra quando há lançamentos no período aberto.
+   */
+  function excluirVeiculo() {
+    var placa = el('vPlaca').value;
+    if (!placa) return;
+    el('msgVeiculo').innerHTML =
+      '<div class="cartao" style="border:2px solid #A52422;margin:0">' +
+        '<b style="color:#A52422">Excluir o veículo ' + esc(placa) + '?</b>' +
+        '<div class="sub2" style="margin:6px 0">Se ele tiver histórico em meses fechados, a exclusão é recusada: ' +
+          'nesse caso use Situação INATIVO, que preserva os relatórios.</div>' +
+        '<label for="motivoVeiculo">Justificativa (obrigatória, mínimo 10 caracteres)</label>' +
+        '<textarea id="motivoVeiculo" rows="2"></textarea>' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">' +
+          '<input type="checkbox" id="excluirLancVeiculo" style="width:auto">' +
+          '<label for="excluirLancVeiculo" style="margin:0;font-weight:400">Excluir também os lançamentos dele no período aberto</label></div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px">' +
+          '<button class="acao perigo" id="btnConfirmaVeiculo" onclick="confirmarExclusaoVeiculo()">🗑️ Confirmar exclusão</button>' +
+          '<button class="acao secundaria" onclick="el(\'msgVeiculo\').innerHTML=\'\'">Cancelar</button>' +
+        '</div><div id="msgExclVeiculo" style="margin-top:8px"></div>' +
+      '</div>';
+    el('motivoVeiculo').focus();
+  }
+
+  function confirmarExclusaoVeiculo() {
+    var placa = el('vPlaca').value;
+    var motivo = el('motivoVeiculo').value.trim();
+    if (motivo.length < 10) {
+      el('msgExclVeiculo').innerHTML = '<div class="erro-caixa">Escreva a justificativa com pelo menos 10 caracteres.</div>';
+      return;
+    }
+    el('btnConfirmaVeiculo').disabled = true;
+    el('msgExclVeiculo').innerHTML = '<div class="sub2">excluindo…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      el('btnConfirmaVeiculo').disabled = false;
+      if (!r.ok && r.precisaConfirmarLancamentos) {
+        el('msgExclVeiculo').innerHTML = '<div class="aviso">' + esc(r.mensagem) +
+          ' Marque a opção "Excluir também os lançamentos" e confirme de novo.</div>';
+        return;
+      }
+      if (!r.ok) { el('msgExclVeiculo').innerHTML = '<div class="erro-caixa">' + esc(r.mensagem) + '</div>'; return; }
+      el('formVeiculo').innerHTML = '<div class="ok-caixa" style="max-width:660px">' + esc(r.mensagem) + '</div>';
+      status(r.mensagem);
+      rodarVeiculos();
+    }).withFailureHandler(function (e) {
+      el('btnConfirmaVeiculo').disabled = false;
+      el('msgExclVeiculo').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webExcluirVeiculo(TOKEN, placa, motivo, !!el('excluirLancVeiculo').checked);
+  }
+
+  // ------------------------------------------- corrigir / excluir lançamento (V4.8)
+
+  function telaLancamentos() {
+    el('tela').innerHTML =
+      '<h2 class="titulo">Corrigir / excluir lançamento</h2>' +
+      '<p class="sub">Lançamentos do período aberto. Use <b>Corrigir</b> para ajustar qualquer campo ou <b>Excluir</b> para remover. ' +
+        'Tudo fica registrado em "Lançamentos Excluídos", com quem fez e por quê.</p>' +
+      '<div class="barra">' +
+        '<div><label for="corrVeiculo">Veículo / patrimônio</label>' +
+          '<input type="text" id="corrVeiculo" list="listaVeiculosCorr" autocomplete="off" placeholder="todos">' +
+          datalistVeiculos('listaVeiculosCorr', false) + '</div>' +
+        '<div><label for="corrTermo">Buscar (ID, tipo, NF, observação)</label>' +
+          '<input type="text" id="corrTermo" placeholder="ex.: 12345, Oficina, LAN-2026…"></div>' +
+        '<div style="flex:0 0 auto;align-self:flex-end"><button class="acao secundaria" onclick="rodarLancamentosCorrecao()">🔍 Buscar</button></div>' +
+      '</div>' +
+      '<div id="painelExclusao"></div>' +
+      '<div id="saidaCorrecao"><div class="carregando">carregando…</div></div>' +
+      '<div class="cartao"><b>Exclusões recentes</b><div id="saidaExcluidos" style="margin-top:8px"><div class="sub2">carregando…</div></div></div>';
+    el('corrTermo').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); rodarLancamentosCorrecao(); } });
+    el('corrVeiculo').addEventListener('change', rodarLancamentosCorrecao);
+    rodarLancamentosCorrecao();
+    carregarExcluidos();
+  }
+
+  function rodarLancamentosCorrecao() {
+    el('saidaCorrecao').innerHTML = '<div class="carregando">buscando…</div>';
+    google.script.run.withSuccessHandler(function (d) {
+      if (d.mensagem && !d.itens) { el('saidaCorrecao').innerHTML = '<div class="aviso">' + esc(d.mensagem) + '</div>'; return; }
+      window.LANC_CORRECAO = d.itens || [];
+      if (!window.LANC_CORRECAO.length) {
+        el('saidaCorrecao').innerHTML = '<div class="cartao">Nenhum lançamento no período aberto (' + esc(d.periodo) + ') para esse filtro.</div>';
+        return;
+      }
+      var linhas = window.LANC_CORRECAO.map(function (l, i) {
+        return '<tr><td>' + esc(l.data) + '</td><td>' + esc(l.placa) + '</td><td>' + esc(l.tipo) +
+          (l.detalhe ? '<div class="sub2">' + esc(l.detalhe) + '</div>' : '') + '</td>' +
+          '<td>' + esc(l.documento) + '</td>' +
+          '<td class="num">' + (l.litros ? num(l.litros, 3) : '') + '</td>' +
+          '<td class="num">' + brl(l.valor) + '</td>' +
+          '<td class="sub2">' + esc(l.id) + '</td>' +
+          '<td style="white-space:nowrap"><button class="acao secundaria" style="padding:4px 10px" onclick="abrirCorrecaoLancamento(' + i + ')">Corrigir</button> ' +
+          '<button class="acao perigo" style="padding:4px 10px" onclick="excluirLancamento(' + i + ')">Excluir</button></td></tr>';
+      }).join('');
+      el('saidaCorrecao').innerHTML =
+        '<div class="cartao" style="padding:0;overflow:hidden"><div class="rolagem"><table><thead><tr>' +
+        '<th>Data</th><th>Placa</th><th>Tipo</th><th>NF / Doc.</th><th class="num">Litros</th><th class="num">Valor</th><th>ID</th><th></th>' +
+        '</tr></thead><tbody>' + linhas + '</tbody></table></div></div>' +
+        '<div class="contagem">' + window.LANC_CORRECAO.length + ' lançamento(s) • período ' + esc(d.periodo) + '</div>';
+    }).withFailureHandler(function (e) {
+      el('saidaCorrecao').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webLancamentosCorrecao(TOKEN, { veiculo: el('corrVeiculo').value, termo: el('corrTermo').value });
+  }
+
+  // ------------------------------------------- corrigir lançamento (V4.8)
+  function opcoesSelect(lista, atual, vazio) {
+    return (vazio !== undefined ? '<option value="">' + esc(vazio) + '</option>' : '') +
+      (lista || []).map(function (x) {
+        return '<option' + (String(x) === String(atual) ? ' selected' : '') + '>' + esc(x) + '</option>';
+      }).join('');
+  }
+
+  function abrirCorrecaoLancamento(i) {
+    var l = (window.LANC_CORRECAO || [])[i];
+    if (!l) return;
+    window.LANC_CORRIGIR = l;
+    var tipoAtual = (CONFIG.tipos || []).indexOf(l.tipoOriginal) !== -1 ? l.tipoOriginal : '';
+    el('painelExclusao').innerHTML =
+      '<div class="cartao" style="border:2px solid #F47820;max-width:680px">' +
+        '<b>Corrigir lançamento</b> <span class="sub2">' + esc(l.id || 'sem ID') + '</span>' +
+        '<div class="linha">' +
+          '<div><label for="cxData">Data</label><input type="date" id="cxData" min="' + CONFIG.inicio + '" max="' + CONFIG.fim + '" value="' + esc(l.dataIso) + '"></div>' +
+          '<div><label for="cxPlaca">Veículo / patrimônio</label><input type="text" id="cxPlaca" list="listaVeiculosCx" autocomplete="off" value="' + esc(l.placa) + '">' +
+            datalistVeiculos('listaVeiculosCx', true) + '</div>' +
+        '</div>' +
+        '<label for="cxTipo">Tipo de despesa</label><select id="cxTipo">' + opcoesSelect(CONFIG.tipos, tipoAtual, tipoAtual ? undefined : '— escolha —') + '</select>' +
+        '<div id="cxOficina">' +
+          '<div class="linha"><div><label for="cxNatureza">Natureza</label><select id="cxNatureza">' + opcoesSelect(CONFIG.naturezasOficina, l.naturezaOficina) + '</select></div>' +
+          '<div style="flex:2"><label for="cxDetalhe">Peça / serviço</label><input type="text" id="cxDetalhe" value="' + esc(l.detalheOficina) + '"></div></div>' +
+        '</div>' +
+        '<div id="cxTanque"><label for="cxOrigem">Origem do combustível</label><select id="cxOrigem">' +
+          opcoesSelect(CONFIG.tiposAbastecimento || ['Interno', 'Externo'], l.tipoAbastecimento || 'Externo') + '</select>' +
+          '<div class="sub2">Interno: o valor é recalculado pelo custo do tanque.</div></div>' +
+        '<div class="linha">' +
+          '<div><label for="cxLitros" id="cxRotuloLitros">Litros</label><input type="number" id="cxLitros" step="0.001" min="0" value="' + (l.litros || '') + '"></div>' +
+          '<div><label for="cxValor">Valor R$</label><input type="number" id="cxValor" step="0.01" min="0" value="' + (l.valor || '') + '"></div>' +
+          '<div id="cxKmBloco"><label for="cxKm">KM / horímetro</label><input type="number" id="cxKm" step="1" min="0" value="' + esc(l.km) + '"></div>' +
+        '</div>' +
+        '<div class="linha">' +
+          '<div><label for="cxFornecedor">Fornecedor</label><select id="cxFornecedor">' + opcoesSelect(CONFIG.fornecedores, l.fornecedor, '— sem fornecedor —') + '</select></div>' +
+          '<div><label for="cxDoc">NF / OS / Documento</label><input type="text" id="cxDoc" value="' + esc(l.documento) + '"></div>' +
+        '</div>' +
+        '<label for="cxObs">Observação</label><input type="text" id="cxObs" value="' + esc(l.observacao) + '">' +
+        '<label for="cxMotivo">Motivo da correção (obrigatório, mínimo 10 caracteres)</label>' +
+        '<input type="text" id="cxMotivo" placeholder="ex.: valor da NF digitado errado">' +
+        '<div class="sub2" style="margin-top:6px">O original vai para "Lançamentos Excluídos" com o motivo e o corrigido é gravado com as mesmas validações de um lançamento novo. ' +
+          'Se for abastecimento do tanque interno, o estoque e os custos posteriores são recalculados.</div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px">' +
+          '<button class="acao" id="btnCx" onclick="salvarCorrecaoLancamento()">Salvar correção</button>' +
+          '<button class="acao secundaria" onclick="el(\'painelExclusao\').innerHTML=\'\'">Cancelar</button>' +
+        '</div><div id="msgCx" style="margin-top:8px"></div>' +
+      '</div>';
+    el('cxTipo').addEventListener('change', ajustarCorrecao);
+    el('cxOrigem').addEventListener('change', ajustarCorrecao);
+    ajustarCorrecao();
+    el('painelExclusao').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function ajustarCorrecao() {
+    var tipo = el('cxTipo').value;
+    var doTanque = (CONFIG.tiposDoTanque || []).indexOf(tipo) !== -1;
+    var combustivel = (CONFIG.tiposCombustivel || []).indexOf(tipo) !== -1;
+    var comLitros = (CONFIG.tiposComLitros || []).indexOf(tipo) !== -1;
+    el('cxOficina').style.display = (CONFIG.tiposOficina || []).indexOf(tipo) !== -1 ? '' : 'none';
+    el('cxTanque').style.display = doTanque ? '' : 'none';
+    el('cxKmBloco').style.display = combustivel ? '' : 'none';
+    el('cxLitros').disabled = !comLitros;
+    el('cxRotuloLitros').textContent = (CONFIG.tiposKg || []).indexOf(tipo) !== -1 ? 'Quantidade (kg)' : 'Litros';
+    var interno = doTanque && el('cxOrigem').value === 'Interno';
+    el('cxValor').disabled = interno;
+    if (interno) el('cxValor').placeholder = 'calculado pela bomba';
+  }
+
+  function salvarCorrecaoLancamento() {
+    var l = window.LANC_CORRIGIR;
+    if (!l) return;
+    var motivo = el('cxMotivo').value.trim();
+    if (motivo.length < 10) { el('msgCx').innerHTML = '<div class="erro-caixa">Escreva o motivo da correção (mínimo 10 caracteres).</div>'; return; }
+    if (!el('cxTipo').value) { el('msgCx').innerHTML = '<div class="erro-caixa">Escolha o tipo de despesa.</div>'; return; }
+    var tipo = el('cxTipo').value;
+    var doTanque = (CONFIG.tiposDoTanque || []).indexOf(tipo) !== -1;
+    var combustivel = (CONFIG.tiposCombustivel || []).indexOf(tipo) !== -1;
+    var oficina = (CONFIG.tiposOficina || []).indexOf(tipo) !== -1;
+    var dados = {
+      data: el('cxData').value, placa: String(el('cxPlaca').value || '').trim(), tipo: tipo,
+      litros: el('cxLitros').disabled ? '' : el('cxLitros').value,
+      valor: el('cxValor').disabled ? '' : el('cxValor').value,
+      km: combustivel ? el('cxKm').value : '', forcarKm: false,
+      fornecedor: el('cxFornecedor').value,
+      tipoAbastecimento: doTanque ? el('cxOrigem').value : '',
+      documento: el('cxDoc').value, observacao: el('cxObs').value,
+      naturezaOficina: oficina ? el('cxNatureza').value : '',
+      detalheOficina: oficina ? el('cxDetalhe').value : ''
+    };
+    el('btnCx').disabled = true;
+    el('msgCx').innerHTML = '<div class="sub2">salvando a correção…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      el('btnCx').disabled = false;
+      if (!r.ok) { el('msgCx').innerHTML = '<div class="erro-caixa">' + esc(r.mensagem) + '</div>'; return; }
+      el('painelExclusao').innerHTML = '<div class="ok-caixa" style="max-width:680px">' + esc(r.mensagem) + '</div>';
+      rodarLancamentosCorrecao(); carregarExcluidos();
+    }).withFailureHandler(function (e) {
+      el('btnCx').disabled = false;
+      el('msgCx').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webCorrigirLancamento(TOKEN, l.id, { linha: l.linha, placa: l.placa, data: l.data }, dados, motivo);
+  }
+
+  function excluirLancamento(i) {
+    var l = (window.LANC_CORRECAO || [])[i];
+    if (!l) return;
+    window.LANC_EXCLUIR = l;
+    el('painelExclusao').innerHTML =
+      '<div class="cartao" style="border:2px solid #A52422;max-width:620px">' +
+        '<b style="color:#A52422">Excluir este lançamento?</b>' +
+        '<div style="margin:8px 0">' + esc(l.data) + ' • <b>' + esc(l.placa) + '</b> • ' + esc(l.tipo) + ' • <b>' + brl(l.valor) + '</b>' +
+          (l.documento ? ' • NF ' + esc(l.documento) : '') + '<div class="sub2">' + esc(l.id) + '</div></div>' +
+        '<label for="motivoExclusao">Justificativa (obrigatória, mínimo 10 caracteres)</label>' +
+        '<textarea id="motivoExclusao" rows="2" placeholder="ex.: valor digitado errado; a NF 123 é de R$ 150,00"></textarea>' +
+        '<div style="display:flex;gap:8px;margin-top:10px">' +
+          '<button class="acao perigo" id="btnConfirmaExclusao" onclick="confirmarExclusaoLancamento()">🗑️ Confirmar exclusão</button>' +
+          '<button class="acao secundaria" onclick="el(\'painelExclusao\').innerHTML=\'\'">Cancelar</button>' +
+        '</div><div id="msgExclusao" style="margin-top:8px"></div>' +
+      '</div>';
+    el('painelExclusao').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    el('motivoExclusao').focus();
+  }
+
+  function confirmarExclusaoLancamento() {
+    var l = window.LANC_EXCLUIR;
+    var motivo = el('motivoExclusao').value.trim();
+    if (!l) return;
+    if (motivo.length < 10) {
+      el('msgExclusao').innerHTML = '<div class="erro-caixa">Escreva a justificativa com pelo menos 10 caracteres.</div>';
+      return;
+    }
+    el('btnConfirmaExclusao').disabled = true;
+    el('msgExclusao').innerHTML = '<div class="sub2">excluindo…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      if (!r.ok) {
+        el('btnConfirmaExclusao').disabled = false;
+        el('msgExclusao').innerHTML = '<div class="erro-caixa">' + esc(r.mensagem) + '</div>';
+        return;
+      }
+      el('painelExclusao').innerHTML = '<div class="ok-caixa" style="max-width:620px">' + esc(r.mensagem) + '</div>';
+      rodarLancamentosCorrecao(); carregarExcluidos();
+    }).withFailureHandler(function (e) {
+      el('btnConfirmaExclusao').disabled = false;
+      el('msgExclusao').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webExcluirLancamento(TOKEN, l.id, motivo, { linha: l.linha, placa: l.placa, data: l.data });
+  }
+
+  function carregarExcluidos() {
+    google.script.run.withSuccessHandler(function (d) {
+      if (el('saidaExcluidos')) el('saidaExcluidos').innerHTML = tabela(d, 'Nenhuma exclusão registrada.');
+    }).withFailureHandler(function () {}).webLancamentosExcluidos(TOKEN, 20);
+  }
+
+  function telaCentros() {
+    var admin = SESSAO && SESSAO.perfil === 'ADMIN';
+    carregando();
+    google.script.run.withSuccessHandler(function (dados) {
+      el('tela').innerHTML =
+        '<h2 class="titulo">Centros de custo</h2>' +
+        '<p class="sub">Os percentuais precisam somar 100%. ' +
+          (admin ? 'Escolha o centro para alterar o rateio.'
+                 : 'Somente ADMIN altera o rateio.') + '</p>' +
+        (admin ?
+        '<div class="cartao" style="max-width:620px">' +
+          '<div class="linha">' +
+            '<div style="flex:2"><label for="ccCentro">Centro de custo</label>' +
+              seletor('ccCentro', OPCOES.centros) + '</div>' +
+            '<div><label for="ccPercentual">% de rateio</label>' +
+              '<input type="number" id="ccPercentual" step="0.001" min="0" max="100" inputmode="decimal"></div>' +
+            '<div><label for="ccRecebe">Recebe rateio</label>' +
+              seletor('ccRecebe', ['SIM', 'NAO']) + '</div>' +
+          '</div>' +
+          '<button class="acao" id="btnCentro" style="width:100%;margin-top:14px" ' +
+            'onclick="salvarCentro()">Salvar rateio</button>' +
+          '<div class="sub2" style="margin-top:6px">Centros novos são criados na aba ' +
+            '"Centros de Custo" da planilha.</div>' +
+          '<div id="msgCentro" style="margin-top:10px"></div>' +
+        '</div>' : '') +
+        '<div id="listaCentros">' + tabela(dados) + '</div>';
+      if (admin) {
+        // Preenche os campos com o que o centro escolhido ja tem, para o operador
+        // ver o valor atual antes de trocar — e nao digitar por cima no escuro.
+        CENTROS_ATUAIS = dados;
+        el('ccCentro').addEventListener('change', preencherCentro);
+        preencherCentro();
+      }
+    }).withFailureHandler(falha).webCentros(TOKEN);
+  }
+
+  var CENTROS_ATUAIS = null;
+
+  function preencherCentro() {
+    if (!CENTROS_ATUAIS || !CENTROS_ATUAIS.linhas) return;
+    var alvo = el('ccCentro').value;
+    var linha = CENTROS_ATUAIS.linhas.filter(function (l) { return String(l[0]) === alvo; })[0];
+    el('ccPercentual').value = linha ? Number(linha[1]).toFixed(3) : '';
+    if (linha) definirSelect('ccRecebe', String(linha[2]).toUpperCase() === 'NAO' ? 'NAO' : 'SIM');
+  }
+
+  function salvarCentro() {
+    var botao = el('btnCentro');
+    botao.disabled = true;
+    botao.textContent = 'Salvando…';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false;
+        botao.textContent = 'Salvar rateio';
+        el('msgCentro').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+          esc(r.mensagem) + '</div>';
+        if (r.ok) {
+          google.script.run.withSuccessHandler(function (dados) {
+            CENTROS_ATUAIS = dados;
+            el('listaCentros').innerHTML = tabela(dados);
+            preencherCentro();
+          }).withFailureHandler(falha).webCentros(TOKEN);
+        }
+      })
+      .withFailureHandler(function (e) {
+        botao.disabled = false;
+        botao.textContent = 'Salvar rateio';
+        el('msgCentro').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      })
+      .webSalvarCentro(TOKEN, {
+        centro: el('ccCentro').value,
+        percentual: el('ccPercentual').value,
+        recebe: el('ccRecebe').value !== 'NAO'
+      });
+  }
+
+  function classeStatusPendencia(status) {
+    status = String(status || '').toUpperCase();
+    if (status === 'PENDENTE') return 'erro-caixa';
+    if (status === 'EM ANÁLISE') return 'aviso';
+    return 'ok-caixa';
+  }
+
+  function opcoesFiltroPendencias(lista, atual, rotuloTodos) {
+    var unicos = {};
+    (lista || []).forEach(function(v){
+      v = String(v || '').trim();
+      if (v) unicos[v] = true;
+    });
+    var valores = Object.keys(unicos).sort(function(a,b){ return a.localeCompare(b, 'pt-BR'); });
+    var html = '<option value="TODOS"'+(atual==='TODOS'?' selected':'')+'>'+esc(rotuloTodos)+'</option>';
+    valores.forEach(function(v){
+      html += '<option value="'+esc(v)+'"'+(v===atual?' selected':'')+'>'+esc(v)+'</option>';
+    });
+    return html;
+  }
+
+  function aplicarFiltrosPendencias() {
+    if (!PENDENCIAS_CLIENTE) return;
+    FILTRO_PEND_VEICULO = el('filtroPendVeiculo') ? el('filtroPendVeiculo').value : FILTRO_PEND_VEICULO;
+    FILTRO_PEND_TIPO = el('filtroPendTipo') ? el('filtroPendTipo').value : FILTRO_PEND_TIPO;
+    renderPendencias(PENDENCIAS_CLIENTE);
+  }
+
+  function limparFiltrosPendencias() {
+    FILTRO_PEND_VEICULO = 'TODOS';
+    FILTRO_PEND_TIPO = 'TODOS';
+    if (PENDENCIAS_CLIENTE) renderPendencias(PENDENCIAS_CLIENTE);
+  }
+
+  function renderPendencias(d) {
+    PENDENCIAS_CLIENTE = d || { total:0, pendentes:0, analise:0, linhas:[] };
+    atualizarSelo(PENDENCIAS_CLIENTE.total || 0);
+    var podeRevalidar = SESSAO && SESSAO.perfil === 'ADMIN';
+    var todos = PENDENCIAS_CLIENTE.linhas || [];
+    var placas = todos.map(function(p){ return p.placa || ''; });
+    var tipos = todos.map(function(p){ return p.problema || ''; });
+
+    // Se o filtro selecionado deixou de existir após uma revalidação, volta para TODOS.
+    if (FILTRO_PEND_VEICULO !== 'TODOS' && placas.indexOf(FILTRO_PEND_VEICULO) === -1) FILTRO_PEND_VEICULO = 'TODOS';
+    if (FILTRO_PEND_TIPO !== 'TODOS' && tipos.indexOf(FILTRO_PEND_TIPO) === -1) FILTRO_PEND_TIPO = 'TODOS';
+
+    var filtradas = todos.filter(function(p){
+      if (FILTRO_PEND_VEICULO !== 'TODOS' && String(p.placa || '') !== FILTRO_PEND_VEICULO) return false;
+      if (FILTRO_PEND_TIPO !== 'TODOS' && String(p.problema || '') !== FILTRO_PEND_TIPO) return false;
+      return true;
+    });
+
+    var linhas = filtradas.map(function (p) {
+      return '<div class="cartao" style="margin-bottom:10px">'+
+        '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">'+
+          '<div><b>'+esc(p.problema)+'</b><div class="sub2" style="margin-top:4px">'+esc(p.origem)+' • '+esc(p.placa||'sem veículo')+'</div></div>'+
+          '<span class="chip">'+esc(p.status)+'</span></div>'+
+        '<div class="sub" style="margin:10px 0">'+esc(p.detalhe||'Sem detalhe adicional')+'</div>'+
+        '<div class="linha"><div><label>Status</label><select id="pst_'+p.linha+'">'+
+          ['PENDENTE','EM ANÁLISE','RESOLVIDO'].map(function(st){ return '<option'+(st===p.status?' selected':'')+'>'+st+'</option>'; }).join('')+
+        '</select></div><div style="flex:2"><label>Observação</label><input id="pobs_'+p.linha+'" value="'+esc(p.observacao||'')+'" placeholder="ação tomada / responsável"></div></div>'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px">'+
+          '<span class="sub2">Validado em '+esc(p.validadoEm||'—')+'</span>'+
+          '<button class="acao secundaria" onclick="salvarPendencia('+p.linha+')">Salvar</button></div></div>';
+    }).join('');
+
+    var filtrosAtivos = FILTRO_PEND_VEICULO !== 'TODOS' || FILTRO_PEND_TIPO !== 'TODOS';
+    el('tela').innerHTML =
+      '<div class="dash-head"><div><div class="dash-eyebrow">Controle operacional</div><h2>Pendências de Conferência</h2><p>Filtre por veículo ou pelo tipo de inconsistência para revisar a fila com mais rapidez.</p></div>'+
+      '<div class="dash-acoes">'+(podeRevalidar?'<button class="dash-refresh" onclick="revalidarPendencias()">↻ Revalidar</button>':'')+'</div></div>'+
+      '<div class="dash-mini">'+
+        '<div class="item"><div class="r">Em aberto</div><div class="v">'+num(PENDENCIAS_CLIENTE.total||0)+'</div></div>'+
+        '<div class="item"><div class="r">Pendentes</div><div class="v">'+num(PENDENCIAS_CLIENTE.pendentes||0)+'</div></div>'+
+        '<div class="item"><div class="r">Em análise</div><div class="v">'+num(PENDENCIAS_CLIENTE.analise||0)+'</div></div>'+
+        '<div class="item"><div class="r">Exibindo</div><div class="v">'+num(filtradas.length)+'</div><div class="nota">de '+num(todos.length)+' registro(s)</div></div></div>'+
+      '<div class="cartao" style="margin-bottom:14px">'+
+        '<div class="linha">'+
+          '<div><label for="filtroPendVeiculo">Veículo</label><select id="filtroPendVeiculo" onchange="aplicarFiltrosPendencias()">'+opcoesFiltroPendencias(placas,FILTRO_PEND_VEICULO,'Todos os veículos')+'</select></div>'+
+          '<div><label for="filtroPendTipo">Tipo de pendência</label><select id="filtroPendTipo" onchange="aplicarFiltrosPendencias()">'+opcoesFiltroPendencias(tipos,FILTRO_PEND_TIPO,'Todos os tipos')+'</select></div>'+
+          '<div style="flex:0 0 auto;align-self:flex-end"><button class="acao secundaria" onclick="limparFiltrosPendencias()"'+(filtrosAtivos?'':' disabled')+'>Limpar filtros</button></div>'+
+        '</div></div>'+
+      (linhas || (todos.length ? '<div class="aviso">Nenhuma pendência corresponde aos filtros selecionados.</div>' : '<div class="ok-caixa">Nenhuma pendência ativa. Os dados estão consistentes.</div>'));
+  }
+
+  function telaPendencias() {
+    carregando('carregando pendências…');
+    google.script.run.withSuccessHandler(renderPendencias).withFailureHandler(falha).webPendencias(TOKEN);
+  }
+
+  function salvarPendencia(linha) {
+    var statusP = el('pst_'+linha).value;
+    var obs = el('pobs_'+linha).value;
+    google.script.run.withSuccessHandler(function(r){
+      status(r.mensagem || 'Pendência atualizada.');
+      telaPendencias();
+    }).withFailureHandler(falha).webAtualizarPendencia(TOKEN, linha, statusP, obs);
+  }
+
+  function revalidarPendencias() {
+    carregando('revalidando dados…');
+    google.script.run.withSuccessHandler(function(d){
+      atualizarSelo(d.total || 0);
+      telaPendencias();
+    }).withFailureHandler(falha).webRevalidarPendencias(TOKEN);
+  }
+
+  function renderDepreciacao(d) {
+    var liberada = d.liberada !== false;
+    var linhas = (d.itens || []).filter(function(i){ return i.valorMensal>0 || i.lancado>0 || i.lancadoForaData>0; }).map(function(i){
+      return '<tr><td><b>'+esc(i.placa)+'</b><div class="sub2">'+esc(i.descricao||'')+'</div></td><td>'+esc(i.centro||'')+'</td><td>'+brl(i.valorMensal)+'</td><td>'+brl(Number(i.lancado||0)+Number(i.lancadoForaData||0))+'</td><td><span class="chip">'+esc(i.situacao)+'</span></td></tr>';
+    }).join('');
+    var botao = liberada
+      ? '<button class="dash-refresh" onclick="gerarDepreciacao()">Gerar pendentes</button>'
+      : '<button class="dash-refresh" disabled title="Disponível somente em '+esc(d.dataLancamento||'')+'">Disponível em '+esc(d.dataLancamento||'')+'</button>';
+    var regra = liberada
+      ? ''
+      : '<div class="ok-caixa"><b>Regra da competência:</b> a depreciação só é inserida no último dia do período, em '+esc(d.dataLancamento||'')+'. Até essa data os veículos ficam como <b>AGUARDANDO</b> e não contam como pendência.</div>';
+    el('tela').innerHTML =
+      '<div class="dash-head"><div><div class="dash-eyebrow">Competência patrimonial</div><h2>Depreciação mensal</h2><p>'+esc(d.mesExtenso)+' • '+esc(d.periodo)+'</p></div><div class="dash-acoes">'+botao+'</div></div>'+
+      regra+
+      '<div class="dash-kpis">'+
+        '<div class="dash-kpi"><div class="label">Valor previsto</div><div class="numero">'+brl(d.valorPrevisto)+'</div></div>'+
+        '<div class="dash-kpi"><div class="label">Valor lançado</div><div class="numero">'+brl(d.valorLancado)+'</div></div>'+
+        '<div class="dash-kpi"><div class="label">Concluídos</div><div class="numero">'+num(d.concluidos)+' / '+num(d.previstos)+'</div></div>'+
+        '<div class="dash-kpi"><div class="label">'+(liberada?'Pendências':'Aguardando')+'</div><div class="numero">'+num(liberada?(d.pendentes+d.divergentes):(d.aguardando||0))+'</div><div class="nota">'+(liberada?(num(d.divergentes)+' divergente(s)'):'exigência em '+esc(d.dataLancamento||''))+'</div></div></div>'+
+      (d.semValor>0?'<div class="aviso">'+num(d.semValor)+' veículo(s) ativo(s) estão sem valor mensal de depreciação cadastrado. Eles não são lançados automaticamente.</div>':'')+
+      '<div class="cartao" style="padding:0;overflow:hidden"><div class="rolagem"><table><thead><tr><th>Veículo</th><th>Centro</th><th>Previsto</th><th>Lançado</th><th>Situação</th></tr></thead><tbody>'+linhas+'</tbody></table></div></div>';
+  }
+
+  function telaDepreciacao() {
+    carregando('conferindo depreciação…');
+    google.script.run.withSuccessHandler(renderDepreciacao).withFailureHandler(falha).webDepreciacao(TOKEN);
+  }
+
+  function gerarDepreciacao() {
+    carregando('gerando lançamentos mensais…');
+    google.script.run.withSuccessHandler(function(r){
+      status(r.mensagem || 'Depreciação atualizada.');
+      INICIO_CLIENTE = null;
+      renderDepreciacao(r.status);
+    }).withFailureHandler(falha).webGerarDepreciacao(TOKEN);
+  }
+
+  function telaFechamento() {
+    carregando('verificando…');
+    google.script.run.withSuccessHandler(function (p) {
+      var dep = p.depreciacao || {previstos:0,concluidos:0,pendentes:0,divergentes:0,aguardando:0,valorPrevisto:0,valorLancado:0,liberada:true};
+      var depLiberada = dep.liberada !== false;
+      var depOk = depLiberada && Number(dep.pendentes||0)===0 && Number(dep.divergentes||0)===0;
+      el('tela').innerHTML =
+        '<h2 class="titulo">Fechamento do período</h2>' +
+        '<p class="sub">' + esc(p.mesExtenso) + ' • ' + esc(p.periodo) + '</p>' +
+        '<div class="kpis">' +
+          '<div class="kpi"><div class="rotulo">Total apurado</div><div class="valor">' + brl(p.total) + '</div></div>' +
+          '<div class="kpi"><div class="rotulo">Pendências</div><div class="valor">' + p.pendencias + '</div></div>' +
+          '<div class="kpi"><div class="rotulo">Depreciação</div><div class="valor" style="font-size:16px">' + (depOk?'OK':(!depLiberada?'Aguardando '+esc(dep.dataLancamento||'dia 25'):(dep.pendentes+dep.divergentes)+' revisar')) + '</div></div>' +
+          '<div class="kpi"><div class="rotulo">Próximo período</div><div class="valor" style="font-size:15px">' + esc(p.proximo) + '</div></div>' +
+        '</div>' +
+        '<div class="cartao"><b>1. Conferir as pendências</b>' +
+          '<p class="sub" style="margin:6px 0 10px">Centralize inconsistências de cadastro, lançamentos, odômetro e depreciação.</p>' +
+          '<button class="acao secundaria" onclick="abrir(\'pendencias\')">⚠️ Abrir pendências</button> ' +
+          '<button class="acao secundaria" onclick="rodarValidacao()">✅ Revalidar dados</button>' +
+          '<div id="saidaValidacao" style="margin-top:12px"></div></div>' +
+        '<div class="cartao"><b>2. Conferir a depreciação mensal</b>'+
+          '<p class="sub" style="margin:6px 0 10px">'+num(dep.concluidos)+' de '+num(dep.previstos)+' veículos concluídos • previsto '+brl(dep.valorPrevisto)+' • lançado '+brl(dep.valorLancado)+'.</p>'+
+          (depOk
+            ? '<div class="ok-caixa">Depreciação da competência regularizada.</div>'
+            : (!depLiberada
+              ? '<div class="ok-caixa">A depreciação será inserida somente no último dia do período ('+esc(dep.dataLancamento||'')+'). Até lá ela não é considerada pendência e o fechamento permanece bloqueado.</div>'
+              : '<div class="aviso">'+num(dep.pendentes)+' pendente(s) e '+num(dep.divergentes)+' divergente(s). O fechamento ficará bloqueado.</div>'))+
+          '<button class="acao secundaria" onclick="abrir(\'depreciacao\')">📉 Abrir depreciação mensal</button></div>'+
+        '<div class="cartao"><b>3. Atualizar os relatórios</b>' +
+          '<p class="sub" style="margin:6px 0 10px">Reconstrói Resumo, Rateio, Dashboard e Relatórios a partir dos lançamentos.</p>' +
+          '<button class="acao secundaria" onclick="rodarAtualizacao(this)">🔄 Atualizar relatórios</button></div>' +
+        '<div class="cartao"><b>4. Exportar fotografia do período</b>' +
+          '<p class="sub" style="margin:6px 0 10px">Cria uma nova Planilha Google independente com Resumo, lançamentos, odômetro, rateio, veículos, centros, pendências e hash de integridade.</p>' +
+          '<button class="acao secundaria" onclick="rodarExportacaoPeriodo(this, \'' + esc(p.mes) + '\')">📦 Exportar período agora</button>' +
+          '<div id="saidaExportPeriodo" style="margin-top:10px"></div></div>' +
+        '<div class="cartao"><b>5. Fechar ' + esc(p.mesExtenso) + '</b>' +
+          '<p class="sub" style="margin:6px 0 10px">O fechamento cria automaticamente outra exportação independente antes de avançar para ' + esc(p.proximo) + '.</p>' +
+          '<label for="confirma">Para confirmar, digite <b>' + esc(p.mes) + '</b></label>' +
+          '<input type="text" id="confirma" placeholder="' + esc(p.mes) + '" style="max-width:220px">' +
+          '<div style="margin-top:12px"><button class="acao perigo" onclick="rodarFechamento(this)"'+(depOk?'':' disabled title="'+(!depLiberada?'Fechamento liberado somente em '+esc(dep.dataLancamento||'dia 25'):'Regularize a depreciação mensal')+'"')+'>' +
+            '🔒 Fechar período</button></div>' +
+          '<div id="saidaFechamento" style="margin-top:10px"></div></div>';
+    }).withFailureHandler(falha).webPreviaFechamento(TOKEN);
+  }
+
+  function rodarValidacao() {
+    el('saidaValidacao').innerHTML = '<div class="carregando">conferindo…</div>';
+    google.script.run.withSuccessHandler(function (d) {
+      atualizarSelo(d.total);
+      el('saidaValidacao').innerHTML = d.total === 0
+        ? '<div class="ok-caixa">Nenhum problema encontrado.</div>'
+        : '<div class="aviso">' + d.total + ' ponto(s) para conferir.</div>' + tabela(d);
+    }).withFailureHandler(function (erro) {
+      el('saidaValidacao').innerHTML = '<div class="erro-caixa">' + esc(erro.message) + '</div>';
+    }).webValidar(TOKEN);
+  }
+
+  function rodarAtualizacao(botao) {
+    botao.disabled = true;
+    botao.textContent = 'Atualizando…';
+    google.script.run
+      .withSuccessHandler(function (mensagem) {
+        botao.disabled = false;
+        botao.textContent = '🔄 Atualizar relatórios';
+        status(mensagem);
+      })
+      .withFailureHandler(function (erro) {
+        botao.disabled = false;
+        botao.textContent = '🔄 Atualizar relatórios';
+        status(erro.message, true);
+      })
+      .webAtualizarRelatorios(TOKEN);
+  }
+
+  function rodarExportacaoPeriodo(botao, mes) {
+    if (botao) { botao.disabled=true; botao.textContent='Exportando…'; }
+    var alvo=el('saidaExportPeriodo'); if(alvo) alvo.innerHTML='<div class="carregando">criando fotografia independente…</div>';
+    google.script.run.withSuccessHandler(function(r){
+      if(botao){botao.disabled=false;botao.textContent='📦 Exportar período agora';}
+      var html='<div class="ok-caixa">Exportação criada: <b>'+esc(r.nome)+'</b><br>'+esc(r.periodo)+' • '+num(r.lancamentos||0)+' lançamento(s)<br><a href="'+esc(r.url)+'" target="_blank" rel="noopener">Abrir planilha exportada</a></div>';
+      if(alvo)alvo.innerHTML=html; else statusHtml(html);
+    }).withFailureHandler(function(e){
+      if(botao){botao.disabled=false;botao.textContent='📦 Exportar período agora';}
+      if(alvo)alvo.innerHTML='<div class="erro-caixa">'+esc(e.message)+'</div>'; else status(e.message,true);
+    }).webExportarPeriodo(TOKEN,mes);
+  }
+
+  function rodarFechamento(botao) {
+    var confirmacao = el('confirma').value;
+    botao.disabled = true;
+    botao.textContent = 'Fechando…';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false;
+        botao.textContent = '🔒 Fechar período';
+        el('saidaFechamento').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+          esc(r.mensagem) + (r.ok && r.exportacao ? '<br><a href="'+esc(r.exportacao.url)+'" target="_blank" rel="noopener">Abrir exportação do período</a>' : '') + '</div>';
+        if (r.ok) setTimeout(function () { location.reload(); }, 2500);
+      })
+      .withFailureHandler(function (erro) {
+        botao.disabled = false;
+        botao.textContent = '🔒 Fechar período';
+        el('saidaFechamento').innerHTML = '<div class="erro-caixa">' + esc(erro.message) + '</div>';
+      })
+      .webFecharPeriodo(TOKEN, confirmacao);
+  }
+
+  function classeSaude(statusS) {
+    statusS = String(statusS || 'OK').toUpperCase();
+    if (statusS === 'CRITICO') return 'erro-caixa';
+    if (statusS === 'AVISO') return 'aviso';
+    return 'ok-caixa';
+  }
+
+  function rotuloSaude(statusS) {
+    statusS = String(statusS || 'OK').toUpperCase();
+    if (statusS === 'CRITICO') return 'CRÍTICO';
+    if (statusS === 'AVISO') return 'ATENÇÃO';
+    return 'OK';
+  }
+
+  function linhaBackupSaude(b) {
+    return '<tr><td><b>'+esc(b.criadoEm)+'</b><div class="sub2">'+esc(b.nome)+'</div></td>' +
+      '<td style="white-space:nowrap"><a href="'+esc(b.url)+'" target="_blank" rel="noopener">Abrir</a> ' +
+      '<button class="acao secundaria" style="padding:6px 8px;margin-left:6px" data-id="'+esc(b.id)+'" data-nome="'+esc(b.nome)+'" onclick="restaurarBackup(this)">Restaurar dados</button></td></tr>';
+  }
+
+  function carregarBackupsSaude() {
+    google.script.run.withSuccessHandler(function(lista){
+      var corpo=el('corpoBackupsSaude'); if(!corpo)return;
+      corpo.innerHTML=(lista||[]).map(linhaBackupSaude).join('') || '<tr><td colspan="2">Nenhum backup localizado.</td></tr>';
+      var k=el('kpiBackupsSaude'); if(k)k.textContent=num((lista||[]).length);
+    }).withFailureHandler(function(e){ var corpo=el('corpoBackupsSaude'); if(corpo)corpo.innerHTML='<tr><td colspan="2">'+esc(e.message)+'</td></tr>'; }).webListarBackupsSistema(TOKEN,8);
+  }
+
+  function auditoriaProfunda(botao) {
+    if(botao){botao.disabled=true;botao.textContent='Auditando…';}
+    status('Executando auditoria profunda. Isso pode levar alguns segundos…');
+    google.script.run.withSuccessHandler(function(d){ renderSaude(d); carregarBackupsSaude(); status('Auditoria profunda concluída em '+num(d.tempoMs||0)+' ms.'); })
+      .withFailureHandler(function(e){ if(botao){botao.disabled=false;botao.textContent='🔬 Auditoria profunda';} status(e.message,true); })
+      .webAuditoriaProfunda(TOKEN);
+  }
+
+  function renderSaude(d) {
+    var checks = (d.checks || []).map(function(c) {
+      return '<div class="cartao" style="margin-bottom:9px;padding:14px">' +
+        '<div style="display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap">' +
+          '<div><b>'+esc(c.nome)+'</b><div class="sub2" style="margin-top:4px">'+esc(c.detalhe||'')+'</div></div>' +
+          '<span class="chip">'+esc(rotuloSaude(c.status))+'</span>' +
+        '</div></div>';
+    }).join('');
+
+    var backups = (d.backups || []).map(linhaBackupSaude).join('');
+
+    var estado = String(d.estado || 'OK');
+    var resumo = estado === 'OK'
+      ? '<div class="ok-caixa"><b>Sistema operacional.</b> Nenhuma intervenção técnica identificada.</div>'
+      : (estado === 'CRITICO'
+        ? '<div class="erro-caixa"><b>Ação administrativa necessária.</b> Há '+num(d.criticos||0)+' item(ns) crítico(s).</div>'
+        : '<div class="aviso"><b>Sistema funcionando com alertas.</b> Há '+num(d.avisos||0)+' ponto(s) para revisar.</div>');
+
+    el('tela').innerHTML =
+      '<div class="dash-head"><div><div class="dash-eyebrow">Blindagem operacional</div><h2>Saúde do sistema</h2>' +
+      '<p>Versão '+esc(d.versao||'')+' • '+esc(d.periodo||'')+' • '+esc(d.modo||'RÁPIDO')+' '+num(d.tempoMs||0)+' ms'+(d.cacheHit?' • cache':'')+'</p></div>' +
+      '<div class="dash-acoes"><button class="dash-refresh" onclick="telaSaude(true)">↻ Diagnosticar</button><button class="dash-refresh" onclick="auditoriaProfunda(this)">🔬 Auditoria profunda</button></div></div>' +
+      resumo +
+      '<div class="dash-kpis">' +
+        '<div class="dash-kpi"><div class="label">Estado</div><div class="numero" style="font-size:20px">'+esc(estado)+'</div></div>' +
+        '<div class="dash-kpi"><div class="label">ADMINs ativos</div><div class="numero">'+num(d.adminCount||0)+'</div><div class="nota">mínimo recomendado: 2</div></div>' +
+        '<div class="dash-kpi"><div class="label">Pendências</div><div class="numero">'+num(d.pendencias||0)+'</div></div>' +
+        '<div class="dash-kpi"><div class="label">Backups recentes</div><div class="numero" id="kpiBackupsSaude">…</div></div>' +
+      '</div>' +
+      '<div class="cartao"><b>Ações de manutenção</b><p class="sub" style="margin:6px 0 12px">Estas ações são executadas pelo próprio sistema. Não é necessário abrir o Apps Script.</p>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="acao" onclick="criarBackupAgora(this)">💾 Criar backup agora</button>' +
+          '<button class="acao secundaria" onclick="ativarBackupAutomatico(this)">⏱️ Ativar/verificar automações</button>' +
+          '<button class="acao secundaria" onclick="repararSistema(this)">🛠️ Reparar automaticamente</button>' +
+        '</div><div id="msgSaude" style="margin-top:12px"></div></div>' +
+      '<h3 style="margin-top:22px">Diagnóstico</h3>' + checks +
+      '<h3 style="margin-top:22px">Backups recentes</h3>' +
+      '<div class="cartao" style="padding:0;overflow:hidden"><div class="rolagem"><table><thead><tr><th>Backup</th><th>Ações</th></tr></thead><tbody id="corpoBackupsSaude">' +
+        '<tr><td colspan="2">carregando backups…</td></tr>' +
+      '</tbody></table></div></div>' +
+      '<div class="aviso"><b>Restauração:</b> restaura a base operacional (centros, veículos, lançamentos, odômetro, histórico e parâmetros) no arquivo atual. Os usuários atuais são preservados para evitar perda de acesso. ' +
+      'O sistema cria um backup de emergência antes de restaurar e depois reconstrói fórmulas e relatórios.</div>';
+  }
+
+  function telaSaude(forcar) {
+    carregando('executando diagnóstico rápido…');
+    google.script.run.withSuccessHandler(function(d){ renderSaude(d); carregarBackupsSaude(); })
+      .withFailureHandler(falha).webSaudeSistema(TOKEN, forcar === true);
+  }
+
+  function criarBackupAgora(botao) {
+    if (botao) { botao.disabled=true; botao.textContent='Criando backup…'; }
+    google.script.run.withSuccessHandler(function(r) {
+      status('Backup criado: ' + (r.backup ? r.backup.nome : 'concluído'));
+      telaSaude();
+    }).withFailureHandler(function(e) {
+      if (botao) { botao.disabled=false; botao.textContent='💾 Criar backup agora'; }
+      status(e.message, true);
+    }).webCriarBackupSistema(TOKEN);
+  }
+
+  function ativarBackupAutomatico(botao) {
+    if (botao) botao.disabled=true;
+    google.script.run.withSuccessHandler(function(r) {
+      status(r.mensagem || 'Automações verificadas.');
+      telaSaude();
+    }).withFailureHandler(function(e) {
+      if (botao) botao.disabled=false;
+      status(e.message, true);
+    }).webAtivarBackupAutomatico(TOKEN);
+  }
+
+  function repararSistema(botao) {
+    if (!confirm('O sistema criará um backup antes do reparo e reconstruirá fórmulas, relatórios, validações e proteções. Continuar?')) return;
+    if (botao) { botao.disabled=true; botao.textContent='Reparando…'; }
+    el('msgSaude').innerHTML='<div class="carregando">criando backup e reparando a estrutura…</div>';
+    google.script.run.withSuccessHandler(function(r) {
+      if (!r.ok) {
+        el('msgSaude').innerHTML='<div class="erro-caixa">'+esc(r.mensagem)+'</div>';
+        if (botao) { botao.disabled=false; botao.textContent='🛠️ Reparar automaticamente'; }
+        return;
+      }
+      status(r.mensagem || 'Reparo concluído.');
+      renderSaude(r.saude);
+    }).withFailureHandler(function(e) {
+      if (botao) { botao.disabled=false; botao.textContent='🛠️ Reparar automaticamente'; }
+      el('msgSaude').innerHTML='<div class="erro-caixa">'+esc(e.message)+'</div>';
+    }).webRepararSistema(TOKEN);
+  }
+
+  function restaurarBackup(botao) {
+    var id = botao.getAttribute('data-id');
+    var nome = botao.getAttribute('data-nome') || 'backup';
+    var confirma = prompt('ATENÇÃO: esta ação substituirá a base operacional atual pelos dados de:\\n\\n' +
+      nome + '\\n\\nAntes disso o sistema criará um backup de emergência.\\n\\nDigite RESTAURAR para continuar:');
+    if (String(confirma || '').trim().toUpperCase() !== 'RESTAURAR') {
+      status('Restauração cancelada.');
+      return;
+    }
+    botao.disabled=true; botao.textContent='Restaurando…';
+    google.script.run.withSuccessHandler(function(r) {
+      if (!r.ok) {
+        status(r.mensagem || 'Não foi possível restaurar.', true);
+        botao.disabled=false; botao.textContent='Restaurar dados';
+        return;
+      }
+      INICIO_CLIENTE = null;
+      status(r.mensagem || 'Backup restaurado.');
+      renderSaude(r.saude);
+    }).withFailureHandler(function(e) {
+      botao.disabled=false; botao.textContent='Restaurar dados';
+      status(e.message, true);
+    }).webRestaurarBackup(TOKEN, id, confirma);
+  }
+
+  function telaConfig() {
+    carregando();
+    google.script.run.withSuccessHandler(function (parametros) {
+      var campos = parametros.map(function (p, i) {
+        var bloqueado = p.editavel === false;
+        return '<div style="margin-bottom:12px">' +
+          '<label for="p' + i + '">' + esc(p.nome) + (bloqueado ? ' <span class="chip">CONTROLADO</span>' : '') + '</label>' +
+          '<div style="display:flex;gap:8px">' +
+            '<input type="' + (p.nome === 'MES_REFERENCIA' ? 'month' : 'text') + '" id="p' + i + '" value="' + esc(p.valor) + '"' + (bloqueado ? ' disabled' : '') + '>' +
+            (bloqueado ? '' : '<button class="acao secundaria" style="flex:0 0 auto" onclick="salvarParametro(\'' + esc(p.nome) + '\', \'p' + i + '\')">Salvar</button>') +
+          '</div>' +
+          '<div class="sub2">' + esc(p.descricao) + (p.nome==='MES_REFERENCIA' ? ' • escolha o mês e clique em Salvar para mudar o período aberto (os lançamentos não são alterados)' : '') + '</div></div>';
+      }).join('');
+
+      el('tela').innerHTML =
+        '<h2 class="titulo">Configurações</h2>' +
+        '<p class="sub">Mudou um parâmetro, atualize os relatórios em seguida.</p>' +
+        '<div class="cartao" style="max-width:620px;border:2px solid #F47820" id="cartaoPeriodo">' +
+          '<div class="sub2">carregando período…</div></div>' +
+        '<div class="cartao" style="max-width:620px">' + campos + '</div>' +
+        '<div class="cartao" style="max-width:620px"><b>Exportar</b>' +
+          '<div class="linha" style="margin-top:8px">' +
+            '<div><label for="expAba">Aba</label>' +
+              seletor('expAba', ['Resumo', 'Dashboard', 'Rateio por Centro', 'Relatórios',
+                'Consulta Veículo']) + '</div>' +
+            '<div><label for="expEmails">E-mails (opcional)</label>' +
+              '<input type="text" id="expEmails" placeholder="deixe vazio para só gerar o PDF"></div>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;margin-top:12px">' +
+            '<button class="acao" onclick="rodarExportacao(this)">📄 Gerar PDF</button>' +
+            '<button class="acao secundaria" onclick="rodarEnvio(this)">✉️ Enviar por e-mail</button>' +
+          '</div></div>' +
+        '<div class="cartao" style="max-width:620px;border:2px solid #A52422">' +
+          '<b style="color:#A52422">🧨 Zona de perigo — zerar o sistema</b>' +
+          '<p class="sub2" style="margin:6px 0 10px">Apaga as informações para recomeçar do zero. Um backup completo é criado ' +
+            'ANTES (restaurável em Saúde do sistema). Usuários, Parâmetros e o Log de atividade são mantidos.</p>' +
+          '<label for="zerarEscopo">O que apagar</label>' +
+          '<select id="zerarEscopo">' +
+            '<option value="valores">ZERAR VALORES e manter os veículos — apaga lançamentos, KM, bomba, histórico e fechamentos e zera os valores do cadastro (depreciação, emplacamento, seguro, IPVA, bônus, preço)</option>' +
+            '<option value="tudo">TUDO — lançamentos, KM, bomba, histórico, fechamentos E cadastro de veículos, centros e fornecedores</option>' +
+            '<option value="movimento">Só o movimento — mantém veículos, centros e fornecedores (o Resumo continua mostrando seguro/emplacamento/IPVA do cadastro)</option>' +
+          '</select>' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
+            '<input type="checkbox" id="zerarLog" style="width:auto">' +
+            '<label for="zerarLog" style="margin:0;font-weight:400">Apagar também o Log de atividade</label></div>' +
+          '<label for="zerarConfirma">Para confirmar, digite <b>APAGAR TUDO</b></label>' +
+          '<input type="text" id="zerarConfirma" autocomplete="off">' +
+          '<button class="acao perigo" style="margin-top:12px" onclick="zerarSistema(this)">🧨 Zerar sistema</button>' +
+          '<div id="zerarMsg" style="margin-top:10px"></div>' +
+        '</div>';
+      carregarPeriodo();
+    }).withFailureHandler(falha).webParametros(TOKEN);
+  }
+
+  // ------------------------------------------- período com datas livres (V4.8)
+  function carregarPeriodo() {
+    google.script.run.withSuccessHandler(function (p) {
+      var cartao = el('cartaoPeriodo');
+      if (!cartao) return;
+      cartao.innerHTML =
+        '<b>📅 Período aberto</b> <span class="chip">' + esc(p.mesExtenso) + '</span>' +
+        (p.livre ? ' <span class="chip">datas livres</span>' : ' <span class="chip">padrão: corte dia ' + esc(p.corte) + '</span>') +
+        '<p class="sub2" style="margin:6px 0 10px">Escolha a data inicial e a final. Os lançamentos passam a aceitar ' +
+          'datas nesse intervalo e todos os relatórios mostram esse período. Nenhum lançamento é alterado.</p>' +
+        '<div class="linha">' +
+          '<div><label for="perInicio">Data inicial</label><input type="date" id="perInicio" value="' + esc(p.inicio) + '"></div>' +
+          '<div><label for="perFim">Data final</label><input type="date" id="perFim" value="' + esc(p.fim) + '"></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">' +
+          '<button class="acao" id="btnPeriodo" onclick="salvarPeriodoLivre()">Salvar período</button>' +
+          (p.livre ? '<button class="acao secundaria" onclick="voltarPeriodoPadrao()">Voltar ao padrão (corte dia ' + esc(p.corte) + ')</button>' : '') +
+        '</div><div id="msgPeriodo" style="margin-top:10px"></div>';
+    }).withFailureHandler(function (e) {
+      if (el('cartaoPeriodo')) el('cartaoPeriodo').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webPeriodo(TOKEN);
+  }
+
+  function respostaPeriodo(r) {
+    el('msgPeriodo').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' + esc(r.mensagem) + '</div>';
+    if (el('btnPeriodo')) el('btnPeriodo').disabled = false;
+    if (r.ok) { status(r.mensagem); setTimeout(function () { location.reload(); }, 3000); }
+  }
+
+  function salvarPeriodoLivre() {
+    var ini = el('perInicio').value, fim = el('perFim').value;
+    if (!ini || !fim) { el('msgPeriodo').innerHTML = '<div class="erro-caixa">Informe as duas datas.</div>'; return; }
+    el('btnPeriodo').disabled = true;
+    el('msgPeriodo').innerHTML = '<div class="aviso">Alterando o período e recalculando os relatórios…</div>';
+    google.script.run.withSuccessHandler(respostaPeriodo).withFailureHandler(function (e) {
+      respostaPeriodo({ ok: false, mensagem: e.message });
+    }).webDefinirPeriodoLivre(TOKEN, ini, fim);
+  }
+
+  function voltarPeriodoPadrao() {
+    el('msgPeriodo').innerHTML = '<div class="aviso">Voltando ao período padrão…</div>';
+    google.script.run.withSuccessHandler(respostaPeriodo).withFailureHandler(function (e) {
+      respostaPeriodo({ ok: false, mensagem: e.message });
+    }).webVoltarPeriodoPadrao(TOKEN);
+  }
+
+  function zerarSistema(botao) {
+    var escopo = el('zerarEscopo').value;
+    var confirmacao = el('zerarConfirma').value;
+    var caixa = el('zerarMsg');
+    if (String(confirmacao).trim().toUpperCase() !== 'APAGAR TUDO') {
+      caixa.innerHTML = '<div class="erro-caixa">Digite exatamente APAGAR TUDO no campo acima para confirmar.</div>';
+      return;
+    }
+    // Sem confirm() do navegador: em alguns ambientes o Google bloqueia a janela e a
+    // ação era cancelada em silêncio. A confirmação é o texto digitado.
+    botao.disabled = true;
+    caixa.innerHTML = '<div class="aviso">Criando o backup e apagando… isso pode levar até 2 minutos. Não feche a página.</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      botao.disabled = false;
+      caixa.innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' + esc(r.mensagem) + '</div>';
+      status(r.ok ? 'Sistema zerado.' : 'Zerar não concluído — veja a mensagem.', !r.ok);
+      if (r.ok) setTimeout(function () { location.reload(); }, 8000);
+    }).withFailureHandler(function (e) {
+      botao.disabled = false;
+      caixa.innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webZerarSistema(TOKEN, escopo, confirmacao, !!(el('zerarLog') && el('zerarLog').checked));
+  }
+
+  function salvarParametro(nome, campo) {
+    google.script.run
+      .withSuccessHandler(function (r) {
+        status(r.mensagem, !r.ok);
+        // Mudou o período: o formulário de lançamento precisa das novas datas-limite.
+        if (r.ok && r.recarregar) setTimeout(function () { location.reload(); }, 2500);
+      })
+      .withFailureHandler(function (erro) { status(erro.message, true); })
+      .webSalvarParametro(TOKEN, nome, el(campo).value);
+  }
+
+  function rodarExportacao(botao) {
+    botao.disabled = true;
+    status('Gerando PDF…');
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false;
+        statusHtml('PDF gerado: ' + esc(r.mensagem) +
+          ' — <a href="' + esc(r.url) + '" target="_blank" rel="noopener">abrir no Drive</a>');
+      })
+      .withFailureHandler(function (erro) { botao.disabled = false; status(erro.message, true); })
+      .webExportarPdf(TOKEN, el('expAba').value);
+  }
+
+  function rodarEnvio(botao) {
+    var destino = el('expEmails').value.trim();
+    if (!destino) { status('Informe pelo menos um e-mail.', true); return; }
+    botao.disabled = true;
+    status('Gerando o PDF e enviando…');
+    google.script.run
+      .withSuccessHandler(function (r) { botao.disabled = false; status(r.mensagem); })
+      .withFailureHandler(function (erro) { botao.disabled = false; status(erro.message, true); })
+      .webEnviarEmail(TOKEN, destino, el('expAba').value);
+  }
+
+  function telaUsuarios() {
+    carregando('carregando usuários…');
+    google.script.run.withSuccessHandler(function (usuarios) {
+      var linhas = usuarios.map(function(u){
+        return '<tr><td>' + esc(u.email) + '</td><td>' + esc(u.nome) + '</td><td>' + esc(u.perfil) + '</td><td>' + esc(u.ativo) + '</td><td>' + esc(u.trocarSenha || 'NAO') + '</td>' +
+          '<td style="display:flex;gap:6px"><button class="acao secundaria" style="padding:6px 8px" data-email="' + esc(u.email) + '" onclick="editarUsuario(this.getAttribute(\'data-email\'))">Editar</button>' +
+          '<button class="acao perigo" style="padding:6px 8px" data-email="' + esc(u.email) + '" onclick="excluirUsuario(this.getAttribute(\'data-email\'))">Excluir</button></td></tr>';
+      }).join('');
+      window.USUARIOS_CACHE = usuarios;
+      window.USUARIO_EMAIL_ORIGINAL = '';
+      el('tela').innerHTML =
+        '<h2 class="titulo">Usuários e permissões</h2>' +
+        '<p class="sub">Cadastre quem pode acessar o Web App e escolha o perfil. O e-mail é a identidade do usuário e não é renomeado depois do cadastro.</p>' +
+        '<div class="cartao" style="max-width:720px">' +
+          '<div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button class="acao secundaria" onclick="novoUsuario()">＋ Novo usuário</button></div>' +
+          '<div class="linha"><div><label>E-mail</label><input id="uEmail" type="email"></div><div><label>Nome</label><input id="uNome"></div></div>' +
+          '<div class="linha"><div><label>Perfil</label><select id="uPerfil"><option>CONSULTA</option><option>OPERADOR</option><option>ADMIN</option></select></div>' +
+          '<div><label>Ativo</label><select id="uAtivo"><option value="SIM">SIM</option><option value="NAO">NÃO</option></select></div></div>' +
+          '<label>Senha temporária</label><div style="display:flex;gap:8px">' +
+            '<input id="uSenhaTemp" type="password" minlength="10" maxlength="128" autocomplete="new-password" placeholder="Digite a senha que será entregue ao usuário">' +
+            '<button class="acao secundaria" type="button" style="flex:0 0 auto" onclick="gerarSenhaUsuario()">Gerar</button>' +
+            '<button class="acao secundaria" type="button" style="flex:0 0 auto" onclick="alternarSenhaUsuario()">Mostrar</button></div>' +
+          '<div class="sub2">No novo cadastro ou em “Redefinir senha”, o ADMIN pode definir esta senha. Se ficar vazia, o sistema gera uma automaticamente. O usuário será obrigado a trocá-la no primeiro acesso.</div>' +
+          '<label>Observação</label><input id="uObs">' +
+          '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="acao" onclick="salvarUsuario(false)">Salvar usuário</button>' +
+          '<button class="acao secundaria" onclick="salvarUsuario(true)">Redefinir senha</button></div>' +
+          '<div id="uMsg" style="margin-top:10px"></div></div>' +
+        '<div class="cartao" style="padding:0;overflow:hidden"><div class="rolagem"><table><thead><tr><th>E-mail</th><th>Nome</th><th>Perfil</th><th>Ativo</th><th>Trocar senha</th><th></th></tr></thead><tbody>' +
+          (linhas || '<tr><td colspan="6">Nenhum usuário.</td></tr>') + '</tbody></table></div></div>';
+    }).withFailureHandler(falha).webUsuarios(TOKEN);
+  }
+
+  function novoUsuario() {
+    window.USUARIO_EMAIL_ORIGINAL = '';
+    ['uEmail','uNome','uObs','uSenhaTemp'].forEach(function(id){ if(el(id)) el(id).value=''; });
+    if(el('uEmail')) { el('uEmail').readOnly=false; el('uEmail').focus(); }
+    if(el('uPerfil')) el('uPerfil').value='CONSULTA';
+    if(el('uAtivo')) el('uAtivo').value='SIM';
+    if(el('uMsg')) el('uMsg').innerHTML='';
+  }
+
+  function editarUsuario(email) {
+    var u=(window.USUARIOS_CACHE||[]).filter(function(x){return String(x.email).toLowerCase()===String(email).toLowerCase();})[0];
+    if(!u)return;
+    window.USUARIO_EMAIL_ORIGINAL = String(u.email || '').toLowerCase();
+    el('uEmail').value=u.email; el('uEmail').readOnly=true;
+    el('uNome').value=u.nome; el('uPerfil').value=u.perfil;
+    el('uAtivo').value=String(u.ativo).toUpperCase()==='NAO'?'NAO':'SIM'; el('uObs').value=u.observacao||'';
+    if(el('uSenhaTemp')) el('uSenhaTemp').value='';
+    el('uMsg').innerHTML='<div class="aviso">Editando <b>'+esc(u.email)+'</b>. Para trocar o e-mail, crie um novo usuário e desative este cadastro.</div>';
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  function salvarUsuario(redefinir) {
+    var senhaTemp = el('uSenhaTemp') ? el('uSenhaTemp').value : '';
+    var ehNovo = !(window.USUARIO_EMAIL_ORIGINAL || '');
+    if ((ehNovo || redefinir === true) && senhaTemp && senhaTemp.length < 10) {
+      el('uMsg').innerHTML='<div class="erro-caixa">A senha temporária precisa ter pelo menos 10 caracteres.</div>';
+      return;
+    }
+    var dados={ email:el('uEmail').value, emailOriginal:window.USUARIO_EMAIL_ORIGINAL||'', nome:el('uNome').value, perfil:el('uPerfil').value,
+      ativo:el('uAtivo').value==='SIM', observacao:el('uObs').value, redefinirSenha:redefinir===true,
+      senhaTemporaria:(ehNovo || redefinir===true) ? senhaTemp : '' };
+    google.script.run.withSuccessHandler(function(r){
+      var extra='';
+      if(r.senhaTemporaria) extra='<br><b>Senha temporária gerada:</b> ' + esc(r.senhaTemporaria) + '<br>Copie agora e entregue ao usuário.';
+      else if(r.ok && r.senhaDefinidaPeloAdmin) extra='<br><b>Senha temporária:</b> definida pelo ADMIN. Entregue ao usuário a senha que você informou.';
+      el('uMsg').innerHTML='<div class="'+(r.ok?'ok-caixa':'erro-caixa')+'">'+esc(r.mensagem)+extra+'</div>';
+      if(r.ok && el('uSenhaTemp')) el('uSenhaTemp').value='';
+      if(r.ok && !redefinir) setTimeout(telaUsuarios,1100);
+    }).withFailureHandler(function(e){el('uMsg').innerHTML='<div class="erro-caixa">'+esc(e.message)+'</div>';})
+      .webSalvarUsuario(TOKEN, dados);
+  }
+
+  function gerarSenhaUsuario() {
+    var campo=el('uSenhaTemp');
+    if(!campo)return;
+    google.script.run.withSuccessHandler(function(r){
+      if(!r||!r.ok){ status((r&&r.mensagem)||'Não foi possível gerar a senha.',true); return; }
+      campo.value=r.senha||''; campo.type='text'; campo.focus(); campo.select();
+      status('Senha temporária gerada. Copie e entregue ao usuário.');
+    }).withFailureHandler(function(e){status(e.message,true);}).webGerarSenhaTemporaria(TOKEN);
+  }
+
+  function alternarSenhaUsuario() {
+    var campo=el('uSenhaTemp'); if(!campo)return;
+    campo.type = campo.type === 'password' ? 'text' : 'password';
+  }
+
+  function excluirUsuario(email) {
+    email=String(email||'').trim().toLowerCase();
+    if(!email)return;
+    if(!confirm('Excluir o usuário '+email+' do Sistema de Frota?\n\nO acesso ao Web App será revogado e as proteções serão sincronizadas.'))return;
+    var confirma=prompt('Para confirmar a exclusão, digite exatamente o e-mail do usuário:\n\n'+email);
+    if(String(confirma||'').trim().toLowerCase()!==email){ status('Exclusão cancelada: confirmação não confere.',true); return; }
+    google.script.run.withSuccessHandler(function(r){
+      status(r.mensagem,!r.ok);
+      if(r.ok){ window.USUARIO_EMAIL_ORIGINAL=''; setTimeout(telaUsuarios,500); }
+    }).withFailureHandler(function(e){status(e.message,true);}).webExcluirUsuario(TOKEN,email,confirma);
+  }
+
+  function telaLog() {
+    carregando();
+    google.script.run.withSuccessHandler(function (dados) {
+      el('tela').innerHTML =
+        '<h2 class="titulo">Atividade</h2>' +
+        '<p class="sub">Quem fez o quê, do mais recente para o mais antigo.</p>' +
+        tabela(dados, 'Nenhuma atividade registrada ainda.');
+    }).withFailureHandler(falha).webLog(TOKEN, 80);
+  }
+</script>
+</body>
+</html>

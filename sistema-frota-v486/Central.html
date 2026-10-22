@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    :root {
+      --laranja: #F47820; --laranja-escuro: #D86512; --laranja-texto: #7A3507; --laranja-claro: #FDE9D9;
+      --preto: #231F20; --borda: #DEDAD8; --suave: #706B6C; --verde: #1e7145; --vermelho: #A52422;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: Roboto, Arial, sans-serif; font-size: 13px;
+      color: #231F20; background: #F5F4F3;
+    }
+    header {
+      background: var(--preto); color: #fff; padding: 14px 18px; border-bottom: 3px solid var(--laranja);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header h1 { margin: 0; font-size: 15px; font-weight: 600; }
+    header .meta { font-size: 11px; opacity: .8; margin-top: 2px; }
+    .conteudo { padding: 16px 18px; }
+    .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+    .kpi {
+      background: #fff; border: 1px solid var(--borda); border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .kpi .rotulo {
+      font-size: 10px; color: var(--suave); font-weight: 700;
+      text-transform: uppercase; letter-spacing: .3px;
+    }
+    .kpi .valor { font-size: 17px; font-weight: 700; color: var(--preto); margin-top: 4px; }
+    .kpi .valor.sobe { color: var(--vermelho); }
+    .kpi .valor.desce { color: var(--verde); }
+    .colunas { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; margin-top: 16px; }
+    .painel { background: #fff; border: 1px solid var(--borda); border-radius: 8px; padding: 14px; }
+    .painel h2 {
+      margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+      letter-spacing: .4px; color: var(--laranja-texto); font-weight: 700;
+    }
+    .relatorio {
+      display: block; width: 100%; text-align: left; background: #fff;
+      border: 1px solid var(--borda); border-radius: 7px; padding: 9px 11px;
+      margin-bottom: 6px; cursor: pointer; font-family: inherit; font-size: 13px;
+      transition: background .12s, border-color .12s;
+    }
+    .relatorio:hover { background: #FFF4EC; border-color: var(--laranja-escuro); }
+    .relatorio .nome { font-weight: 700; color: var(--laranja-texto); }
+    .relatorio .desc { font-size: 11px; color: var(--suave); margin-top: 2px; }
+    .acoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    button.acao {
+      background: #fff; border: 1px solid var(--borda); border-radius: 7px;
+      padding: 10px 8px; cursor: pointer; font-family: inherit; font-size: 12.5px;
+      font-weight: 700; color: var(--laranja-texto); text-align: left;
+    }
+    button.acao:hover { background: #FFF4EC; border-color: var(--laranja-escuro); }
+    button.acao.destaque { background: var(--laranja); color: var(--preto); border-color: var(--laranja); }
+    button.acao.destaque:hover { background: var(--laranja-escuro); }
+    button.acao:disabled { opacity: .5; cursor: default; }
+    button.acao.perigo { color: var(--vermelho); border-color: #E7B3B2; }
+    button.acao.perigo:hover { background: #FCE4E4; border-color: var(--vermelho); }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    td { padding: 5px 0; border-top: 1px solid #EEEAE8; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .sub { font-size: 10.5px; color: var(--suave); }
+    .aviso {
+      background: #fff4e5; border: 1px solid #f0c890; color: #7a4f00;
+      border-radius: 7px; padding: 9px 11px; font-size: 12px; margin-top: 10px;
+    }
+    #status {
+      position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 18px;
+      background: var(--laranja); color: var(--preto); font-size: 12.5px; display: none;
+    }
+    #status.erro { background: var(--vermelho); color: #fff; }
+    .carregando { color: var(--suave); padding: 26px 0; text-align: center; }
+    a { color: #FFD4B4; }
+    #overlay {
+      display: none; position: fixed; inset: 0; background: rgba(16,20,28,.45);
+      align-items: center; justify-content: center; z-index: 20;
+    }
+    #overlay.aberto { display: flex; }
+    #overlay .caixa {
+      background: #fff; border-radius: 10px; padding: 18px 20px; width: 420px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.25);
+    }
+    #overlay h3 { margin: 0 0 12px; font-size: 14px; color: var(--laranja-texto); }
+    #overlay label {
+      display: block; font-size: 11px; font-weight: 700; color: var(--suave);
+      text-transform: uppercase; margin: 10px 0 4px;
+    }
+    #overlay select, #overlay input {
+      width: 100%; padding: 8px 9px; border: 1px solid var(--borda);
+      border-radius: 6px; font-size: 13px; font-family: inherit;
+    }
+    #overlay .botoes { display: flex; gap: 8px; margin-top: 16px; }
+    #overlay .botoes button { flex: 1; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 id="titulo">Central de Controle</h1>
+      <div class="meta" id="meta">carregando…</div>
+    </div>
+    <div class="meta" id="usuario"></div>
+  </header>
+
+  <div class="conteudo" id="conteudo">
+    <div class="carregando">carregando indicadores…</div>
+  </div>
+
+  <div id="overlay">
+    <div class="caixa">
+      <h3 id="ovTitulo">Exportar</h3>
+      <label for="ovAba">Aba</label>
+      <select id="ovAba"></select>
+      <div id="ovEmailBloco" style="display:none">
+        <label for="ovEmails">E-mails (separe por vírgula)</label>
+        <input type="text" id="ovEmails" placeholder="fulano@empresa.com, ciclano@empresa.com">
+      </div>
+      <div class="botoes">
+        <button class="acao destaque" id="ovConfirmar">Confirmar</button>
+        <button class="acao" onclick="fecharOverlay()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="zerarPainel" style="display:none;position:fixed;left:18px;right:18px;bottom:52px;background:#fff;
+    border:2px solid #A52422;border-radius:10px;padding:14px;z-index:30;box-shadow:0 12px 40px rgba(0,0,0,.25)">
+    <b style="color:#A52422">🧨 Zerar o sistema</b> — um backup é criado antes. Usuários e Parâmetros são mantidos.
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+      <select id="zerarEscopo" style="padding:7px">
+        <option value="valores">ZERAR VALORES e manter os veículos</option>
+        <option value="tudo">TUDO (movimento + veículos, centros e fornecedores)</option>
+        <option value="movimento">Só o movimento (mantém cadastros)</option>
+      </select>
+      <label style="font-size:12px"><input type="checkbox" id="zerarLog"> apagar também o Log</label>
+      <input type="text" id="zerarConfirma" placeholder="digite APAGAR TUDO" style="padding:7px">
+      <button class="acao perigo" id="zerarBotao" onclick="confirmarZerar()">Confirmar</button>
+      <button class="acao" onclick="document.getElementById('zerarPainel').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+
+  <div id="status"></div>
+
+<script>
+  var DADOS = null;
+
+  function brl(n, casas) {
+    return 'R$ ' + Number(n || 0).toLocaleString('pt-BR', {
+      minimumFractionDigits: casas === undefined ? 2 : casas,
+      maximumFractionDigits: casas === undefined ? 2 : casas
+    });
+  }
+  function num(n, casas) {
+    return Number(n || 0).toLocaleString('pt-BR', {
+      minimumFractionDigits: casas || 0, maximumFractionDigits: casas || 0
+    });
+  }
+  function esc(t) {
+    return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  google.script.run
+    .withSuccessHandler(desenhar)
+    .withFailureHandler(function (erro) {
+      document.getElementById('conteudo').innerHTML =
+        '<div class="painel">Não consegui carregar: ' + esc(erro.message) +
+        '<br><br>Rode <b>Instalar / atualizar sistema</b> no menu e tente de novo.</div>';
+    })
+    .dadosCentral();
+
+  function desenhar(d) {
+    DADOS = d;
+    document.getElementById('titulo').textContent = d.empresa;
+    document.getElementById('meta').textContent =
+      'Período ' + d.mesExtenso + '  •  ' + d.periodo +
+      '  •  ' + d.lancamentosPeriodo + ' lançamentos no período';
+    document.getElementById('usuario').textContent = d.usuario;
+
+    var i = d.indicadores;
+    var variacao = i.variacao === null
+      ? '<div class="valor">—</div>'
+      : '<div class="valor ' + (i.variacao > 0 ? 'sobe' : 'desce') + '">' +
+        (i.variacao > 0 ? '▲ ' : '▼ ') +
+        Math.abs(i.variacao * 100).toFixed(1).replace('.', ',') + '%</div>';
+
+    var kpis = [
+      ['Custo do período', '<div class="valor">' + brl(i.total) + '</div>'],
+      ['Custo por KM', '<div class="valor">' + brl(i.custoKm, 3) + '</div>'],
+      ['KM rodados', '<div class="valor">' + num(i.km) + '</div>'],
+      ['Veículos ativos', '<div class="valor">' + num(i.veiculos) + '</div>'],
+      ['vs. mês anterior', variacao]
+    ].map(function (k) {
+      return '<div class="kpi"><div class="rotulo">' + k[0] + '</div>' + k[1] + '</div>';
+    }).join('');
+
+    var relatorios = d.relatorios.map(function (r) {
+      return '<button class="relatorio" onclick="abrir(\'' +
+        esc(r.nome).replace(/'/g, "\\'") + '\')">' +
+        '<div class="nome">' + esc(r.nome) + '</div>' +
+        '<div class="desc">' + esc(r.descricao) + '</div></button>';
+    }).join('');
+
+    var ultimos = (d.ultimos || []).map(function (l) {
+      return '<tr><td>' + esc(l.placa) +
+        '<div class="sub">' + esc(l.data) + ' • ' + esc(l.tipo) + '</div></td>' +
+        '<td class="num">' + brl(l.valor) + '</td></tr>';
+    }).join('');
+
+    var aviso = d.pendencias > 0
+      ? '<div class="aviso">' + d.pendencias +
+        ' ponto(s) na última conferência de dados. Vale revisar antes de fechar o mês.</div>'
+      : '';
+
+    document.getElementById('conteudo').innerHTML =
+      '<div class="kpis">' + kpis + '</div>' +
+      '<div class="colunas">' +
+        '<div class="painel"><h2>Relatórios</h2>' + relatorios + '</div>' +
+        '<div>' +
+          '<div class="painel"><h2>Ações</h2><div class="acoes">' +
+            '<button class="acao destaque" onclick="novoLancamento()">➕ Novo lançamento</button>' +
+            '<button class="acao" onclick="executar(\'acaoAtualizar\')">🔄 Atualizar relatórios</button>' +
+            '<button class="acao" onclick="ir(\'Dashboard\')">📊 Dashboard</button>' +
+            '<button class="acao" onclick="ir(\'Resumo\')">📋 Resumo</button>' +
+            '<button class="acao" onclick="ir(\'Rateio por Centro\')">🏬 Rateio</button>' +
+            '<button class="acao" onclick="executar(\'acaoValidar\')">✅ Validar dados</button>' +
+            '<button class="acao" onclick="exportar()">📄 Exportar PDF</button>' +
+            '<button class="acao" onclick="enviar()">✉️ Enviar por e-mail</button>' +
+            '<button class="acao perigo" onclick="zerar()">🧨 Zerar sistema</button>' +
+          '</div>' +
+          '<div class="sub" style="margin-top:8px">Excluir despesa ou veículo: menu 🚚 Sistema de Frota → Lançamentos / Cadastros.</div>' +
+          '</div>' +
+          '<div class="painel" style="margin-top:14px"><h2>Últimos lançamentos</h2>' +
+            '<table><tbody>' +
+            (ultimos || '<tr><td class="sub">Nenhum lançamento ainda.</td></tr>') +
+            '</tbody></table>' +
+            '<div class="sub" style="margin-top:8px">' + num(d.lancamentos) +
+            ' lançamentos na base, somando todos os meses.</div>' +
+          '</div>' +
+          aviso +
+        '</div>' +
+      '</div>';
+  }
+
+  function status(texto, erro) {
+    var barra = document.getElementById('status');
+    barra.textContent = texto;          // textContent limpa qualquer HTML anterior
+    barra.className = erro ? 'erro' : '';
+    barra.style.display = 'block';
+  }
+
+  function executar(funcao, argumento) {
+    status('Executando…');
+    var chamada = google.script.run
+      .withSuccessHandler(function (resposta) {
+        status(typeof resposta === 'string' ? resposta : 'Concluído.');
+      })
+      .withFailureHandler(function (erro) { status(erro.message, true); });
+    // sem argumento não se passa `undefined`: o servidor recusa a chamada
+    if (argumento === undefined) chamada[funcao]();
+    else chamada[funcao](argumento);
+  }
+
+  function abrir(tipo) {
+    status('Abrindo relatório…');
+    google.script.run
+      .withSuccessHandler(function () { google.script.host.close(); })
+      .withFailureHandler(function (erro) { status(erro.message, true); })
+      .acaoAbrirRelatorio(tipo);
+  }
+
+  function ir(nomeAba) {
+    google.script.run
+      .withSuccessHandler(function () { google.script.host.close(); })
+      .withFailureHandler(function (erro) { status(erro.message, true); })
+      .acaoIrPara(nomeAba);
+  }
+
+  function novoLancamento() {
+    google.script.run
+      .withSuccessHandler(function () { google.script.host.close(); })
+      .abrirFormularioLancamento();
+  }
+
+  var ABAS_EXPORTAVEIS = ['Resumo', 'Dashboard', 'Rateio por Centro', 'Relatórios',
+    'Consulta Veículo', 'Conferência Migração'];
+
+  function abrirOverlay(modo) {
+    var selecao = document.getElementById('ovAba');
+    selecao.innerHTML = '';
+    ABAS_EXPORTAVEIS.forEach(function (nome) {
+      var opcao = document.createElement('option');
+      opcao.value = nome;
+      opcao.textContent = nome;
+      selecao.appendChild(opcao);
+    });
+    var comEmail = modo === 'email';
+    document.getElementById('ovTitulo').textContent =
+      comEmail ? 'Enviar relatório por e-mail' : 'Exportar relatório em PDF';
+    document.getElementById('ovEmailBloco').style.display = comEmail ? 'block' : 'none';
+    document.getElementById('ovEmails').value = DADOS ? DADOS.usuario : '';
+    document.getElementById('ovConfirmar').onclick =
+      comEmail ? confirmarEnvio : confirmarExportacao;
+    document.getElementById('overlay').classList.add('aberto');
+  }
+
+  function fecharOverlay() {
+    document.getElementById('overlay').classList.remove('aberto');
+  }
+
+  /** V4.8: apaga as informações (com backup antes). Somente ADMIN; o servidor confere. */
+  function zerar() {
+    document.getElementById('zerarPainel').style.display = 'block';
+    document.getElementById('zerarConfirma').focus();
+  }
+
+  function confirmarZerar() {
+    var escopo = document.getElementById('zerarEscopo').value;
+    var confirmacao = document.getElementById('zerarConfirma').value;
+    var limparLog = document.getElementById('zerarLog').checked;
+    if (String(confirmacao).trim().toUpperCase() !== 'APAGAR TUDO') { status('Digite exatamente APAGAR TUDO.', true); return; }
+    document.getElementById('zerarBotao').disabled = true;
+    status('Criando backup e apagando… pode levar até 2 minutos. Não feche esta janela.');
+    google.script.run
+      .withSuccessHandler(function (m) { document.getElementById('zerarBotao').disabled = false; status(m); })
+      .withFailureHandler(function (erro) { document.getElementById('zerarBotao').disabled = false; status(erro.message, true); })
+      .acaoZerarSistema(escopo, confirmacao, limparLog);
+  }
+
+  function exportar() { abrirOverlay('pdf'); }
+  function enviar() { abrirOverlay('email'); }
+
+  function confirmarExportacao() {
+    var aba = document.getElementById('ovAba').value;
+    fecharOverlay();
+    status('Gerando PDF de "' + aba + '"…');
+    google.script.run
+      .withSuccessHandler(function (r) {
+        // window.open é bloqueado no iframe do Apps Script: mostramos o link
+        document.getElementById('status').innerHTML =
+          esc(r.mensagem) + '  —  <a href="' + esc(r.url) +
+          '" target="_blank" rel="noopener">abrir no Drive</a>';
+      })
+      .withFailureHandler(function (erro) { status(erro.message, true); })
+      .acaoExportarPdf(aba);
+  }
+
+  function confirmarEnvio() {
+    var aba = document.getElementById('ovAba').value;
+    var destino = document.getElementById('ovEmails').value.trim();
+    if (!destino) { status('Informe pelo menos um e-mail.', true); return; }
+    fecharOverlay();
+    status('Gerando o PDF e enviando…');
+    google.script.run
+      .withSuccessHandler(function (mensagem) { status(mensagem); })
+      .withFailureHandler(function (erro) { status(erro.message, true); })
+      .acaoEnviarEmail(destino, aba);
+  }
+</script>
+</body>
+</html>

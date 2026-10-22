@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Roboto, Arial, sans-serif; font-size: 13px; color: #222; margin: 0; padding: 12px; }
+    h2 { font-size: 15px; margin: 0 0 4px; color: #231F20; border-left: 4px solid #F47820; padding-left: 8px; }
+    .periodo { font-size: 11px; color: #666; margin-bottom: 12px; }
+    label { display: block; font-weight: 600; margin: 10px 0 3px; font-size: 12px; }
+    input, select, textarea {
+      width: 100%; box-sizing: border-box; padding: 6px 7px;
+      border: 1px solid #DEDAD8; border-radius: 4px; font-size: 13px; font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus { outline: 2px solid #F47820; border-color: #F47820; }
+    .linha { display: flex; gap: 8px; }
+    .linha > div { flex: 1; }
+    .acoes { margin-top: 16px; display: flex; gap: 8px; }
+    button {
+      flex: 1; padding: 9px; border: none; border-radius: 4px;
+      font-weight: 600; font-size: 13px; cursor: pointer;
+    }
+    .primario { background: #F47820; color: #231F20; }
+    .secundario { background: #F3F1F0; color: #231F20; border: 1px solid #DEDAD8; }
+    button:disabled { opacity: .5; cursor: default; }
+    #msg { margin-top: 12px; padding: 9px; border-radius: 4px; font-size: 12px; white-space: pre-line; display: none; }
+    .ok { background: #e2efda; color: #1e5631; }
+    .erro { background: #fce4e4; color: #A52422; }
+    .dica { font-size: 11px; color: #777; margin-top: 3px; }
+    .checkbox { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .checkbox input { width: auto; }
+  </style>
+</head>
+<body>
+  <h2>Novo lançamento</h2>
+  <div class="periodo" id="periodo">carregando…</div>
+
+  <label for="data">Data</label>
+  <input type="date" id="data">
+
+  <label for="placa">Veículo / patrimônio</label>
+  <input type="text" id="placa" list="listaVeiculos" autocomplete="off" placeholder="placa ou nº patrimônio">
+  <datalist id="listaVeiculos"></datalist>
+  <div class="dica">Digite a placa/ID ou o Código Patrimônio.</div>
+
+  <label for="tipo">Tipo de despesa</label>
+  <select id="tipo"></select>
+  <div class="dica" id="dicaTipo"></div>
+
+  <div id="blocoOficina" style="display:none;background:#FFF9F4;border:1px solid #F0B88E;border-radius:8px;padding:10px;margin-top:10px">
+    <b>Detalhamento da oficina</b>
+    <label for="naturezaOficina">Natureza da despesa</label>
+    <select id="naturezaOficina"></select>
+    <label for="detalheOficina">Peça / serviço realizado</label>
+    <input type="text" id="detalheOficina" maxlength="500" placeholder="ex.: pastilha de freio / reparo alternador">
+    <div class="dica">Informe também a NF/OS/documento e o valor.</div>
+  </div>
+
+  <div class="linha">
+    <div>
+      <label for="litros" id="rotuloLitros">Litros</label>
+      <input type="number" id="litros" step="0.001" min="0" placeholder="0,000">
+    </div>
+    <div>
+      <label for="valor">Valor R$</label>
+      <input type="number" id="valor" step="0.01" min="0" placeholder="0,00">
+    </div>
+  </div>
+
+  <div id="blocoAbastecimento" style="display:none;background:#F4F8FF;border:1px solid #A9C4EE;border-radius:8px;padding:10px;margin-top:10px">
+    <label for="tipoAbastecimento">Origem do combustível</label>
+    <select id="tipoAbastecimento"></select>
+    <div class="dica" id="dicaBomba"></div>
+  </div>
+
+  <div id="blocoKm">
+    <label for="km">KM / horímetro</label>
+    <input type="number" id="km" step="1" min="0" placeholder="leitura no momento">
+    <div class="dica" id="dicaKm"></div>
+    <div class="checkbox">
+      <input type="checkbox" id="forcarKm">
+      <label for="forcarKm" style="margin:0;font-weight:400">Forçar KM menor que a última leitura</label>
+    </div>
+  </div>
+
+  <div class="linha">
+    <div>
+      <label for="fornecedor">Fornecedor <span style="font-weight:400">(opcional)</span></label>
+      <select id="fornecedor"><option value="">— sem fornecedor —</option></select>
+    </div>
+    <div id="campoDocumento">
+      <label for="documento">NF / OS / Documento</label>
+      <input type="text" id="documento" placeholder="número da NF, OS ou documento">
+    </div>
+  </div>
+
+  <label for="observacao">Observação</label>
+  <textarea id="observacao" rows="2"></textarea>
+
+  <div class="acoes">
+    <button class="primario" id="btnSalvar" onclick="salvar()">Gravar</button>
+    <button class="secundario" onclick="limpar()">Limpar</button>
+  </div>
+
+  <div id="msg"></div>
+
+<script>
+  var CONFIG = null;
+
+  google.script.run.withSuccessHandler(function (dados) {
+    CONFIG = dados;
+    document.getElementById('periodo').textContent =
+      'Período aberto: ' + formatarBR(dados.inicio) + ' a ' + formatarBR(dados.fim) +
+      '  (' + dados.mes + ')';
+    document.getElementById('data').value = dados.dataSugerida;
+    document.getElementById('data').min = dados.inicio;
+    document.getElementById('data').max = dados.fim;
+
+    preencherVeiculos(dados.veiculos || []);
+    // V4.8: começa vazio; o usuário digita a placa ou o patrimônio.
+    document.getElementById('placa').value = '';
+    preencher('tipo', dados.tipos);
+    preencher('naturezaOficina', dados.naturezasOficina || []);
+    preencher('tipoAbastecimento', dados.tiposAbastecimento || ['Interno', 'Externo']);
+    var campoForn = document.getElementById('fornecedor');
+    campoForn.innerHTML = '<option value="">— sem fornecedor —</option>';
+    (dados.fornecedores || []).forEach(function (f) {
+      var o = document.createElement('option'); o.value = f; o.textContent = f;
+      campoForn.appendChild(o);
+    });
+    ajustarAbastecimento();
+    document.getElementById('tipo').value = dados.tipos[0];
+    ajustarLitros();
+    ajustarOficina();
+    ajustarDicaTipo();
+  }).dadosFormulario();
+
+  /** V4.8: Plotagem (e Oficina Ativo) é ativo: não soma no custo. Plotagem exige NF. */
+  function ajustarDicaTipo() {
+    var tipo = document.getElementById('tipo').value;
+    var partes = [];
+    if (CONFIG && (CONFIG.tiposAtivo || []).indexOf(tipo) !== -1) partes.push('Ativo (imobilizado): não soma no custo operacional.');
+    if (CONFIG && (CONFIG.tiposExigemDocumento || []).indexOf(tipo) !== -1) partes.push('Informe a NF / documento.');
+    document.getElementById('dicaTipo').textContent = partes.join(' ');
+  }
+
+  function formatarBR(iso) {
+    var p = iso.split('-');
+    return p[2] + '/' + p[1] + '/' + p[0];
+  }
+
+  function preencher(id, itens) {
+    var select = document.getElementById(id);
+    select.innerHTML = '';
+    itens.forEach(function (item) {
+      var opcao = document.createElement('option');
+      opcao.value = item;
+      opcao.textContent = item;
+      select.appendChild(opcao);
+    });
+  }
+
+
+  function preencherVeiculos(itens) {
+    var lista=document.getElementById('listaVeiculos'); lista.innerHTML='';
+    itens.forEach(function(v){
+      var o=document.createElement('option'); o.value=v.placa||'';
+      o.label=(v.patrimonio?'Patrimônio '+v.patrimonio+' • ':'')+(v.descricao||''); lista.appendChild(o);
+      if(v.patrimonio){var p=document.createElement('option');p.value=v.patrimonio;p.label=(v.placa||'')+(v.descricao?' • '+v.descricao:'');lista.appendChild(p);}
+    });
+  }
+
+  function ajustarLitros() {
+    var tipo = document.getElementById('tipo').value;
+    // V4.8: gás é medido em quilos.
+    document.getElementById('rotuloLitros').textContent =
+      CONFIG && (CONFIG.tiposKg || []).indexOf(tipo) !== -1 ? 'Quantidade (kg)' : 'Litros';
+    var aceita = CONFIG && CONFIG.tiposComLitros.indexOf(tipo) !== -1;
+    var campo = document.getElementById('litros');
+    campo.disabled = !aceita;
+    if (!aceita) campo.value = '';
+  }
+
+  function ajustarOficina() {
+    var tipo = document.getElementById('tipo').value;
+    var eh = CONFIG && (CONFIG.tiposOficina || []).indexOf(tipo) !== -1;
+    document.getElementById('blocoOficina').style.display = eh ? 'block' : 'none';
+    if (!eh) {
+      document.getElementById('detalheOficina').value = '';
+      if (document.getElementById('naturezaOficina').options.length) document.getElementById('naturezaOficina').selectedIndex = 0;
+    }
+  }
+
+  function ehCombustivel() {
+    return !!(CONFIG && (CONFIG.tiposCombustivel || [])
+      .indexOf(document.getElementById('tipo').value) !== -1);
+  }
+
+  var CUSTO_BOMBA = null;
+
+  /**
+   * KM so aparece em combustivel (item 3 do escopo). O servidor ja recusa KM nos
+   * outros tipos; esconder e a forma de avisar ANTES de a pessoa digitar.
+   */
+  function ajustarAbastecimento() {
+    var combustivel = ehCombustivel();
+    document.getElementById('blocoKm').style.display = combustivel ? 'block' : 'none';
+    document.getElementById('blocoAbastecimento').style.display = combustivel ? 'block' : 'none';
+    var valor = document.getElementById('valor');
+    if (!combustivel) {
+      document.getElementById('km').value = '';
+      document.getElementById('forcarKm').checked = false;
+      valor.disabled = false;
+      valor.placeholder = '0,00';
+      document.getElementById('dicaBomba').textContent = '';
+      document.getElementById('campoDocumento').style.display = '';
+      return;
+    }
+    // Interno: o valor vem do custo medio do tanque, entao o campo fica travado
+    // para ninguem digitar um numero que sera sobrescrito na gravacao.
+    var interno = document.getElementById('tipoAbastecimento').value === 'Interno';
+    valor.disabled = interno;
+    // Interno nao tem NF propria: a nota e a da carga do tanque.
+    document.getElementById('campoDocumento').style.display = interno ? 'none' : '';
+    if (interno) {
+      valor.value = '';
+      valor.placeholder = 'calculado pela bomba';
+      document.getElementById('documento').value = '';
+      consultarCustoBomba();
+    } else {
+      valor.placeholder = 'valor da NF';
+      document.getElementById('dicaBomba').textContent = 'Externo exige NF e valor.';
+    }
+  }
+
+  function consultarCustoBomba() {
+    var dica = document.getElementById('dicaBomba');
+    CUSTO_BOMBA = null;
+    dica.textContent = 'consultando o custo do tanque…';
+    google.script.run.withSuccessHandler(function (r) {
+      if (!r || !r.disponivel) {
+        CUSTO_BOMBA = null;
+        dica.textContent = 'Nenhuma carga registrada até esta data. Lance a NF em "Carga na Bomba" antes.';
+        return;
+      }
+      CUSTO_BOMBA = r.custoMedio;
+      dica.textContent = 'Tanque: R$ ' + Number(r.custoMedio).toFixed(4).replace('.', ',') +
+        '/L • saldo ' + Number(r.saldo).toLocaleString('pt-BR') + ' L.';
+      atualizarValorInterno();
+    }).withFailureHandler(function () { dica.textContent = ''; })
+      .webCustoBombaPlanilha(document.getElementById('data').value);
+  }
+
+  /** Previa: o numero que vale e o que o servidor calcula ao gravar. */
+  function atualizarValorInterno() {
+    if (!ehCombustivel()) return;
+    if (document.getElementById('tipoAbastecimento').value !== 'Interno') return;
+    if (CUSTO_BOMBA === null) return;
+    var litros = Number(document.getElementById('litros').value || 0);
+    document.getElementById('valor').value = litros > 0 ? (litros * CUSTO_BOMBA).toFixed(2) : '';
+  }
+
+  document.getElementById('tipo').addEventListener('change', function(){
+    ajustarLitros(); ajustarOficina(); ajustarAbastecimento(); ajustarDicaTipo();
+  });
+  document.getElementById('tipoAbastecimento').addEventListener('change', ajustarAbastecimento);
+  document.getElementById('litros').addEventListener('input', atualizarValorInterno);
+  document.getElementById('data').addEventListener('change', function(){
+    if (ehCombustivel()) consultarCustoBomba();
+  });
+
+  document.getElementById('placa').addEventListener('change', function () {
+    var dica = document.getElementById('dicaKm');
+    dica.textContent = 'consultando última leitura…';
+    google.script.run.withSuccessHandler(function (ultimo) {
+      dica.textContent = ultimo
+        ? 'Última leitura: ' + ultimo.km.toLocaleString('pt-BR') + ' em ' + ultimo.data
+        : 'Sem leitura anterior registrada.';
+    }).ultimoOdometro(this.value);
+  });
+
+  function salvar(permitirDuplicado) {
+    var botao = document.getElementById('btnSalvar');
+    botao.disabled = true;
+    var dados = {
+      data: document.getElementById('data').value,
+      placa: document.getElementById('placa').value,
+      tipo: document.getElementById('tipo').value,
+      litros: document.getElementById('litros').value,
+      valor: document.getElementById('valor').value,
+      km: document.getElementById('km').value,
+      forcarKm: document.getElementById('forcarKm').checked,
+      fornecedor: document.getElementById('fornecedor').value,
+      tipoAbastecimento: ehCombustivel()
+        ? document.getElementById('tipoAbastecimento').value : '',
+      documento: document.getElementById('documento').value,
+      observacao: document.getElementById('observacao').value,
+      naturezaOficina: document.getElementById('naturezaOficina').value,
+      detalheOficina: document.getElementById('detalheOficina').value,
+      permitirDuplicado: permitirDuplicado === true
+    };
+    google.script.run
+      .withSuccessHandler(function (resposta) {
+        botao.disabled = false;
+        if (!resposta.ok && resposta.duplicidade && permitirDuplicado !== true) {
+          if (confirm(resposta.mensagem + '\n\nSe você conferiu e este é realmente um segundo lançamento legítimo, deseja gravar mesmo assim?')) {
+            salvar(true);
+            return;
+          }
+        }
+        mostrar(resposta.mensagem, resposta.ok);
+        if (resposta.ok) limparValores();
+      })
+      .withFailureHandler(function (erro) {
+        botao.disabled = false;
+        mostrar(erro.message, false);
+      })
+      .salvarLancamentoPlanilha(dados);
+  }
+
+  function mostrar(texto, ok) {
+    var caixa = document.getElementById('msg');
+    caixa.textContent = texto;
+    caixa.className = ok ? 'ok' : 'erro';
+    caixa.style.display = 'block';
+  }
+
+  function limparValores() {
+    ['litros', 'valor', 'km', 'documento', 'observacao', 'detalheOficina'].forEach(function (id) {
+      document.getElementById(id).value = '';
+    });
+    if (document.getElementById('naturezaOficina').options.length) document.getElementById('naturezaOficina').selectedIndex = 0;
+    document.getElementById('forcarKm').checked = false;
+  }
+
+  function limpar() {
+    limparValores();
+    document.getElementById('fornecedor').value = '';
+    document.getElementById('msg').style.display = 'none';
+  }
+</script>
+</body>
+</html>
