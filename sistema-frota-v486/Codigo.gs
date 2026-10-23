@@ -87,6 +87,68 @@ const TIPOS_COM_LITROS = [
 const TIPOS_QUANTIDADE_KG = ['Gás'];
 
 /**
+ * Teto de sanidade do preço unitário, por tipo de despesa.
+ *
+ * Existia UM teto de R$ 30 para tudo que tem quantidade, e ele errava de dois
+ * jeitos:
+ *
+ *  - **Gás** é medido em QUILOS, não litros (TIPOS_QUANTIDADE_KG). A conferência
+ *    dividia valor por quilos e anunciava o resultado como "R$/L". Uma
+ *    empilhadeira a GLP aparecia com "R$ 213,00/L", unidade que ela não usa.
+ *  - **Lubrificante** passa fácil de R$ 30/L — óleo sintético custa mais que
+ *    isso. O teto do diesel acusava compra normal como fora da curva, e alarme
+ *    que toca sempre é alarme que ninguém lê.
+ *
+ * Os valores são tetos de ABSURDO, não de mercado: servem para pegar erro grosso
+ * de digitação, não para discutir preço.
+ */
+const TETO_PRECO_UNITARIO_ = {
+  'Combustivel Proprio': 30,
+  'Combustivel Terceiros': 30,
+  'Arla 32': 30,
+  'Lubrificante': 200,
+  'Gás': 30,          // por QUILO; GLP de botijão gira em torno de R$ 8/kg
+};
+const TETO_PRECO_UNITARIO_PADRAO_ = 30;
+
+/** Unidade da quantidade de um tipo de despesa: 'kg' para gás, 'L' para o resto. */
+function unidadeQuantidade_(tipo) {
+  return TIPOS_QUANTIDADE_KG.indexOf(String(tipo || '').trim()) !== -1 ? 'kg' : 'L';
+}
+
+/**
+ * Decide se o preço unitário de um lançamento é absurdo. Devolve a linha de
+ * pendência, ou null.
+ *
+ * Função pura, separada do coletor de propósito: o coletor lê a planilha
+ * inteira e não dá para exercitá-lo num teste. Com a decisão aqui, o teste
+ * chama exatamente o que roda em produção — em vez de reescrever a regra e
+ * passar enquanto o sistema faz outra coisa.
+ */
+function pendenciaPrecoUnitario_(tipo, valor, quantidade, numeroLinha, placa) {
+  const q = Number(quantidade) || 0;
+  const v = Number(valor) || 0;
+  if (q <= 0 || v <= 0) return null;
+  const nome = String(tipo || '').trim();
+  const teto = TETO_PRECO_UNITARIO_[nome] === undefined
+    ? TETO_PRECO_UNITARIO_PADRAO_ : TETO_PRECO_UNITARIO_[nome];
+  const unitario = v / q;
+  if (unitario <= teto) return null;
+
+  const unidade = unidadeQuantidade_(nome);
+  // Gás quase sempre cai aqui pelo mesmo motivo: o operador registra UM botijão
+  // em vez dos quilos dele. A dica diz isso, em vez de deixar o número solto.
+  const dica = unidade === 'kg'
+    ? ' • se lançou o botijão inteiro, informe os quilos (P13 = 13 kg, ' +
+      'P20 = 20 kg, P45 = 45 kg)'
+    : '';
+  return [ABAS.LANCAMENTOS, placa,
+    unidade === 'kg' ? 'Preço por quilo fora da curva' : 'Preço por litro fora da curva',
+    'linha ' + numeroLinha + ' • R$ ' + unitario.toFixed(2) + '/' + unidade +
+    ' em ' + nome + dica];
+}
+
+/**
  * Tipo de abastecimento (V4.7.2).
  *
  * Interno = saiu do tanque proprio, entao o custo vem do preco medio da bomba e
@@ -415,7 +477,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.9.1';
+const VERSAO_SISTEMA = '4.9.2';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -4414,10 +4476,8 @@ function coletarProblemas_(opcoesColeta) {
         problemas.push([ABAS.LANCAMENTOS, placa, 'Litros informados num tipo que não é abastecimento',
           'linha ' + numeroLinha + ' • ' + tipo]);
       }
-      if (litros > 0 && valor > 0 && valor / litros > 30) {
-        problemas.push([ABAS.LANCAMENTOS, placa, 'Preço por litro fora da curva',
-          'linha ' + numeroLinha + ' • R$ ' + (valor / litros).toFixed(2) + '/L']);
-      }
+      const precoAbsurdo = pendenciaPrecoUnitario_(tipo, valor, litros, numeroLinha, placa);
+      if (precoAbsurdo) problemas.push(precoAbsurdo);
     });
   }
 
@@ -10541,6 +10601,14 @@ function registrarCorrecaoPendencia_(problema, spec) { CORRECOES_PENDENCIA_[prob
   registrarCorrecaoPendencia_('Litros informados num tipo que não é abastecimento', {
     aba: L, coluna: COL_LANC.LITROS, tipo: 'numero', rotulo: 'Litros', minimoNumero: 0,
     ajuda: 'zere os litros, ou corrija o tipo de despesa no lançamento' });
+
+  // O caso do gás: o valor costuma estar certo e a quantidade errada (botijão
+  // em vez de quilos). Por isso a correção oferecida é a QUANTIDADE.
+  registrarCorrecaoPendencia_('Preço por quilo fora da curva', {
+    aba: L, coluna: COL_LANC.LITROS, tipo: 'numero', rotulo: 'Quantidade (kg)',
+    minimoNumero: 0,
+    ajuda: 'quilos do botijão: P13 = 13, P20 = 20, P45 = 45. Se o errado for o ' +
+      'valor, corrija o lançamento na planilha' });
 
   registrarCorrecaoPendencia_('KM/horímetro inválido', {
     aba: O, coluna: 3, tipo: 'numero', rotulo: 'KM / horímetro', minimoNumero: 0 });

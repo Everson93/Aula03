@@ -491,6 +491,75 @@ com a reverificação do alvo ligada.
 
 ---
 
+# V4.9.2 — a conferência passou a respeitar a unidade de medida
+
+Uma empilhadeira a GLP aparecia na conferência como
+**"Preço por litro fora da curva — R$ 213,00/L"**. Empilhadeira não consome
+litro: consome botijão de gás, medido em **quilos**.
+
+O sistema já sabia disso. Existe `TIPOS_QUANTIDADE_KG = ['Gás']` desde a V4.8, e
+o formulário de lançamento troca o rótulo do campo para "Quantidade (kg)". Só a
+**conferência** tinha ficado de fora: ela dividia valor por quantidade e
+anunciava o resultado como "/L", fosse qual fosse o tipo.
+
+## Dois erros no mesmo lugar
+
+Havia **um teto único de R$ 30** para tudo que tem quantidade:
+
+**Gás** — a conta `valor ÷ quilos` estava certa, o rótulo é que mentia. E o teto
+do diesel não serve para GLP.
+
+**Lubrificante** — óleo sintético passa de R$ 30/L sem nada de errado. O teto do
+diesel acusava compra normal como fora da curva, e alarme que toca sempre é
+alarme que ninguém lê.
+
+Agora o teto é por tipo, e são tetos de **absurdo**, não de mercado — servem
+para pegar erro grosso de digitação, não para discutir preço:
+
+| Tipo | Teto | Unidade |
+|---|---|---|
+| Combustível próprio / terceiros | 30 | R$/L |
+| Arla 32 | 30 | R$/L |
+| Lubrificante | 200 | R$/L |
+| Gás | 30 | R$/**kg** |
+| *(qualquer outro)* | 30 | R$/L |
+
+## O que o operador vê agora
+
+Lançar um botijão P20 por R$ 213 **em quilos** dá R$ 10,65/kg e não acusa nada.
+Lançar o mesmo botijão como quantidade **1** continua acusando — e deve mesmo,
+porque aí a coluna "Gás kg" do Resumo também fica errada. Só que a mensagem
+passou a dizer o que fazer:
+
+> Preço por quilo fora da curva
+> linha 86 • R$ 213,00/kg em Gás • se lançou o botijão inteiro, informe os
+> quilos (P13 = 13 kg, P20 = 20 kg, P45 = 45 kg)
+
+E a pendência é **corrigível na própria tela** (V4.9.1), com o campo apontando
+para a **quantidade** — que é o que costuma estar errado nesse caso. A versão em
+litro não oferece correção: ali tanto o valor quanto a quantidade podem ser o
+erro, e o sistema não dá palpite.
+
+O nome antigo do problema ("Preço por litro fora da curva") foi preservado para
+os casos em litro, para as pendências já tratadas não voltarem como novas.
+
+## Uma lição de teste
+
+A primeira versão da suíte **reescrevia a regra** em vez de chamá-la: o teste
+calculava `valor / quantidade > teto` por conta própria. Isso passaria mesmo se
+o coletor fizesse outra coisa — que é exatamente como os relatórios de evolução
+leram o campo errado na V4.7.2 com a suíte verde.
+
+A decisão foi extraída para `pendenciaPrecoUnitario_()`, função pura que o
+coletor e o teste chamam. O coletor lê a planilha inteira e não dá para
+exercitá-lo direto; separar a decisão resolve isso sem fixture.
+
+`conferir_unidade_quantidade.js` — 29 provas. Por mutação: restaurando o teto
+único e o "/L" fixo, 4 falham.
+
+
+---
+
 # Pendente
 
 - **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo
