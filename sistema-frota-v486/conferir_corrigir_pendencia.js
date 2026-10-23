@@ -60,7 +60,8 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     webCorrigirPendencia, correcaoDaPendencia_, linhaAlvoPendencia_,
     valorCorrecaoPendencia_, CORRECOES_PENDENCIA_, ABAS, COL_LANC, COL_VEIC,
-    NATUREZAS_OFICINA, TIPOS_DESPESA,
+    NATUREZAS_OFICINA, TIPOS_DESPESA, specDaPendencia_, acaoDaPendencia_,
+    webAcaoPendencia, travaCompetenciaFechada_, ACOES_PENDENCIA_,
   });
   exigirExecucaoMutacao_ = function () {};
   exigirExecucaoLeitura_ = function () {};
@@ -78,6 +79,15 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   escreverConferencia_ = function () { __revalidou++; };
   contarPendenciasConferencia_ = function () { return 0; };
   normalizaPlaca_ = function (p) { return String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+  listaPlacas_ = function () { return ['AAA1A11', 'BBB2B22', 'MKZ6729']; };
+  competenciasFechadas_ = function () { return __fechadas; };
+  mesCompetenciaDaData_ = function (d) {
+    var m = d.getMonth() + 1;
+    return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m;
+  };
+  garantirIdsLancamentos_ = function () { __ids++; return 7; };
+  __fechadas = {};
+  __ids = 0;
   __log = [];
   __revalidou = 0;
   __perfil = 'OPERADOR';
@@ -209,8 +219,13 @@ lp = pend(ctx.ABAS.CENTROS, '', 'Soma dos percentuais de rateio não fecha 100%'
 ok('soma de rateio não oferece correção', ctx.webCorrigirPendencia('t', lp, '100').ok === false);
 ok('e a tela não mostra campo para ela',
   ctx.correcaoDaPendencia_(ctx.ABAS.CENTROS, 'Soma dos percentuais de rateio não fecha 100%', '99,5%', '') === null);
-ok('data inválida fica de fora de propósito (muda a competência)',
-  ctx.correcaoDaPendencia_(L, 'Data inválida', 'linha 2', 'AAA1A11') === null);
+// Até a V4.9.2 esta prova dizia o contrário: "data fica de fora". Datas
+// entraram, mas com a trava de competência fechada — ver bloco 8. A prova foi
+// invertida junto com a decisão, não apagada.
+ok('data agora É corrigível (a proteção virou trava, não exclusão)',
+  ctx.correcaoDaPendencia_(L, 'Data inválida', 'linha 2', 'AAA1A11') !== null);
+ok('e vem marcada como campo de data',
+  ctx.correcaoDaPendencia_(L, 'Data inválida', 'linha 2', 'AAA1A11').tipo === 'data');
 ok('detalhe sem "linha N" não vira campo editável',
   ctx.correcaoDaPendencia_(L, 'Oficina sem detalhe da peça/serviço', 'sem número', 'AAA1A11') === null,
   'na dúvida sobre a linha, é melhor não oferecer do que gravar no lugar errado');
@@ -224,6 +239,112 @@ ok('tipo, rótulo e linha vêm preenchidos',
 ok('as opções da lista vêm junto', c && c.opcoes && c.opcoes.length > 0, JSON.stringify(c && c.opcoes));
 const cv = ctx.correcaoDaPendencia_(V, 'Veículo ativo sem centro de custo', '', 'AAA1A11');
 ok('correção de cadastro vem marcada como somenteAdmin', cv && cv.somenteAdmin === true, JSON.stringify(cv));
+
+// ---- 8. datas: a trava da competência fechada ------------------------------
+// Datas ficaram de fora ate a V4.9.2 porque mudam a COMPETENCIA do lancamento.
+// Entraram com trava nos DOIS lados: nao se empurra despesa para dentro de um
+// mes assinado, e tambem nao se tira de dentro dele — tirar muda o total e o
+// hash por tras, e o fechamento deixa de valer sem ninguem saber.
+console.log('\n8. Correção de data e competência fechada');
+const dataNoVm = vm.runInContext('(function (a, m, d) { return new Date(a, m - 1, d, 12, 0, 0); })', ctx);
+
+montarBase();
+ctx.__fechadas = {};
+let lpd = pend(L, 'AAA1A11', 'Data inválida', 'linha 2');
+ABAS_FAKE[L][0][ctx.COL_LANC.DATA - 1] = '';
+r = ctx.webCorrigirPendencia('t', lpd, '2026-07-15');
+ok('com nenhum mês fechado, a data é gravada', r.ok === true, JSON.stringify(r));
+// `instanceof Date` nao atravessa realms: este Date nasceu DENTRO do vm, com
+// outro construtor. Object.prototype.toString nao depende do realm.
+function ehData(v) { return Object.prototype.toString.call(v) === '[object Date]'; }
+ok('gravou um Date, não texto', ehData(ABAS_FAKE[L][0][ctx.COL_LANC.DATA - 1]),
+  Object.prototype.toString.call(ABAS_FAKE[L][0][ctx.COL_LANC.DATA - 1]));
+ok('e no dia certo — sem recuar um dia por fuso',
+  ABAS_FAKE[L][0][ctx.COL_LANC.DATA - 1].getDate() === 15,
+  'dia ' + ABAS_FAKE[L][0][ctx.COL_LANC.DATA - 1].getDate());
+
+montarBase();
+ctx.__fechadas = { '2026-06': true };
+lpd = pend(L, 'AAA1A11', 'Data inválida', 'linha 2');
+ABAS_FAKE[L][0][ctx.COL_LANC.DATA - 1] = '';
+r = ctx.webCorrigirPendencia('t', lpd, '2026-06-10');
+ok('empurrar para dentro de um mês FECHADO é recusado', r.ok === false, JSON.stringify(r));
+ok('a mensagem nomeia a competência', /2026-06/.test(r.mensagem || ''), r.mensagem);
+ok('nada foi gravado', !ehData(ABAS_FAKE[L][0][ctx.COL_LANC.DATA - 1]));
+
+montarBase();
+ctx.__fechadas = { '2026-06': true };
+lpd = pend(L, 'AAA1A11', 'Lançamento em período futuro', 'linha 2');
+ABAS_FAKE[L][0][ctx.COL_LANC.DATA - 1] = dataNoVm(2026, 6, 10);   // ja esta num mes fechado
+r = ctx.webCorrigirPendencia('t', lpd, '2026-07-10');
+ok('TIRAR de um mês fechado também é recusado', r.ok === false, JSON.stringify(r));
+ok('o lançamento ficou onde estava',
+  ABAS_FAKE[L][0][ctx.COL_LANC.DATA - 1].getMonth() === 5);
+
+montarBase();
+ctx.__fechadas = {};
+lpd = pend(L, 'AAA1A11', 'Data inválida', 'linha 2');
+ok('data inexistente é recusada', ctx.webCorrigirPendencia('t', lpd, '2026-02-30').ok === false);
+ok('texto que não é data é recusado', ctx.webCorrigirPendencia('t', lpd, '15/07/2026').ok === false,
+  'o <input type=date> manda AAAA-MM-DD; outro formato é sinal de algo errado');
+ok('data muito no futuro é recusada', ctx.webCorrigirPendencia('t', lpd, '2099-01-01').ok === false);
+
+// ---- 9. as novas correções de campo ----------------------------------------
+console.log('\n9. Campos que passaram a ser corrigíveis');
+montarBase();
+lpd = pend(L, 'ZZZ9Z99', 'Placa não cadastrada em Veículos', 'linha 2');
+ABAS_FAKE[L][0][ctx.COL_LANC.PLACA - 1] = 'ZZZ9Z99';
+ok('placa fora da lista é recusada', ctx.webCorrigirPendencia('t', lpd, 'QQQ0Q00').ok === false);
+r = ctx.webCorrigirPendencia('t', lpd, 'BBB2B22');
+ok('placa da lista é aceita', r.ok === true, JSON.stringify(r));
+ok('trocou a placa do lançamento',
+  ABAS_FAKE[L][0][ctx.COL_LANC.PLACA - 1] === 'BBB2B22');
+
+montarBase();
+const vi = new Array(20).fill('');
+vi[ctx.COL_VEIC.PLACA - 1] = 'AAA1A11';
+vi[ctx.COL_VEIC.ATIVO - 1] = 'NAO';
+ABAS_FAKE[V].push(vi);
+lpd = pend(V, 'AAA1A11', 'Lançamento do período em veículo inativo', '');
+ctx.__perfil = 'ADMIN';
+r = ctx.webCorrigirPendencia('t', lpd, 'SIM');
+ok('ADMIN reativa o veículo', r.ok === true && ABAS_FAKE[V][0][ctx.COL_VEIC.ATIVO - 1] === 'SIM',
+  JSON.stringify(r));
+
+// ---- 10. busca por prefixo ---------------------------------------------------
+console.log('\n10. Problemas cujo nome carrega o valor');
+const cpref = ctx.correcaoDaPendencia_(V, 'Descrição do veículo com erro (#REF!)', '', 'AAA1A11');
+ok('"Descrição do veículo com erro (#REF!)" encontra a spec por prefixo',
+  cpref !== null && cpref.rotulo === 'Descrição', JSON.stringify(cpref));
+ok('e a de Categoria vai para a coluna da Categoria',
+  ctx.specDaPendencia_('Categoria do veículo com erro (#N/A)').coluna === ctx.COL_VEIC.CATEGORIA);
+ok('prefixo não casa com problema diferente',
+  ctx.specDaPendencia_('Veículo ativo sem categoria').coluna === ctx.COL_VEIC.CATEGORIA);
+ok('problema sem spec nenhuma continua devolvendo null',
+  ctx.specDaPendencia_('Alguma coisa que não existe') === null);
+
+// ---- 11. ações para o que não é campo ---------------------------------------
+console.log('\n11. O que não se resolve por um campo ganhou caminho');
+montarBase();
+ctx.__perfil = 'ADMIN';
+lpd = pend(L, 'AAA1A11', 'Lançamento sem ID de auditoria', 'linha 2');
+r = ctx.webAcaoPendencia('t', lpd);
+ok('a rotina de IDs roda', r.ok === true && ctx.__ids === 1, JSON.stringify(r));
+ok('e diz quantos foram', /7 lançamento/.test(r.mensagem || ''), r.mensagem);
+
+montarBase();
+lpd = pend(ctx.ABAS.CENTROS, '', 'Soma dos percentuais de rateio não fecha 100%', '99,5%');
+r = ctx.webAcaoPendencia('t', lpd);
+ok('atalho não é rotina: webAcaoPendencia recusa', r.ok === false, JSON.stringify(r));
+const atalho = ctx.acaoDaPendencia_('Soma dos percentuais de rateio não fecha 100%');
+ok('mas a tela recebe o atalho para centros',
+  atalho && atalho.tipo === 'atalho' && atalho.tela === 'centros', JSON.stringify(atalho));
+ok('"Sem nenhum custo no período" é informativo, não defeito',
+  ctx.acaoDaPendencia_('Sem nenhum custo no período').tipo === 'informativo');
+ok('toda ação traz explicação, senão o operador fica sem saber o porquê',
+  Object.keys(ctx.ACOES_PENDENCIA_).every(function (k) {
+    return String(ctx.ACOES_PENDENCIA_[k].explicacao || '').length > 20;
+  }));
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

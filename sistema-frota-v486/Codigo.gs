@@ -477,7 +477,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.9.2';
+const VERSAO_SISTEMA = '4.9.3';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -10534,6 +10534,9 @@ function webPendencias(token) {
       // RESOLVIDO com o dado ainda errado.
       correcao: correcaoDaPendencia_(String(l[0] || ''), String(l[2] || ''),
         String(l[3] || ''), String(l[1] || '')),
+      // Quando nao da para corrigir por um campo, a tela mostra o caminho certo
+      // em vez de deixar so Status/Observacao, que resolve nada.
+      acao: acaoDaPendencia_(String(l[2] || '')),
       validadoEm: l[6] instanceof Date ? Utilities.formatDate(l[6], timezone_(), 'dd/MM/yyyy HH:mm') : String(l[6] || '')
     });
   });
@@ -10559,8 +10562,30 @@ function webPendencias(token) {
  *    de integridade. Isso nao pode acontecer num campo de preenchimento rapido.
  */
 const CORRECOES_PENDENCIA_ = {};
+/**
+ * Alguns problemas trazem um valor variavel no proprio nome — por exemplo
+ * "Descrição do veículo com erro (#REF!)". Busca exata nunca casaria, entao
+ * essas ficam num registro por PREFIXO.
+ */
+const CORRECOES_PENDENCIA_PREFIXO_ = [];
 
 function registrarCorrecaoPendencia_(problema, spec) { CORRECOES_PENDENCIA_[problema] = spec; }
+
+function registrarCorrecaoPendenciaPorPrefixo_(prefixo, spec) {
+  CORRECOES_PENDENCIA_PREFIXO_.push({ prefixo: prefixo, spec: spec });
+}
+
+/** Spec de correcao de um problema: exata primeiro, depois por prefixo. */
+function specDaPendencia_(problema) {
+  const nome = String(problema || '').trim();
+  if (CORRECOES_PENDENCIA_[nome]) return CORRECOES_PENDENCIA_[nome];
+  for (let i = 0; i < CORRECOES_PENDENCIA_PREFIXO_.length; i++) {
+    if (nome.indexOf(CORRECOES_PENDENCIA_PREFIXO_[i].prefixo) === 0) {
+      return CORRECOES_PENDENCIA_PREFIXO_[i].spec;
+    }
+  }
+  return null;
+}
 
 (function () {
   const L = ABAS.LANCAMENTOS, O = ABAS.ODOMETRO, V = ABAS.VEICULOS;
@@ -10602,6 +10627,69 @@ function registrarCorrecaoPendencia_(problema, spec) { CORRECOES_PENDENCIA_[prob
     aba: L, coluna: COL_LANC.LITROS, tipo: 'numero', rotulo: 'Litros', minimoNumero: 0,
     ajuda: 'zere os litros, ou corrija o tipo de despesa no lançamento' });
 
+  // ---- datas. Ficaram de fora ate a V4.9.2 por um motivo que continua valendo:
+  // mudar a data de um lancamento muda a COMPETENCIA dele. Agora entram, mas com
+  // trava — ver travaCompetenciaFechada_: a gravacao e recusada se a data velha
+  // OU a nova cair num mes ja fechado, porque isso mexeria no hash de integridade
+  // de um periodo que ja foi assinado.
+  registrarCorrecaoPendencia_('Data inválida', {
+    aba: L, coluna: COL_LANC.DATA, tipo: 'data', rotulo: 'Data do lançamento',
+    travaCompetencia: true,
+    ajuda: 'a data define a competência; mês já fechado é recusado' });
+
+  registrarCorrecaoPendencia_('Lançamento em período futuro', {
+    aba: L, coluna: COL_LANC.DATA, tipo: 'data', rotulo: 'Data do lançamento',
+    travaCompetencia: true,
+    ajuda: 'a data define a competência; mês já fechado é recusado' });
+
+  registrarCorrecaoPendencia_('Data de odômetro inválida', {
+    aba: O, coluna: 1, tipo: 'data', rotulo: 'Data da leitura',
+    travaCompetencia: true });
+
+  registrarCorrecaoPendencia_('Leitura de KM em período futuro', {
+    aba: O, coluna: 1, tipo: 'data', rotulo: 'Data da leitura',
+    travaCompetencia: true });
+
+  // ---- placa do lancamento. Corrigir aqui e melhor que cadastrar um veiculo
+  // fantasma so para a pendencia sumir.
+  registrarCorrecaoPendencia_('Placa não cadastrada em Veículos', {
+    aba: L, coluna: COL_LANC.PLACA, tipo: 'lista', rotulo: 'Placa / ID',
+    ajuda: 'escolha o veículo certo; se a placa existe mesmo, cadastre-a em Veículos',
+    opcoes: function () { return listaPlacas_(false); } });
+
+  // ---- cadastro do veiculo (ADMIN, localizado pela placa)
+  registrarCorrecaoPendencia_('Lançamento do período em veículo inativo', {
+    aba: V, coluna: COL_VEIC.ATIVO, tipo: 'lista', rotulo: 'Situação do veículo',
+    localizar: 'placa', perfil: 'ADMIN',
+    ajuda: 'reative se ele voltou a rodar; se o lançamento é que está errado, corrija a placa dele',
+    opcoes: function () { return ['SIM', 'NAO']; } });
+
+  registrarCorrecaoPendencia_('Centro de custo do veículo ativo não existe na aba Centros de Custo', {
+    aba: V, coluna: COL_VEIC.CENTRO, tipo: 'lista', rotulo: 'Centro de custo',
+    localizar: 'placa', perfil: 'ADMIN',
+    opcoes: function () { return listaCentros_(); } });
+
+  registrarCorrecaoPendencia_('Código Patrimônio duplicado', {
+    aba: V, coluna: COL_VEIC.CODIGO, tipo: 'texto', rotulo: 'Código Patrimônio',
+    localizar: 'placa', perfil: 'ADMIN',
+    ajuda: 'informe o código correto deste veículo; o outro continua como está' });
+
+  // ---- celulas do cadastro com erro de formula (#REF!, #N/A...). O nome do campo
+  // vem no proprio texto do problema, entao a busca e por PREFIXO.
+  registrarCorrecaoPendenciaPorPrefixo_('Descrição do veículo com erro', {
+    aba: V, coluna: COL_VEIC.DESCRICAO, tipo: 'texto', rotulo: 'Descrição',
+    localizar: 'placa', perfil: 'ADMIN' });
+
+  registrarCorrecaoPendenciaPorPrefixo_('Categoria do veículo com erro', {
+    aba: V, coluna: COL_VEIC.CATEGORIA, tipo: 'lista', rotulo: 'Categoria',
+    localizar: 'placa', perfil: 'ADMIN',
+    opcoes: function () { return listaCategorias_(); } });
+
+  registrarCorrecaoPendenciaPorPrefixo_('Centro de Custo do veículo com erro', {
+    aba: V, coluna: COL_VEIC.CENTRO, tipo: 'lista', rotulo: 'Centro de custo',
+    localizar: 'placa', perfil: 'ADMIN',
+    opcoes: function () { return listaCentros_(); } });
+
   // O caso do gás: o valor costuma estar certo e a quantidade errada (botijão
   // em vez de quilos). Por isso a correção oferecida é a QUANTIDADE.
   registrarCorrecaoPendencia_('Preço por quilo fora da curva', {
@@ -10631,6 +10719,86 @@ function registrarCorrecaoPendencia_(problema, spec) { CORRECOES_PENDENCIA_[prob
     opcoes: function () { return listaCategorias_(); } });
 })();
 
+/**
+ * Pendencias que NAO se resolvem por um campo, mas tem um caminho certo.
+ *
+ * Antes a tela nao dizia nada e o operador ficava com Status/Observacao, que e
+ * o mesmo que nada. Aqui ela aponta o que fazer: ou um botao que executa a
+ * rotina que ja existe, ou um atalho para a tela onde aquilo se resolve.
+ *
+ *   tipo 'rotina' -> botao que chama a funcao nomeada em `executar`
+ *   tipo 'atalho' -> botao que abre a tela `tela`
+ */
+const ACOES_PENDENCIA_ = {
+  'Lançamento sem ID de auditoria': {
+    tipo: 'rotina', executar: 'ids', rotulo: 'Gerar os IDs que faltam',
+    explicacao: 'O ID é gerado pelo sistema, não digitado. A rotina preenche ' +
+      'todos os lançamentos que estão sem ele.' },
+  'ID de lançamento duplicado': {
+    tipo: 'rotina', executar: 'ids', rotulo: 'Gerar os IDs que faltam',
+    explicacao: 'Se um dos lançamentos ficou sem ID, a rotina resolve. Dois ' +
+      'lançamentos com o MESMO ID preenchido precisam de olho humano: um deles ' +
+      'costuma ser cópia indevida do outro.' },
+  'Soma dos percentuais de rateio não fecha 100%': {
+    tipo: 'atalho', tela: 'centros', rotulo: 'Abrir centros de custo',
+    explicacao: 'Não é um campo só: os percentuais se ajustam em conjunto, na ' +
+      'tela de centros, e valem para a competência aberta.' },
+  'Depreciação mensal não lançada': {
+    tipo: 'atalho', tela: 'depreciacao', rotulo: 'Abrir depreciação mensal',
+    explicacao: 'A depreciação é lançada em lote pelo botão “Gerar pendentes”, ' +
+      'no último dia do período.' },
+  'Depreciação mensal divergente': {
+    tipo: 'atalho', tela: 'depreciacao', rotulo: 'Abrir depreciação mensal',
+    explicacao: 'O valor lançado não bate com o cadastro. Confira os dois antes ' +
+      'de relançar — mexer num campo só esconderia a diferença em vez de explicá-la.' },
+  'Depreciação lançada fora do último dia do período': {
+    tipo: 'atalho', tela: 'depreciacao', rotulo: 'Abrir depreciação mensal',
+    explicacao: 'A data do lançamento é que está errada, e mudá-la pode trocar a ' +
+      'competência. Trate pela tela de depreciação.' },
+  'Abasteceu mas não tem KM rodado no período': {
+    tipo: 'atalho', tela: 'lancar', rotulo: 'Lançar leitura de odômetro',
+    explicacao: 'Falta uma LEITURA nova, não um campo errado: o KM rodado precisa ' +
+      'de pelo menos duas leituras no período.' },
+  'Sem nenhum custo no período': {
+    tipo: 'informativo',
+    explicacao: 'Não é defeito: o veículo simplesmente não teve despesa no período. ' +
+      'Se ele parou de rodar de vez, o certo é inativá-lo no cadastro.' },
+};
+
+function acaoDaPendencia_(problema) {
+  return ACOES_PENDENCIA_[String(problema || '').trim()] || null;
+}
+
+/** Executa a rotina de reparo associada a uma pendencia. */
+function webAcaoPendencia(token, linhaPendencia) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const sheetPend = garantirAbaPendencias_(false);
+  const alvo = Math.floor(Number(linhaPendencia) || 0);
+  if (!sheetPend || alvo < 3 || alvo > sheetPend.getLastRow()) {
+    return { ok: false, mensagem: 'Pendência não encontrada. Clique em “Revalidar”.' };
+  }
+  const problema = String(sheetPend.getRange(alvo, 3).getValue() || '').trim();
+  const acao = acaoDaPendencia_(problema);
+  if (!acao || acao.tipo !== 'rotina') {
+    return { ok: false, mensagem: 'Esta pendência não tem rotina automática.' };
+  }
+
+  let feito;
+  if (acao.executar === 'ids') feito = garantirIdsLancamentos_();
+  else return { ok: false, mensagem: 'Rotina desconhecida: ' + acao.executar + '.' };
+
+  invalidarCachesDaAba_(ABAS.LANCAMENTOS);
+  registrarLog_('Rotina de pendência', problema + ' • ' + acao.executar + ' • ' + feito + ' item(ns)');
+  const restantes = revalidarPendenciasSeguro_();
+  return {
+    ok: true,
+    mensagem: feito + ' lançamento(s) receberam ID. ' +
+      (restantes === null ? 'Conferência não pôde ser refeita agora.'
+        : restantes + ' pendência(s) em aberto.'),
+    pendentes: restantes,
+  };
+}
+
 /** Coluna da placa em cada aba, para a reverificacao do alvo. */
 function colunaPlacaDaAba_(aba) {
   if (aba === ABAS.LANCAMENTOS) return COL_LANC.PLACA;
@@ -10653,7 +10821,7 @@ function linhaAlvoPendencia_(detalhe) {
 
 /** Descricao da correcao possivel para uma pendencia, ou null. */
 function correcaoDaPendencia_(origem, problema, detalhe, placa) {
-  const spec = CORRECOES_PENDENCIA_[String(problema || '').trim()];
+  const spec = specDaPendencia_(problema);
   if (!spec) return null;
   if (spec.aba !== origem) return null;
   const porPlaca = spec.localizar === 'placa';
@@ -10705,8 +10873,66 @@ function alvoCorrecaoPendencia_(spec, linhaAlvo, placaEsperada) {
   return { ok: true, sheet: sheet, linha: linhaAlvo };
 }
 
+/** Competencias ja fechadas, lidas do Historico. */
+function competenciasFechadas_() {
+  const fechadas = {};
+  const hist = ss_().getSheetByName(ABAS.HISTORICO);
+  if (hist && hist.getLastRow() >= 2) {
+    hist.getRange(2, 1, hist.getLastRow() - 1, 1).getDisplayValues().forEach(function (l) {
+      const m = String(l[0] || '').trim();
+      if (/^\d{4}-\d{2}$/.test(m)) fechadas[m] = true;
+    });
+  }
+  return fechadas;
+}
+
+/**
+ * Impede que uma correcao de data toque um periodo ja fechado.
+ *
+ * Confere os DOIS lados. A data nova obviamente — ninguem pode empurrar despesa
+ * para dentro de um mes assinado. Mas a velha tambem: tirar um lancamento de um
+ * mes fechado muda o total e o hash dele por tras, e o fechamento deixa de
+ * valer sem ninguem saber. Nos dois casos a correcao e recusada e a saida e
+ * reabrir a competencia, de proposito e por escrito.
+ */
+function travaCompetenciaFechada_(dataAntiga, dataNova) {
+  const fechadas = competenciasFechadas_();
+  const lados = [
+    { rotulo: 'A data atual', data: dataAntiga },
+    { rotulo: 'A data nova', data: dataNova },
+  ];
+  for (let i = 0; i < lados.length; i++) {
+    const d = lados[i].data;
+    if (!(d instanceof Date) || isNaN(d.getTime())) continue;
+    const mes = mesCompetenciaDaData_(d);
+    if (fechadas[mes]) {
+      return { ok: false, mensagem: lados[i].rotulo + ' cai na competência ' + mes +
+        ', que já foi fechada. Corrigir aqui mudaria o total e o hash de um período ' +
+        'assinado. Reabra a competência antes, se for mesmo o caso.' };
+    }
+  }
+  return { ok: true };
+}
+
 /** Converte e valida o valor digitado conforme o tipo do campo. */
 function valorCorrecaoPendencia_(spec, bruto) {
+  if (spec.tipo === 'data') {
+    // O <input type="date"> manda AAAA-MM-DD. Montar com new Date(texto) leria
+    // como UTC e poderia voltar um dia em fuso negativo — o que, num sistema com
+    // corte no dia 25, joga o lancamento para a competencia anterior.
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(bruto || '').trim());
+    if (!m) return { ok: false, mensagem: spec.rotulo + ': informe uma data válida.' };
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0);
+    if (isNaN(d.getTime()) || d.getDate() !== Number(m[3])) {
+      return { ok: false, mensagem: spec.rotulo + ': essa data não existe.' };
+    }
+    const limite = new Date();
+    limite.setFullYear(limite.getFullYear() + 1);
+    if (d > limite) {
+      return { ok: false, mensagem: spec.rotulo + ': data mais de um ano no futuro.' };
+    }
+    return { ok: true, valor: d };
+  }
   if (spec.tipo === 'numero') {
     const texto = String(bruto === undefined || bruto === null ? '' : bruto).trim()
       .replace(/\./g, '').replace(',', '.');
@@ -10752,7 +10978,7 @@ function webCorrigirPendencia(token, linhaPendencia, valorNovo) {
   const problema = String(p[2] || '').trim();
   const detalhe = String(p[3] || '').trim();
 
-  const spec = CORRECOES_PENDENCIA_[problema];
+  const spec = specDaPendencia_(problema);
   if (!spec || spec.aba !== origem) {
     return { ok: false, mensagem: 'Esta pendência não se resolve por um campo só; ' +
       'é preciso tratá-la na planilha.' };
@@ -10769,7 +10995,14 @@ function webCorrigirPendencia(token, linhaPendencia, valorNovo) {
 
   const celula = alvo.sheet.getRange(alvo.linha, spec.coluna);
   const anterior = celula.getValue();
+
+  if (spec.travaCompetencia) {
+    const trava = travaCompetenciaFechada_(anterior, convertido.valor);
+    if (!trava.ok) return { ok: false, mensagem: trava.mensagem };
+  }
+
   celula.setValue(convertido.valor);
+  if (spec.tipo === 'data') celula.setNumberFormat('dd/mm/yyyy');
 
   invalidarCachesDaAba_(spec.aba);
   registrarLog_('Corrigir pendência',

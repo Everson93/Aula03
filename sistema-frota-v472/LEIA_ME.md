@@ -560,6 +560,77 @@ exercitá-lo direto; separar a decisão resolve isso sem fixture.
 
 ---
 
+# V4.9.3 — cobertura das pendências: 14 → 25 campos, mais 8 com caminho
+
+A V4.9.1 deixou 14 dos ~30 tipos de pendência corrigíveis na tela. O resto
+continuava só com Status e Observação, que é o mesmo que nada.
+
+Agora são **25 corrigíveis por campo** e **8 com caminho explícito** — botão de
+rotina ou atalho para a tela certa. Sobram poucos casos, e eles estão listados
+abaixo com o motivo.
+
+## Datas entraram, com trava
+
+Na V4.9.1 eu deixei datas de fora por um motivo que continua valendo: mudar a
+data de um lançamento muda a **competência** dele. A decisão foi errada na
+forma, não no fundo — o certo não era excluir, era **travar**:
+
+`travaCompetenciaFechada_` confere os **dois lados**. A data nova, obviamente:
+ninguém empurra despesa para dentro de um mês assinado. Mas a antiga também —
+**tirar** um lançamento de um mês fechado muda o total e o hash dele por trás, e
+o fechamento deixa de valer sem ninguém saber. Nos dois casos a correção é
+recusada, e a saída é reabrir a competência, de propósito e por escrito.
+
+> **Fuso.** O `<input type="date">` manda `AAAA-MM-DD`. Montar com
+> `new Date(texto)` leria como UTC e poderia voltar um dia em fuso negativo — o
+> que, num sistema com corte no dia 25, joga o lançamento para a competência
+> anterior. A data é montada por ano/mês/dia ao meio-dia.
+
+Tipos cobertos: Data inválida, Lançamento em período futuro, Data de odômetro
+inválida, Leitura de KM em período futuro.
+
+## Outros campos que entraram
+
+| Problema | Campo | Perfil |
+|---|---|---|
+| Placa não cadastrada em Veículos | placa do lançamento (lista) | OPERADOR |
+| Lançamento do período em veículo inativo | Situação do veículo | ADMIN |
+| Centro de custo do veículo não existe | Centro (lista) | ADMIN |
+| Código Patrimônio duplicado | Código Patrimônio | ADMIN |
+| Descrição / Categoria / Centro **com erro de fórmula** | o campo correspondente | ADMIN |
+
+Os três últimos trazem o valor no **próprio nome** do problema
+("Descrição do veículo com erro (#REF!)"), então busca exata nunca casaria.
+Eles ficam num registro por **prefixo**, consultado depois da busca exata.
+
+## O que não vira campo — e ganhou botão
+
+- **Sem ID de auditoria / ID duplicado** → botão que roda
+  `garantirIdsLancamentos_()`. O ID é gerado, não digitado.
+- **Soma do rateio ≠ 100%** → atalho para a tela de centros. Não é um campo só:
+  os percentuais se ajustam em conjunto.
+- **Depreciação não lançada / divergente / fora de data** → atalho para a tela
+  de depreciação, que lança em lote.
+- **Abasteceu mas não tem KM rodado** → atalho para lançamento. Falta uma
+  leitura **nova**, não um campo errado.
+- **Sem nenhum custo no período** → informativo. Não é defeito; se o veículo
+  parou de vez, o certo é inativá-lo.
+
+Cada ação carrega uma **explicação** do porquê — há teste conferindo que nenhuma
+fica sem ela. Botão sem motivo vira clique no escuro.
+
+## Suíte
+
+`conferir_corrigir_pendencia.js` passou de 29 para **55 provas**. Por mutação,
+desligando a trava de competência, 5 falham.
+
+Uma prova foi **invertida**, não apagada: ela dizia "data fica de fora de
+propósito". A decisão mudou de excluir para travar, e a prova mudou junto,
+com o comentário do porquê — apagar teria deixado a trava sem guarda.
+
+
+---
+
 # Pendente
 
 - **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo
