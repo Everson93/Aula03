@@ -631,6 +631,75 @@ com o comentário do porquê — apagar teria deixado a trava sem guarda.
 
 ---
 
+# V4.9.4 — a pendência que estava registrada mas não aparecia
+
+"Leitura de KM menor que a anterior" **estava** na lista de corrigíveis desde a
+V4.9.1, e mesmo assim o cartão dela na tela não mostrava campo nenhum. Só
+Status e Observação, como antes.
+
+A causa: o coletor escrevia o detalhe dela como
+
+```
+2026-10 • 06/10/2026: 677096 < 678573 (linha 96)
+```
+
+com o número **no fim, entre parênteses** — enquanto as outras 24 escrevem
+`linha 96 • ...`. O parser (`linhaAlvoPendencia_`) exigia o prefixo, não
+reconhecia, `correcaoDaPendencia_` devolvia `null`, e o campo simplesmente não
+era renderizado. Sem erro, sem aviso. A pendência ficava impossível de resolver
+pela tela.
+
+Era um de 25. Um único formato fora do padrão.
+
+## Corrigido em três níveis
+
+**O formato.** O coletor passou a escrever `linha 96 • 2026-10 • ...`, como
+todos os outros.
+
+**O parser.** Continua preferindo o prefixo, mas agora tem rede de segurança
+para `(linha N)` em qualquer posição. Parser rígido demais transforma
+divergência de texto em campo que some da tela sem erro — que foi exatamente o
+que aconteceu aqui.
+
+**A regra que impede a volta.** É a parte que importa.
+
+## `conferir_alvo_pendencia.js`
+
+Um teste de unidade do parser **não pegaria** este defeito: o parser estava
+certo para o formato que ele conhecia. O que faltava era confrontar os dois
+lados — quem **registra** a correção e quem **escreve** o detalhe. Eles vivem a
+3.000 linhas de distância e nada os obrigava a concordar.
+
+A suíte lê o próprio `Codigo.gs`, extrai cada `problemas.push([...])` pelo
+balanceamento de colchetes (regex não dá conta: os detalhes têm concatenação com
+parênteses dentro), pega o nome do problema e a expressão do detalhe, e cobra:
+
+> Todo problema registrado como corrigível por campo, e que não se localize pela
+> placa, tem de produzir um detalhe que **comece** com `'linha '`.
+
+Validada por mutação: restaurando o formato antigo, a regra falha e **nomeia o
+problema e o detalhe**, dizendo o que corrigir.
+
+Ela ainda confere um segundo invariante: **nenhum tipo de pendência fica sem
+campo e sem caminho**. Hoje o resultado é `nenhum` — todos os ~30 tipos têm ou
+um campo, ou um botão de rotina, ou um atalho, ou uma explicação de por que não
+há o que corrigir.
+
+## A lição
+
+Esta é a terceira vez neste projeto que a suíte passa verde enquanto o sistema
+faz outra coisa:
+
+1. Os relatórios de evolução lendo o campo errado — o teste só conferia largura.
+2. O preço unitário — o teste reimplementava a regra em vez de chamá-la.
+3. Esta — o teste exercitava o parser, não o acordo entre parser e coletor.
+
+O padrão é sempre o mesmo: o teste olha **um lado** de um contrato que tem dois.
+As regras estáticas que leem o código-fonte são a resposta que tem funcionado.
+
+
+---
+
 # Pendente
 
 - **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo

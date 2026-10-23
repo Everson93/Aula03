@@ -477,7 +477,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.9.3';
+const VERSAO_SISTEMA = '4.9.4';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -4518,10 +4518,15 @@ function coletarProblemas_(opcoesColeta) {
       const dataAtual = dadosValidos[i][0];
       if (dataAtual < periodo.inicio || dataAtual > periodo.fim) continue;
       if (Number(dadosValidos[i][2]) < Number(dadosValidos[i - 1][2])) {
+        // O numero da linha vem PRIMEIRO, como em todas as outras pendencias:
+        // e dele que a correcao na tela tira o alvo. Esta aqui estava com
+        // "(linha N)" no fim e, por isso, era a unica corrigivel que nao
+        // oferecia o campo — o parser nao a reconhecia.
         problemas.push([ABAS.ODOMETRO, String(dadosValidos[i][1]),
           'Leitura de KM menor que a anterior',
-          periodo.mesRef + ' • ' + formatarData_(dataAtual) + ': ' + dadosValidos[i][2] +
-          ' < ' + dadosValidos[i - 1][2] + ' (linha ' + dadosValidos[i][3] + ')']);
+          'linha ' + dadosValidos[i][3] + ' • ' + periodo.mesRef + ' • ' +
+          formatarData_(dataAtual) + ': ' + dadosValidos[i][2] +
+          ' < ' + dadosValidos[i - 1][2]]);
       }
     }
   }
@@ -10815,8 +10820,16 @@ function colunaPlacaDaAba_(aba) {
  * seguro: melhor nao oferecer o campo do que gravar na linha errada.
  */
 function linhaAlvoPendencia_(detalhe) {
-  const m = /^linha\s+(\d+)/.exec(String(detalhe || '').trim());
-  return m ? Number(m[1]) : 0;
+  const texto = String(detalhe || '').trim();
+  const padrao = /^linha\s+(\d+)\b/.exec(texto);
+  if (padrao) return Number(padrao[1]);
+  // Rede de seguranca para detalhes que escrevem "(linha 96)" no fim. O formato
+  // oficial e o prefixo — ha regra estatica na suite cobrando isso —, mas um
+  // parser rigido demais transforma divergencia de texto em campo que some da
+  // tela sem erro nenhum, que foi exatamente o que aconteceu com a leitura de
+  // KM retrocedida.
+  const solto = /\blinha\s+(\d+)\b/.exec(texto);
+  return solto ? Number(solto[1]) : 0;
 }
 
 /** Descricao da correcao possivel para uma pendencia, ou null. */
