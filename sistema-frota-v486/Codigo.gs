@@ -548,7 +548,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.11.4';
+const VERSAO_SISTEMA = '4.11.5';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -10755,7 +10755,8 @@ function webPendencias(token) {
       validadoEm: l[6] instanceof Date ? Utilities.formatDate(l[6], timezone_(), 'dd/MM/yyyy HH:mm') : String(l[6] || '')
     });
   });
-  return { total: pendentes + analise, pendentes: pendentes, analise: analise, linhas: linhas };
+  return { total: pendentes + analise, pendentes: pendentes, analise: analise,
+    linhas: linhas, listas: listasDeCorrecao_() };
 }
 
 // ====================================================== V4.9.1: corrigir pendência na hora
@@ -10790,6 +10791,42 @@ function registrarCorrecaoPendenciaPorPrefixo_(prefixo, spec) {
   CORRECOES_PENDENCIA_PREFIXO_.push({ prefixo: prefixo, spec: spec });
 }
 
+/**
+ * Listas de opcoes dos campos de correcao, resolvidas POR NOME.
+ *
+ * Antes cada spec carregava a propria funcao e correcaoDaPendencia_ a chamava
+ * uma vez POR PENDENCIA. Com 110 pendencias e 170 veiculos isso era 110
+ * reconstrucoes da lista de placas por requisicao — e, pior, as 110 copias
+ * identicas viajavam para o navegador: 117 KB onde bastavam 43.
+ *
+ * Agora a spec diz so o NOME da lista, webPendencias manda cada uma uma vez, e
+ * a tela resolve. Nome em vez de funcao tambem deixa a spec serializavel, o que
+ * e o que permite manda-la para o cliente sem avaliar nada.
+ */
+function opcoesDaLista_(nome) {
+  if (nome === 'naturezas') return NATUREZAS_OFICINA.slice();
+  if (nome === 'tipos') return TIPOS_DESPESA.slice();
+  if (nome === 'centros') return listaCentros_();
+  if (nome === 'categorias') return listaCategorias_();
+  if (nome === 'placas') return listaPlacas_(false);
+  if (nome === 'situacao') return ['SIM', 'NAO'];
+  return [];
+}
+
+/** Todas as listas usadas pelos campos de correcao, montadas UMA vez. */
+function listasDeCorrecao_() {
+  const nomes = {};
+  Object.keys(CORRECOES_PENDENCIA_).forEach(function (k) {
+    if (CORRECOES_PENDENCIA_[k].lista) nomes[CORRECOES_PENDENCIA_[k].lista] = true;
+  });
+  CORRECOES_PENDENCIA_PREFIXO_.forEach(function (x) {
+    if (x.spec.lista) nomes[x.spec.lista] = true;
+  });
+  const saida = {};
+  Object.keys(nomes).forEach(function (n) { saida[n] = opcoesDaLista_(n); });
+  return saida;
+}
+
 /** Spec de correcao de um problema: exata primeiro, depois por prefixo. */
 function specDaPendencia_(problema) {
   const nome = String(problema || '').trim();
@@ -10808,7 +10845,7 @@ function specDaPendencia_(problema) {
   registrarCorrecaoPendencia_('Oficina sem natureza da despesa', {
     aba: L, coluna: COL_LANC.NATUREZA_OFICINA, tipo: 'lista', rotulo: 'Natureza da despesa',
     ajuda: 'classifique como peça, serviço ou outra natureza',
-    opcoes: function () { return NATUREZAS_OFICINA.slice(); } });
+    lista: 'naturezas' });
 
   registrarCorrecaoPendencia_('Oficina sem detalhe da peça/serviço', {
     aba: L, coluna: COL_LANC.DETALHE_OFICINA, tipo: 'texto', rotulo: 'Detalhe da peça / serviço',
@@ -10820,19 +10857,19 @@ function specDaPendencia_(problema) {
 
   registrarCorrecaoPendencia_('Lançamento incompleto (sem tipo de despesa)', {
     aba: L, coluna: COL_LANC.TIPO, tipo: 'lista', rotulo: 'Tipo de despesa',
-    opcoes: function () { return TIPOS_DESPESA.slice(); } });
+    lista: 'tipos' });
 
   registrarCorrecaoPendencia_('Tipo de despesa desconhecido', {
     aba: L, coluna: COL_LANC.TIPO, tipo: 'lista', rotulo: 'Tipo de despesa',
-    opcoes: function () { return TIPOS_DESPESA.slice(); } });
+    lista: 'tipos' });
 
   registrarCorrecaoPendencia_('Lançamento sem centro de custo congelado', {
     aba: L, coluna: COL_LANC.CENTRO, tipo: 'lista', rotulo: 'Centro de custo',
-    opcoes: function () { return listaCentros_(); } });
+    lista: 'centros' });
 
   registrarCorrecaoPendencia_('Lançamento sem categoria congelada', {
     aba: L, coluna: COL_LANC.CATEGORIA, tipo: 'lista', rotulo: 'Categoria',
-    opcoes: function () { return listaCategorias_(); } });
+    lista: 'categorias' });
 
   registrarCorrecaoPendencia_('Valor negativo', {
     aba: L, coluna: COL_LANC.VALOR, tipo: 'numero', rotulo: 'Valor R$', minimoNumero: 0,
@@ -10870,19 +10907,19 @@ function specDaPendencia_(problema) {
   registrarCorrecaoPendencia_('Placa não cadastrada em Veículos', {
     aba: L, coluna: COL_LANC.PLACA, tipo: 'lista', rotulo: 'Placa / ID',
     ajuda: 'escolha o veículo certo; se a placa existe mesmo, cadastre-a em Veículos',
-    opcoes: function () { return listaPlacas_(false); } });
+    lista: 'placas' });
 
   // ---- cadastro do veiculo (ADMIN, localizado pela placa)
   registrarCorrecaoPendencia_('Lançamento do período em veículo inativo', {
     aba: V, coluna: COL_VEIC.ATIVO, tipo: 'lista', rotulo: 'Situação do veículo',
     localizar: 'placa', perfil: 'ADMIN',
     ajuda: 'reative se ele voltou a rodar; se o lançamento é que está errado, corrija a placa dele',
-    opcoes: function () { return ['SIM', 'NAO']; } });
+    lista: 'situacao' });
 
   registrarCorrecaoPendencia_('Centro de custo do veículo ativo não existe na aba Centros de Custo', {
     aba: V, coluna: COL_VEIC.CENTRO, tipo: 'lista', rotulo: 'Centro de custo',
     localizar: 'placa', perfil: 'ADMIN',
-    opcoes: function () { return listaCentros_(); } });
+    lista: 'centros' });
 
   registrarCorrecaoPendencia_('Código Patrimônio duplicado', {
     aba: V, coluna: COL_VEIC.CODIGO, tipo: 'texto', rotulo: 'Código Patrimônio',
@@ -10898,12 +10935,12 @@ function specDaPendencia_(problema) {
   registrarCorrecaoPendenciaPorPrefixo_('Categoria do veículo com erro', {
     aba: V, coluna: COL_VEIC.CATEGORIA, tipo: 'lista', rotulo: 'Categoria',
     localizar: 'placa', perfil: 'ADMIN',
-    opcoes: function () { return listaCategorias_(); } });
+    lista: 'categorias' });
 
   registrarCorrecaoPendenciaPorPrefixo_('Centro de Custo do veículo com erro', {
     aba: V, coluna: COL_VEIC.CENTRO, tipo: 'lista', rotulo: 'Centro de custo',
     localizar: 'placa', perfil: 'ADMIN',
-    opcoes: function () { return listaCentros_(); } });
+    lista: 'centros' });
 
   // O caso do gás: o valor costuma estar certo e a quantidade errada (botijão
   // em vez de quilos). Por isso a correção oferecida é a QUANTIDADE.
@@ -10926,12 +10963,12 @@ function specDaPendencia_(problema) {
   registrarCorrecaoPendencia_('Veículo ativo sem centro de custo', {
     aba: V, coluna: COL_VEIC.CENTRO, tipo: 'lista', rotulo: 'Centro de custo',
     localizar: 'placa', perfil: 'ADMIN',
-    opcoes: function () { return listaCentros_(); } });
+    lista: 'centros' });
 
   registrarCorrecaoPendencia_('Veículo ativo sem categoria', {
     aba: V, coluna: COL_VEIC.CATEGORIA, tipo: 'lista', rotulo: 'Categoria',
     localizar: 'placa', perfil: 'ADMIN',
-    opcoes: function () { return listaCategorias_(); } });
+    lista: 'categorias' });
 })();
 
 /**
@@ -11057,7 +11094,7 @@ function correcaoDaPendencia_(origem, problema, detalhe, placa) {
   if (porPlaca && !String(placa || '').trim()) return null;
   return {
     aba: spec.aba, linha: linha, tipo: spec.tipo, rotulo: spec.rotulo,
-    ajuda: spec.ajuda || '', opcoes: spec.opcoes ? spec.opcoes() : null,
+    ajuda: spec.ajuda || '', lista: spec.lista || null,
     somenteAdmin: spec.perfil === 'ADMIN',
   };
 }
@@ -11172,7 +11209,7 @@ function valorCorrecaoPendencia_(spec, bruto) {
   }
   const texto = String(bruto === undefined || bruto === null ? '' : bruto).trim();
   if (spec.tipo === 'lista') {
-    const opcoes = spec.opcoes ? spec.opcoes() : [];
+    const opcoes = opcoesDaLista_(spec.lista);
     if (opcoes.indexOf(texto) === -1) {
       return { ok: false, mensagem: spec.rotulo + ': escolha uma das opções da lista.' };
     }

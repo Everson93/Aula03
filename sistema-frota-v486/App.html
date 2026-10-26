@@ -2665,9 +2665,13 @@
     }
     var campo;
     if (c.tipo === 'lista') {
+      // As listas vêm UMA vez na resposta, não repetidas em cada pendência:
+      // com 110 itens e 170 veículos eram 117 KB de cópias idênticas.
+      var opcoes = (PENDENCIAS_CLIENTE && PENDENCIAS_CLIENTE.listas &&
+        PENDENCIAS_CLIENTE.listas[c.lista]) || [];
       campo = '<select id="pfix_' + p.linha + '">' +
         '<option value="">— escolha —</option>' +
-        (c.opcoes || []).map(function (o) {
+        opcoes.map(function (o) {
           return '<option value="' + esc(o) + '">' + esc(o) + '</option>';
         }).join('') + '</select>';
     } else if (c.tipo === 'numero') {

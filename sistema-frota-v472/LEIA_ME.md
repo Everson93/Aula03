@@ -1264,6 +1264,50 @@ checagem de "ainda presente", 3 falham.
 
 ---
 
+# V4.11.5 — a tela de pendências mandava a frota inteira 110 vezes
+
+Medindo a lentidão relatada, o maior peso estava num lugar recente e específico.
+
+`correcaoDaPendencia_` chamava `spec.opcoes()` **uma vez por pendência**. Com
+110 pendências e 170 veículos, isso era:
+
+- **110 reconstruções** da lista de placas por requisição;
+- **110 cópias idênticas** dela viajando para o navegador.
+
+```
+110 pendências, 170 veículos, 30 centros
+  listas repetidas em cada item :  117 KB
+  listas enviadas uma vez       :   43 KB
+  redução                       :   63%
+```
+
+A spec agora diz só o **nome** da lista (`'placas'`, `'centros'`,
+`'categorias'`, `'tipos'`, `'naturezas'`, `'situacao'`), `webPendencias` manda
+cada uma **uma vez**, e a tela resolve. `opcoesDaLista_` é o único lugar que
+sabe montar cada uma.
+
+Nome em vez de função também deixa a spec serializável — que é justamente o que
+permite mandá-la ao cliente sem avaliar nada.
+
+Guarda de regressão em `conferir_corrigir_pendencia.js`: nenhuma spec pode ter
+`opcoes`, e toda spec de tipo `lista` precisa nomear a lista.
+
+## Sobre modularizar
+
+A pergunta veio junto: separar em vários arquivos deixaria mais rápido?
+
+**Não.** No Apps Script todos os `.gs` são concatenados num escopo global único
+e compilados juntos a cada execução — dois arquivos de 7.000 linhas custam o
+mesmo que um de 14.000. E `HtmlService.createHtmlOutputFromFile` **inlina** o
+conteúdo, então separar o HTML também não muda um byte do que o navegador
+recebe.
+
+Separar vale por **organização** — o editor do Apps Script fica lento num
+arquivo de 14 mil linhas. É ganho de conforto, não de desempenho.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de

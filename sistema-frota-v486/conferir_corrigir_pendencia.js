@@ -62,6 +62,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     valorCorrecaoPendencia_, CORRECOES_PENDENCIA_, ABAS, COL_LANC, COL_VEIC,
     NATUREZAS_OFICINA, TIPOS_DESPESA, specDaPendencia_, acaoDaPendencia_,
     webAcaoPendencia, travaCompetenciaFechada_, ACOES_PENDENCIA_,
+    opcoesDaLista_, listasDeCorrecao_,
   });
   exigirExecucaoMutacao_ = function () {};
   exigirExecucaoLeitura_ = function () {};
@@ -236,7 +237,13 @@ const c = ctx.correcaoDaPendencia_(L, 'Oficina sem natureza da despesa',
   'linha 4 • classifique', 'MKZ 6729');
 ok('tipo, rótulo e linha vêm preenchidos',
   c && c.tipo === 'lista' && c.linha === 4 && c.rotulo, JSON.stringify(c));
-ok('as opções da lista vêm junto', c && c.opcoes && c.opcoes.length > 0, JSON.stringify(c && c.opcoes));
+// A spec passou a nomear a lista em vez de carregá-la: as opções viajam UMA vez
+// na resposta, não em cada pendência. Ver opcoesDaLista_.
+ok('a correção nomeia a lista a usar', c && c.lista === 'naturezas', JSON.stringify(c && c.lista));
+ok('e o nome resolve numa lista não vazia',
+  ctx.opcoesDaLista_('naturezas').length > 0, JSON.stringify(ctx.opcoesDaLista_('naturezas')));
+ok('nome desconhecido devolve lista vazia, sem quebrar',
+  JSON.stringify(ctx.opcoesDaLista_('inexistente')) === '[]');
 const cv = ctx.correcaoDaPendencia_(V, 'Veículo ativo sem centro de custo', '', 'AAA1A11');
 ok('correção de cadastro vem marcada como somenteAdmin', cv && cv.somenteAdmin === true, JSON.stringify(cv));
 
@@ -345,6 +352,30 @@ ok('toda ação traz explicação, senão o operador fica sem saber o porquê',
   Object.keys(ctx.ACOES_PENDENCIA_).every(function (k) {
     return String(ctx.ACOES_PENDENCIA_[k].explicacao || '').length > 20;
   }));
+
+console.log('\n12. Nenhuma correção carrega a lista inteira junto');
+// Guarda de regressão: a lista de opções não pode voltar para dentro do item.
+// Com 110 pendências e 170 veículos, as cópias idênticas eram 117 KB de JSON —
+// 63% da resposta — e 110 reconstruções da lista por requisição.
+const comLista = [];
+Object.keys(ctx.CORRECOES_PENDENCIA_).forEach(function (nome) {
+  const spec = ctx.CORRECOES_PENDENCIA_[nome];
+  if (spec.opcoes !== undefined) comLista.push(nome);
+  if (spec.tipo === 'lista' && !spec.lista) comLista.push(nome + ' (tipo lista sem nome de lista)');
+});
+ok('toda spec de lista nomeia a lista, nenhuma carrega a lista', comLista.length === 0,
+  comLista.join(', '));
+const amostra = ctx.correcaoDaPendencia_(L, 'Oficina sem natureza da despesa',
+  'linha 4 • classifique', 'MKZ 6729');
+ok('e o que vai para a tela não traz array de opções',
+  amostra && amostra.opcoes === undefined && typeof amostra.lista === 'string',
+  JSON.stringify(amostra));
+const listas = ctx.listasDeCorrecao_();
+ok('listasDeCorrecao_ cobre todas as listas nomeadas',
+  Object.keys(listas).length >= 5, JSON.stringify(Object.keys(listas)));
+ok('e cada nome resolve numa lista', Object.keys(listas).every(function (k) {
+  return Array.isArray(listas[k]);
+}), JSON.stringify(listas));
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);
