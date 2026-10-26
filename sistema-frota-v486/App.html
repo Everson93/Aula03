@@ -789,6 +789,7 @@
       { id: 'lancar', icone: '➕', rotulo: 'Novo lançamento', busca: 'despesa abastecimento gastar', fn: telaLancar },
       { id: 'lancamentos', icone: '🗑️', rotulo: 'Corrigir / excluir lançamento', busca: 'apagar remover errado despesa estornar justificativa', fn: telaLancamentos },
       { id: 'bomba', icone: '⛽', rotulo: 'Carga na bomba', busca: 'tanque diesel arla abastecer nota estoque combustível', fn: telaBomba },
+      { id: 'comprovantes', icone: '🧾', rotulo: 'Comprovantes atrasados', busca: 'fora do período atrasado loja comprovante nota antiga retroativo', fn: telaComprovantes },
       { id: 'consulta', icone: '🔍', rotulo: 'Consultar veículo', busca: 'placa extrato', fn: telaConsulta }
     ] },
     { grupo: 'Relatórios', itens: [
@@ -2212,6 +2213,201 @@
       (fecha ? ' — fecha em 100%.'
              : ' — não fecha 100%. O rateio é normalizado e continua batendo com o Resumo, ' +
                'mas confira se ficou faltando alguém.');
+  }
+
+  // ------------------------------------------- comprovantes atrasados (V4.11)
+  // Comprovante que chega depois da competência fechar. Fica num registro
+  // apartado que NÃO toca em fechamento nenhum, e só vira despesa quando alguém
+  // clica em Incorporar — aí no período ABERTO, com a data original guardada.
+  var COMPROVANTES_CLIENTE = null;
+  var FILTRO_COMPROVANTE = 'PENDENTE';
+
+  function telaComprovantes() {
+    carregando('carregando comprovantes…');
+    google.script.run.withSuccessHandler(desenharComprovantes)
+      .withFailureHandler(falha).webComprovantes(TOKEN, FILTRO_COMPROVANTE);
+  }
+
+  function trocarFiltroComprovante() {
+    FILTRO_COMPROVANTE = el('compFiltro') ? el('compFiltro').value : 'PENDENTE';
+    telaComprovantes();
+  }
+
+  function desenharComprovantes(d) {
+    COMPROVANTES_CLIENTE = d;
+    var admin = SESSAO && SESSAO.perfil === 'ADMIN';
+
+    var porComp = (d.porCompetencia || []).map(function (c) {
+      return '<div class="item"><div class="r">' + esc(c.competencia) + '</div>' +
+        '<div class="v">' + brl(c.valor) + '</div>' +
+        '<div class="nota">' + c.qtd + ' comprovante(s)</div></div>';
+    }).join('');
+
+    var lista = (d.itens || []).map(function (i) {
+      var acoes = '';
+      if (admin && i.situacao === 'PENDENTE') {
+        acoes =
+          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+            '<button class="acao" id="cinc_' + i.linha + '" ' +
+              'onclick="incorporarComprovante(' + i.linha + ')">Incorporar no mês aberto</button>' +
+            '<button class="acao secundaria" onclick="pedirDescarte(' + i.linha + ')">Descartar</button>' +
+          '</div>' +
+          '<div id="cdesc_' + i.linha + '"></div>';
+      }
+      return '<div class="cartao" style="margin-bottom:10px">' +
+        '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">' +
+          '<div><b>' + esc(i.placa) + ' • ' + esc(i.data) + '</b>' +
+            '<div class="sub2" style="margin-top:4px">' + esc(i.tipo) +
+            (i.documento ? ' • NF ' + esc(i.documento) : '') +
+            ' • ' + esc(i.centro) + '</div></div>' +
+          '<span class="chip">' + esc(i.situacao) + '</span></div>' +
+        '<div class="sub" style="margin:10px 0">' +
+          'Competência de origem <b>' + esc(i.competencia) + '</b> • ' + brl(i.valor) +
+          (i.litros ? ' • ' + num(i.litros, 2) + ' L' : '') +
+          (i.km ? ' • KM ' + num(i.km) : '') + '</div>' +
+        (i.observacao ? '<div class="sub2">' + esc(i.observacao) + '</div>' : '') +
+        acoes + '<div id="cmsg_' + i.linha + '"></div></div>';
+    }).join('');
+
+    el('tela').innerHTML =
+      '<div class="dash-head"><div><div class="dash-eyebrow">Fora do período</div>' +
+        '<h2>Comprovantes atrasados</h2>' +
+        '<p>Comprovante que chegou depois do fechamento. Fica registrado aqui e ' +
+        '<b>não afeta nenhuma competência</b> até ser incorporado.</p></div></div>' +
+      (d.pendentes
+        ? '<div class="dash-mini">' +
+            '<div class="item"><div class="r">Pendentes</div><div class="v">' + num(d.pendentes) + '</div></div>' +
+            '<div class="item"><div class="r">Valor fora do mapa</div><div class="v">' + brl(d.valorPendente) + '</div></div>' +
+            '<div class="item"><div class="r">Litros fora do mapa</div><div class="v">' + num(d.litrosPendentes, 2) + '</div></div>' +
+          '</div>' +
+          (porComp ? '<div class="sub" style="margin:4px 0 8px">Por competência de origem</div>' +
+            '<div class="dash-mini">' + porComp + '</div>' : '')
+        : '<div class="ok-caixa">Nenhum comprovante pendente.</div>') +
+      cartaoRegistrarComprovante() +
+      '<div class="barra"><div><label for="compFiltro">Mostrar</label>' +
+        '<select id="compFiltro" onchange="trocarFiltroComprovante()">' +
+        (d.situacoes || []).map(function (s) {
+          return '<option value="' + esc(s) + '"' + (s === d.situacao ? ' selected' : '') +
+            '>' + esc(s) + '</option>';
+        }).join('') + '</select></div></div>' +
+      (lista || '<div class="cartao sub">Nenhum comprovante nesta situação.</div>');
+  }
+
+  function cartaoRegistrarComprovante() {
+    return '<div class="cartao" style="max-width:720px;margin-top:14px">' +
+      '<b>Registrar comprovante</b>' +
+      '<div class="sub2" style="margin:4px 0 10px">A data é a do abastecimento, não a de hoje. ' +
+        'Data dentro do período aberto é recusada — ali não há atraso, use “Novo lançamento”.</div>' +
+      '<div class="linha">' +
+        '<div style="flex:2"><label for="cpVeiculo">Placa ou patrimônio</label>' +
+          '<input type="text" id="cpVeiculo" list="listaVeicComprovante" autocomplete="off" ' +
+          'placeholder="placa ou nº patrimônio">' + datalistVeiculos('listaVeicComprovante', false) + '</div>' +
+        '<div><label for="cpData">Data do abastecimento</label>' +
+          '<input type="date" id="cpData"></div>' +
+      '</div>' +
+      '<div class="linha">' +
+        '<div style="flex:2"><label for="cpTipo">Tipo de despesa</label>' +
+          seletor('cpTipo', CONFIG.tipos || []) + '</div>' +
+        '<div><label for="cpLitros">Litros / quantidade</label>' +
+          '<input type="number" id="cpLitros" step="0.001" min="0"></div>' +
+        '<div><label for="cpValor">Valor R$</label>' +
+          '<input type="number" id="cpValor" step="0.01" min="0"></div>' +
+      '</div>' +
+      '<div class="linha">' +
+        '<div><label for="cpKm">KM no comprovante</label>' +
+          '<input type="number" id="cpKm" step="1" min="0"></div>' +
+        '<div><label for="cpDoc">NF / Documento</label><input type="text" id="cpDoc"></div>' +
+        '<div style="flex:2"><label for="cpObs">Observação</label><input type="text" id="cpObs"></div>' +
+      '</div>' +
+      '<div class="sub2" style="margin-top:6px">O KM fica guardado no comprovante e aparece ' +
+        'no relatório, mas <b>não entra na série do odômetro</b>: inserir uma leitura antiga ' +
+        'mudaria o KM rodado e o km/l de um mês já apurado.</div>' +
+      '<button class="acao" id="btnComprovante" style="width:100%;margin-top:14px" ' +
+        'onclick="salvarComprovante(false)">Registrar comprovante</button>' +
+      '<div id="msgComprovante" style="margin-top:10px"></div></div>';
+  }
+
+  function salvarComprovante(confirmarDuplicado) {
+    var botao = el('btnComprovante');
+    botao.disabled = true;
+    botao.textContent = 'Registrando…';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        botao.disabled = false;
+        botao.textContent = 'Registrar comprovante';
+        if (r.ok) { status(r.mensagem); telaComprovantes(); return; }
+        el('msgComprovante').innerHTML =
+          '<div class="' + (r.duplicidade ? 'aviso' : 'erro-caixa') + '">' + esc(r.mensagem) + '</div>' +
+          (r.duplicidade
+            ? '<button class="acao secundaria" style="margin-top:8px" ' +
+              'onclick="salvarComprovante(true)">Registrar mesmo assim</button>' : '');
+      })
+      .withFailureHandler(function (e) {
+        botao.disabled = false;
+        botao.textContent = 'Registrar comprovante';
+        el('msgComprovante').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      })
+      .webRegistrarComprovante(TOKEN, {
+        veiculo: el('cpVeiculo').value, data: el('cpData').value,
+        tipo: el('cpTipo').value, litros: el('cpLitros').value,
+        valor: el('cpValor').value, km: el('cpKm').value,
+        documento: el('cpDoc').value, observacao: el('cpObs').value,
+        confirmarDuplicado: confirmarDuplicado === true
+      });
+  }
+
+  function incorporarComprovante(linha) {
+    var botao = el('cinc_' + linha);
+    botao.disabled = true;
+    botao.textContent = 'Incorporando…';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (!r.ok) {
+          botao.disabled = false;
+          botao.textContent = 'Incorporar no mês aberto';
+          el('cmsg_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
+            esc(r.mensagem) + '</div>';
+          return;
+        }
+        status(r.mensagem);
+        INICIO_CLIENTE = null;   // o painel mudou: o custo do mês aberto subiu
+        telaComprovantes();
+      })
+      .withFailureHandler(function (e) {
+        botao.disabled = false;
+        botao.textContent = 'Incorporar no mês aberto';
+        el('cmsg_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
+          esc(e.message) + '</div>';
+      })
+      .webIncorporarComprovante(TOKEN, linha);
+  }
+
+  function pedirDescarte(linha) {
+    el('cdesc_' + linha).innerHTML =
+      '<div class="linha" style="margin-top:10px">' +
+        '<div style="flex:2"><label for="cmot_' + linha + '">Motivo do descarte</label>' +
+          '<input type="text" id="cmot_' + linha + '" placeholder="duplicata, papel ilegível, não é nosso…"></div>' +
+        '<div style="flex:0 0 auto;align-self:flex-end">' +
+          '<button class="acao secundaria" onclick="confirmarDescarte(' + linha + ')">Confirmar</button></div>' +
+      '</div>';
+  }
+
+  function confirmarDescarte(linha) {
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (!r.ok) {
+          el('cmsg_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
+            esc(r.mensagem) + '</div>';
+          return;
+        }
+        status(r.mensagem);
+        telaComprovantes();
+      })
+      .withFailureHandler(function (e) {
+        el('cmsg_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
+          esc(e.message) + '</div>';
+      })
+      .webDescartarComprovante(TOKEN, linha, el('cmot_' + linha).value);
   }
 
   function telaCentros() {

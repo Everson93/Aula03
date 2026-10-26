@@ -44,6 +44,9 @@ const ABAS = {
   // percentuaisDaCompetencia_ para o porquê.
   RATEIO_MENSAL: 'Rateio Mensal',
   ORCAMENTO: 'Orçamento',
+  // V4.11: comprovantes que chegam depois da competência fechar. Ficam FORA da
+  // contabilidade até alguém decidir incorporá-los. Ver COL_COMP.
+  COMPROVANTES: 'Comprovantes Atrasados',
 };
 
 /** Tipos de despesa aceitos no lancamento (ordem = ordem do dropdown). */
@@ -530,7 +533,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.10.1';
+const VERSAO_SISTEMA = '4.11.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1542,6 +1545,10 @@ CABECALHOS[ABAS.RATEIO_MENSAL] = ['Competência', 'Centro de Custo', '% Rateio',
   'Recebe Rateio', 'Atualizado em', 'Responsável'];
 CABECALHOS[ABAS.ORCAMENTO] = ['Competência', 'Centro de Custo', 'Valor Previsto R$',
   'Atualizado em', 'Responsável'];
+CABECALHOS[ABAS.COMPROVANTES] = ['Data do Abastecimento', 'Placa / ID', 'Tipo de Despesa',
+  'Litros', 'Valor R$', 'KM no Comprovante', 'NF / Documento', 'Centro de Custo',
+  'Competência de Origem', 'Situação', 'Observação', 'Registrado em', 'Registrado por',
+  'Incorporado em', 'ID do Lançamento Gerado'];
 
 const LARGURAS = {};
 LARGURAS[ABAS.CENTROS] = [180, 140, 120];
@@ -1553,6 +1560,8 @@ LARGURAS[ABAS.CARGA_BOMBA] = [95, 150, 130, 130, 140, 110, 380];
 LARGURAS[ABAS.HISTORICO] = [130, 150, 125, 360, 165, 220];
 LARGURAS[ABAS.RATEIO_MENSAL] = [110, 200, 110, 120, 150, 220];
 LARGURAS[ABAS.ORCAMENTO] = [110, 200, 150, 150, 220];
+LARGURAS[ABAS.COMPROVANTES] = [130, 110, 170, 90, 110, 140, 150, 150, 130, 115, 260,
+  140, 200, 140, 160];
 
 /** Quantidade mínima de linhas de cada aba de dados (ver LIMITE_* em 00_Config). */
 const LINHAS_MINIMAS = {};
@@ -1566,6 +1575,7 @@ LINHAS_MINIMAS[ABAS.CARGA_BOMBA] = LIMITE_CARGA_BOMBA;
 // 200 centros x 60 competências: cinco anos de histórico sem precisar ampliar.
 LINHAS_MINIMAS[ABAS.RATEIO_MENSAL] = 12000;
 LINHAS_MINIMAS[ABAS.ORCAMENTO] = 12000;
+LINHAS_MINIMAS[ABAS.COMPROVANTES] = 3000;
 
 /** Cria as abas de dados que ainda nao existem e padroniza o visual. */
 function montarAbasDeDados_() {
@@ -1574,7 +1584,8 @@ function montarAbasDeDados_() {
   garantirAbaPendencias_(true);
 
   [ABAS.CENTROS, ABAS.VEICULOS, ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.HISTORICO,
-   ABAS.FORNECEDORES, ABAS.CARGA_BOMBA, ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO]
+   ABAS.FORNECEDORES, ABAS.CARGA_BOMBA, ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO,
+   ABAS.COMPROVANTES]
     .forEach(function (nome) {
       const sheet = aba_(nome, true);
       const minimoLinhas = (nome === ABAS.LANCAMENTOS || nome === ABAS.ODOMETRO)
@@ -4859,7 +4870,7 @@ function auditarProtecoesPerfil_() {
 
   [ABAS.DASHBOARD,ABAS.RATEIO,ABAS.LOG,ABAS.PARAMETROS,ABAS.USUARIOS,
    ABAS.VEICULOS,ABAS.CENTROS,ABAS.HISTORICO,
-   ABAS.RATEIO_MENSAL,ABAS.ORCAMENTO].forEach(function(n){ exigirFolha(n,admins,[]); });
+   ABAS.RATEIO_MENSAL,ABAS.ORCAMENTO,ABAS.COMPROVANTES].forEach(function(n){ exigirFolha(n,admins,[]); });
   exigirFolha(ABAS.RESUMO,operacionais,[]);
   exigirFolha(ABAS.CONSULTA,admins,['B3']);
   exigirFaixa(ABAS.CONSULTA,'B3',todos);
@@ -5138,7 +5149,7 @@ function organizarAbas_() {
   const planilha = ss_();
   const ordem = [ABAS.CENTRAL_OPERACIONAL, ABAS.DASHBOARD, ABAS.RESUMO, ABAS.RELATORIOS, ABAS.RATEIO, ABAS.CONSULTA,
     ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.CARGA_BOMBA, ABAS.VEICULOS, ABAS.CENTROS,
-    ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO, ABAS.FORNECEDORES,
+    ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO, ABAS.COMPROVANTES, ABAS.FORNECEDORES,
     ABAS.HISTORICO, ABAS.PARAMETROS, ABAS.CONFERENCIA, ABAS.USUARIOS, ABAS.LOG];
   ordem.forEach(function (nome, i) {
     const sheet = planilha.getSheetByName(nome);
@@ -5160,6 +5171,7 @@ function organizarAbas_() {
   cores[ABAS.CENTROS] = CORES.GRAFITE;
   cores[ABAS.RATEIO_MENSAL] = CORES.GRAFITE;
   cores[ABAS.ORCAMENTO] = CORES.GRAFITE;
+  cores[ABAS.COMPROVANTES] = CORES.LARANJA;
   cores[ABAS.FORNECEDORES] = CORES.GRAFITE;
   cores[ABAS.CARGA_BOMBA] = CORES.LARANJA;
   cores[ABAS.HISTORICO] = CORES.PRETO;
@@ -6120,7 +6132,7 @@ function webExcluirUsuario(token, email, confirmacao) {
  */
 
 /** Telas que o app aceita como ponto de entrada (?p=...). */
-const TELAS_WEB = ['inicio', 'lancar', 'lancamentos', 'bomba', 'consulta', 'relatorios', 'resumo', 'rateio',
+const TELAS_WEB = ['inicio', 'lancar', 'lancamentos', 'bomba', 'comprovantes', 'consulta', 'relatorios', 'resumo', 'rateio',
   'orcamento', 'veiculos', 'fornecedores', 'centros', 'pendencias', 'depreciacao', 'ipva', 'fechamento',
   'saude', 'config', 'usuarios', 'log'];
 
@@ -7206,7 +7218,7 @@ function onEdit(e) {
     const sheet = e.range.getSheet();
     const nomeAba = sheet.getName();
     if ([ABAS.PARAMETROS, ABAS.VEICULOS, ABAS.CENTROS, ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.USUARIOS,
-         ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO].indexOf(nomeAba) !== -1) {
+         ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO, ABAS.COMPROVANTES].indexOf(nomeAba) !== -1) {
       invalidarCacheInicio_();
       invalidarCacheSaude_();
     }
@@ -12120,6 +12132,19 @@ function alertasTanqueEPendencias_() {
   if (pendentes > 0) {
     achados.push(pendentes + ' pendência(s) de conferência em aberto');
   }
+  // Comprovante atrasado parado e despesa real fora do mapa. Quanto mais tempo
+  // fica, mais o custo por km da loja parece melhor do que foi.
+  try {
+    const comp = lerComprovantes_().filter(function (c) {
+      return String(c[COL_COMP.SITUACAO - 1] || '').trim().toUpperCase() === COMP_PENDENTE_;
+    });
+    if (comp.length) {
+      const valor = comp.reduce(function (t, c) { return t + (Number(c[COL_COMP.VALOR - 1]) || 0); }, 0);
+      achados.push(comp.length + ' comprovante(s) atrasado(s) aguardando decisão, R$ ' +
+        valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+        ' ainda fora do mapa');
+    }
+  } catch (e) { console.error('alerta de comprovantes: ' + e.message); }
   return achados;
 }
 
@@ -12334,6 +12359,363 @@ function semearRateioCompetenciaAtual_() {
     'bloco inicial gravado na instalação a partir de ' + vigente.origem +
     ' (' + itens.length + ' centro(s))');
   return itens.length;
+}
+
+// ====================================================== V4.11: comprovantes atrasados
+/**
+ * Comprovante de abastecimento que chega depois da competencia fechar.
+ *
+ * O problema real: veiculo que fica em loja abastece fora, e o comprovante
+ * aparece um mes ou mais depois. Hoje o formulario recusa data fora do periodo
+ * aberto — e com razao, porque aceitar mudaria o total e o hash de um mes ja
+ * assinado. So que recusar tambem significa que o papel some: a despesa nunca
+ * entra, e o custo por km fica subestimado para sempre.
+ *
+ * A saida e um registro APARTADO. O comprovante entra aqui com a data real do
+ * abastecimento, aparece no relatorio de fora de periodo, e NAO toca em
+ * contabilidade nenhuma. Quando alguem decidir, um botao o lanca no periodo
+ * ABERTO, guardando a data original na observacao.
+ *
+ * Duas coisas que ele NAO faz, de proposito:
+ *  - nao mexe em competencia fechada. Nunca, por nenhum caminho.
+ *  - nao alimenta a serie do odometro. O KM fica guardado aqui e aparece no
+ *    relatorio, mas inserir uma leitura antiga mudaria o KM rodado e o km/l de
+ *    um mes ja apurado.
+ */
+const COL_COMP = {
+  DATA: 1, PLACA: 2, TIPO: 3, LITROS: 4, VALOR: 5, KM: 6, DOCUMENTO: 7,
+  CENTRO: 8, COMPETENCIA: 9, SITUACAO: 10, OBSERVACAO: 11,
+  REGISTRADO_EM: 12, REGISTRADO_POR: 13, INCORPORADO_EM: 14, ID_LANCAMENTO: 15,
+};
+const TOTAL_COL_COMP = totalColunas_(COL_COMP);
+
+const COMP_PENDENTE_ = 'PENDENTE';
+const COMP_INCORPORADO_ = 'INCORPORADO';
+const COMP_DESCARTADO_ = 'DESCARTADO';
+const SITUACOES_COMPROVANTE_ = [COMP_PENDENTE_, COMP_INCORPORADO_, COMP_DESCARTADO_];
+
+let COMPROVANTES_EXEC_CACHE_ = null;
+
+function lerComprovantes_() {
+  if (COMPROVANTES_EXEC_CACHE_) return COMPROVANTES_EXEC_CACHE_;
+  const sheet = ss_().getSheetByName(ABAS.COMPROVANTES);
+  COMPROVANTES_EXEC_CACHE_ = (sheet && sheet.getLastRow() >= 2)
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, TOTAL_COL_COMP).getValues()
+      .map(function (l, i) { l.linha = i + 2; return l; })
+      .filter(function (l) { return l[COL_COMP.PLACA - 1]; })
+    : [];
+  return COMPROVANTES_EXEC_CACHE_;
+}
+
+function invalidarCacheComprovantes_() { COMPROVANTES_EXEC_CACHE_ = null; }
+
+/**
+ * Registra um comprovante atrasado.
+ *
+ * Recusa data DENTRO do periodo aberto de proposito: ali nao ha atraso nenhum,
+ * e o caminho certo e o lancamento normal. Aceitar os dois faria a mesma despesa
+ * ter duas portas de entrada, e cedo ou tarde entraria pelas duas.
+ */
+function webRegistrarComprovante(token, dados) {
+  const sessao = autorizarContextoWeb_(token, ['OPERADOR', 'ADMIN']);
+  const erros = [];
+
+  const resolvido = resolverVeiculo_((dados && dados.veiculo) || '', false);
+  if (!resolvido.ok) return { ok: false, mensagem: resolvido.mensagem };
+  const veic = resolvido.veiculo;
+
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String((dados && dados.data) || '').trim());
+  if (!m) return { ok: false, mensagem: 'Informe a data do abastecimento.' };
+  const data = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0);
+  if (isNaN(data.getTime()) || data.getDate() !== Number(m[3])) {
+    return { ok: false, mensagem: 'Essa data não existe.' };
+  }
+  const periodo = periodoAtual_();
+  if (data > periodo.fim) {
+    erros.push('A data é posterior ao período aberto. Comprovante atrasado é do passado.');
+  } else if (data >= periodo.inicio) {
+    erros.push('Essa data está DENTRO do período aberto (' +
+      formatarData_(periodo.inicio) + ' a ' + formatarData_(periodo.fim) + '). ' +
+      'Não há atraso: use "Novo lançamento".');
+  }
+
+  const tipo = String((dados && dados.tipo) || '').trim();
+  if (TIPOS_DESPESA.indexOf(tipo) === -1) erros.push('Escolha um tipo de despesa válido.');
+
+  const valor = Number(String((dados && dados.valor) || '').replace(/\./g, '').replace(',', '.'));
+  if (!isFinite(valor) || !(valor > 0)) erros.push('Informe o valor do comprovante.');
+
+  const temLitros = TIPOS_COM_LITROS.indexOf(tipo) !== -1;
+  let litros = 0;
+  if (dados && dados.litros !== '' && dados.litros != null) {
+    litros = Number(String(dados.litros).replace(',', '.'));
+    if (!isFinite(litros) || litros < 0) erros.push('Quantidade inválida.');
+    if (litros > 0 && !temLitros) {
+      erros.push('Quantidade só é aceita em abastecimento, lubrificante, ARLA ou gás.');
+    }
+  }
+
+  let km = null;
+  if (dados && dados.km !== '' && dados.km != null) {
+    km = Number(String(dados.km).replace(/\./g, '').replace(',', '.'));
+    if (!isFinite(km) || !(km > 0)) erros.push('KM inválido.');
+    // O KM NAO entra na serie do odometro — ver o cabecalho deste modulo. Fica
+    // aqui como informacao do papel, e o relatorio mostra.
+  }
+
+  if (erros.length) return { ok: false, mensagem: erros.join('\n') };
+
+  // Mesma placa, mesma data e mesmo documento quase sempre e o mesmo papel
+  // digitado duas vezes — o atraso faz justamente perder a nocao do que ja entrou.
+  const documento = String((dados && dados.documento) || '').trim().slice(0, 60);
+  const alvoPlaca = normalizaPlaca_(veic.placa);
+  const iso = Utilities.formatDate(data, timezone_(), 'yyyy-MM-dd');
+  const repetido = lerComprovantes_().filter(function (c) {
+    if (String(c[COL_COMP.SITUACAO - 1]).toUpperCase() === COMP_DESCARTADO_) return false;
+    if (normalizaPlaca_(c[COL_COMP.PLACA - 1]) !== alvoPlaca) return false;
+    const d = c[COL_COMP.DATA - 1];
+    if (!(d instanceof Date)) return false;
+    if (Utilities.formatDate(d, timezone_(), 'yyyy-MM-dd') !== iso) return false;
+    if (documento) return String(c[COL_COMP.DOCUMENTO - 1] || '').trim() === documento;
+    return Math.abs((Number(c[COL_COMP.VALOR - 1]) || 0) - valor) < 0.005;
+  })[0];
+  if (repetido && !(dados && dados.confirmarDuplicado)) {
+    return { ok: false, duplicidade: true,
+      mensagem: 'Já existe um comprovante de ' + veic.placa + ' em ' + formatarData_(data) +
+        (documento ? ' com o documento ' + documento : ' com o mesmo valor') +
+        ' (linha ' + repetido.linha + ', ' + String(repetido[COL_COMP.SITUACAO - 1]) + '). ' +
+        'Confirme se quiser registrar mesmo assim.' };
+  }
+
+  const sheet = aba_(ABAS.COMPROVANTES, true);
+  garantirColunas_(sheet, TOTAL_COL_COMP);
+  garantirCabecalhoAba_(sheet, ABAS.COMPROVANTES);
+  const linha = Math.max(2, sheet.getLastRow() + 1);
+  garantirLinhas_(sheet, linha);
+  sheet.getRange(linha, 1, 1, TOTAL_COL_COMP).setValues([[
+    data, veic.placa, tipo, litros || '', valor, km === null ? '' : km, documento,
+    normalizarCentroCusto_(veic.centro) || '⚠ sem cadastro',
+    mesCompetenciaDaData_(data), COMP_PENDENTE_,
+    String((dados && dados.observacao) || '').trim().slice(0, 300),
+    new Date(), String(sessao.email || emailContextoAtual_() || ''), '', '',
+  ]]);
+  sheet.getRange(linha, COL_COMP.DATA).setNumberFormat('dd/mm/yyyy');
+  sheet.getRange(linha, COL_COMP.VALOR).setNumberFormat('R$ #,##0.00');
+  sheet.getRange(linha, COL_COMP.REGISTRADO_EM).setNumberFormat('dd/mm/yyyy HH:mm');
+  invalidarCacheComprovantes_();
+
+  registrarLog_('Comprovante atrasado', veic.placa + ' • ' + formatarData_(data) + ' • ' +
+    tipo + ' • R$ ' + valor.toFixed(2) + ' • competência ' + mesCompetenciaDaData_(data));
+
+  return {
+    ok: true,
+    linha: linha,
+    mensagem: 'Comprovante registrado: ' + veic.placa + ' • ' + formatarData_(data) +
+      ' • R$ ' + valor.toFixed(2).replace('.', ',') + ' • competência ' +
+      mesCompetenciaDaData_(data) + '. Ele NÃO entra em nenhum fechamento até ser incorporado.',
+  };
+}
+
+/**
+ * Incorpora o comprovante como lancamento do periodo ABERTO.
+ *
+ * A data do lancamento e de HOJE (ou o ultimo dia do periodo, se hoje ja passou
+ * dele), nunca a do abastecimento: usar a data original jogaria a despesa num
+ * mes fechado, que e exatamente o que este modulo existe para evitar. A data
+ * verdadeira vai para a observacao, onde fica rastreavel.
+ */
+function webIncorporarComprovante(token, linhaComprovante) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const sheet = aba_(ABAS.COMPROVANTES);
+  const alvo = Math.floor(Number(linhaComprovante) || 0);
+  if (alvo < 2 || alvo > sheet.getLastRow()) {
+    return { ok: false, mensagem: 'Comprovante não encontrado.' };
+  }
+  const c = sheet.getRange(alvo, 1, 1, TOTAL_COL_COMP).getValues()[0];
+  const situacao = String(c[COL_COMP.SITUACAO - 1] || '').trim().toUpperCase();
+  if (situacao !== COMP_PENDENTE_) {
+    return { ok: false, mensagem: 'Este comprovante já está como ' + situacao + '.' };
+  }
+
+  const placa = String(c[COL_COMP.PLACA - 1] || '').trim();
+  const dataOriginal = c[COL_COMP.DATA - 1];
+  const tipo = String(c[COL_COMP.TIPO - 1] || '').trim();
+  const litros = Number(c[COL_COMP.LITROS - 1]) || 0;
+  const valor = Number(c[COL_COMP.VALOR - 1]) || 0;
+  if (!(valor > 0)) return { ok: false, mensagem: 'Comprovante sem valor.' };
+
+  const resolvido = resolverVeiculo_(placa, false);
+  if (!resolvido.ok) {
+    return { ok: false, mensagem: 'O veículo ' + placa + ' não está mais no cadastro.' };
+  }
+  const veic = resolvido.veiculo;
+
+  const periodo = periodoAtual_();
+  const hoje = new Date();
+  const dataLanc = (hoje >= periodo.inicio && hoje <= periodo.fim)
+    ? new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 12, 0, 0, 0)
+    : new Date(periodo.fim.getFullYear(), periodo.fim.getMonth(), periodo.fim.getDate(), 12, 0, 0, 0);
+
+  const marcaOriginal = 'Comprovante atrasado de ' + formatarData_(dataOriginal) +
+    ' (competência ' + String(c[COL_COMP.COMPETENCIA - 1] || '') + ')';
+  const observacao = (marcaOriginal + ' • ' +
+    String(c[COL_COMP.OBSERVACAO - 1] || '')).trim().replace(/ • $/, '').slice(0, 300);
+
+  const lancamentos = aba_(ABAS.LANCAMENTOS);
+  const idLancamento = novoIdLancamento_();
+  const linha = proximaLinhaLancamento_();
+  garantirValidacaoTiposLancamento_(lancamentos, tipo, '');
+  try {
+    lancamentos.getRange(linha, 1, 1, COL_LANC.PERIODO - 1).setValues([[
+      dataLanc, veic.placa, tipo, litros || '', valor,
+      String(c[COL_COMP.DOCUMENTO - 1] || ''), observacao,
+      normalizarCentroCusto_(veic.centro) || '⚠ sem cadastro',
+      String(veic.categoria || '').trim() || '⚠ sem cadastro',
+    ]]);
+    lancamentos.getRange(linha, COL_LANC.ID, 1, TOTAL_COL_LANC - COL_LANC.ID + 1)
+      .setValues([[idLancamento, '', '', '', '']]);
+  } catch (e) {
+    try {
+      lancamentos.getRange(linha, 1, 1, COL_LANC.PERIODO - 1).clearContent();
+      lancamentos.getRange(linha, COL_LANC.ID, 1, TOTAL_COL_LANC - COL_LANC.ID + 1).clearContent();
+    } catch (e2) {}
+    return { ok: false, mensagem: 'Não foi possível gravar o lançamento: ' + e.message };
+  }
+
+  sheet.getRange(alvo, COL_COMP.SITUACAO, 1, 1).setValue(COMP_INCORPORADO_);
+  sheet.getRange(alvo, COL_COMP.INCORPORADO_EM, 1, 2).setValues([[new Date(), idLancamento]]);
+  sheet.getRange(alvo, COL_COMP.INCORPORADO_EM).setNumberFormat('dd/mm/yyyy HH:mm');
+
+  invalidarCacheComprovantes_();
+  invalidarCacheLancamentos_();
+  invalidarCacheInicio_();
+  marcarResumoDesatualizado_();
+  registrarLog_('Incorporar comprovante', placa + ' • original ' + formatarData_(dataOriginal) +
+    ' • lançado em ' + formatarData_(dataLanc) + ' • R$ ' + valor.toFixed(2) + ' • ' + idLancamento);
+
+  // O aviso dos litros nao e enfeite: trazer o combustivel de um mes para outro
+  // sem o KM correspondente piora o km/l do mes que recebe, e quem fechar o mes
+  // precisa saber explicar a variacao.
+  const aviso = litros > 0
+    ? ' Atenção: ' + litros.toLocaleString('pt-BR') + ' L entraram no mês aberto sem o KM ' +
+      'correspondente (que é de ' + formatarData_(dataOriginal) + '), então o km/l deste mês piora.'
+    : '';
+  return {
+    ok: true,
+    mensagem: 'Incorporado como lançamento de ' + formatarData_(dataLanc) + ' — ' +
+      veic.placa + ' • R$ ' + valor.toFixed(2).replace('.', ',') + ' • ' + idLancamento +
+      '. A data original ficou na observação.' + aviso,
+  };
+}
+
+/** Marca o comprovante como descartado, com motivo. Nao apaga: a trilha fica. */
+function webDescartarComprovante(token, linhaComprovante, motivo) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const texto = String(motivo || '').trim();
+  if (texto.length < 5) {
+    return { ok: false, mensagem: 'Diga por que está descartando (mínimo 5 caracteres). ' +
+      'Sem motivo, ninguém saberá depois se foi duplicata ou se o papel era inválido.' };
+  }
+  const sheet = aba_(ABAS.COMPROVANTES);
+  const alvo = Math.floor(Number(linhaComprovante) || 0);
+  if (alvo < 2 || alvo > sheet.getLastRow()) {
+    return { ok: false, mensagem: 'Comprovante não encontrado.' };
+  }
+  const situacao = String(sheet.getRange(alvo, COL_COMP.SITUACAO).getValue() || '').toUpperCase();
+  if (situacao === COMP_INCORPORADO_) {
+    return { ok: false, mensagem: 'Já foi incorporado: o lançamento existe na base. ' +
+      'Para desfazer, exclua o lançamento em "Corrigir / excluir lançamento".' };
+  }
+  const placa = String(sheet.getRange(alvo, COL_COMP.PLACA).getValue() || '');
+  sheet.getRange(alvo, COL_COMP.SITUACAO).setValue(COMP_DESCARTADO_);
+  const obs = String(sheet.getRange(alvo, COL_COMP.OBSERVACAO).getValue() || '');
+  sheet.getRange(alvo, COL_COMP.OBSERVACAO)
+    .setValue(('Descartado: ' + texto + (obs ? ' • ' + obs : '')).slice(0, 300));
+  invalidarCacheComprovantes_();
+  registrarLog_('Descartar comprovante', placa + ' • linha ' + alvo + ' • ' + texto);
+  return { ok: true, mensagem: 'Comprovante descartado. O registro continua na aba, com o motivo.' };
+}
+
+/**
+ * Relatorio de lancamentos fora de periodo.
+ *
+ * O numero que importa aqui e o PENDENTE por competencia: e quanto de despesa
+ * real ainda esta fora do mapa daquele mes. Sem ele, o custo por km de uma loja
+ * parece melhor do que foi, e ninguem sabe de quanto.
+ */
+function webComprovantes(token, situacaoFiltro) {
+  exigirPerfilToken_(token, PERFIS_ACESSO);
+  const filtro = String(situacaoFiltro || COMP_PENDENTE_).toUpperCase();
+  const todos = lerComprovantes_();
+
+  const porCompetencia = {};
+  let pendentes = 0, valorPendente = 0, litrosPendentes = 0;
+  todos.forEach(function (c) {
+    const sit = String(c[COL_COMP.SITUACAO - 1] || '').trim().toUpperCase();
+    const comp = String(c[COL_COMP.COMPETENCIA - 1] || '').trim();
+    if (sit !== COMP_PENDENTE_) return;
+    pendentes++;
+    valorPendente += Number(c[COL_COMP.VALOR - 1]) || 0;
+    litrosPendentes += Number(c[COL_COMP.LITROS - 1]) || 0;
+    const g = porCompetencia[comp] || (porCompetencia[comp] = { qtd: 0, valor: 0 });
+    g.qtd++;
+    g.valor += Number(c[COL_COMP.VALOR - 1]) || 0;
+  });
+
+  const visiveis = todos.filter(function (c) {
+    if (filtro === 'TODOS') return true;
+    return String(c[COL_COMP.SITUACAO - 1] || '').trim().toUpperCase() === filtro;
+  }).sort(function (a, b) {
+    const da = a[COL_COMP.DATA - 1], db = b[COL_COMP.DATA - 1];
+    return (db instanceof Date ? db.getTime() : 0) - (da instanceof Date ? da.getTime() : 0);
+  });
+
+  return {
+    situacao: filtro,
+    situacoes: ['TODOS'].concat(SITUACOES_COMPROVANTE_),
+    pendentes: pendentes,
+    valorPendente: valorPendente,
+    litrosPendentes: litrosPendentes,
+    porCompetencia: Object.keys(porCompetencia).sort().reverse().map(function (k) {
+      return { competencia: k, qtd: porCompetencia[k].qtd, valor: porCompetencia[k].valor };
+    }),
+    itens: visiveis.map(function (c) {
+      return {
+        linha: c.linha,
+        data: formatarData_(c[COL_COMP.DATA - 1]),
+        placa: String(c[COL_COMP.PLACA - 1] || ''),
+        tipo: String(c[COL_COMP.TIPO - 1] || ''),
+        litros: Number(c[COL_COMP.LITROS - 1]) || 0,
+        valor: Number(c[COL_COMP.VALOR - 1]) || 0,
+        km: Number(c[COL_COMP.KM - 1]) || 0,
+        documento: String(c[COL_COMP.DOCUMENTO - 1] || ''),
+        centro: String(c[COL_COMP.CENTRO - 1] || ''),
+        competencia: String(c[COL_COMP.COMPETENCIA - 1] || ''),
+        situacao: String(c[COL_COMP.SITUACAO - 1] || ''),
+        observacao: String(c[COL_COMP.OBSERVACAO - 1] || ''),
+      };
+    }),
+    colunas: [col_('Data do abastecimento'), col_('Placa'), col_('Competência'),
+      col_('Tipo'), col_('Litros', 'decimal'), col_('Valor', 'moeda'),
+      col_('KM do comprovante', 'numero'), col_('NF / Documento'), col_('Centro'),
+      col_('Situação')],
+    linhas: visiveis.map(function (c) {
+      return [formatarData_(c[COL_COMP.DATA - 1]), String(c[COL_COMP.PLACA - 1] || ''),
+        String(c[COL_COMP.COMPETENCIA - 1] || ''), String(c[COL_COMP.TIPO - 1] || ''),
+        Number(c[COL_COMP.LITROS - 1]) || 0, Number(c[COL_COMP.VALOR - 1]) || 0,
+        Number(c[COL_COMP.KM - 1]) || 0, String(c[COL_COMP.DOCUMENTO - 1] || ''),
+        String(c[COL_COMP.CENTRO - 1] || ''), String(c[COL_COMP.SITUACAO - 1] || '')];
+    }),
+    totais: [null, null, null, null,
+      visiveis.reduce(function (t, c) { return t + (Number(c[COL_COMP.LITROS - 1]) || 0); }, 0),
+      visiveis.reduce(function (t, c) { return t + (Number(c[COL_COMP.VALOR - 1]) || 0); }, 0),
+      null, null, null, null],
+    mensagem: pendentes
+      ? pendentes + ' comprovante(s) pendente(s), R$ ' +
+        valorPendente.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+        ' fora do mapa. Nenhum deles afeta fechamento até ser incorporado.'
+      : 'Nenhum comprovante pendente.',
+  };
 }
 
 function garantirAutomacoesSistema_() {
@@ -12709,6 +13091,7 @@ function restaurarDadosDeBackupSemLock_(backupId) {
     // V4.9: backup anterior a esta versão simplesmente não as tem.
     [ABAS.RATEIO_MENSAL, TOTAL_COL_RM],
     [ABAS.ORCAMENTO, TOTAL_COL_ORC],
+    [ABAS.COMPROVANTES, TOTAL_COL_COMP],
   ].filter(function (esp) { return !!origem.getSheetByName(esp[0]); });
 
   // Primeiro valida o backup inteiro; só depois começa a escrever na base atual.
@@ -13386,6 +13769,9 @@ function zerarSistema_(escopo, confirmacao, opcoes) {
     limparLinhas(ABAS.CARGA_BOMBA, [[1, COL_CARGA.PRECO_LITRO - 1],
       [COL_CARGA.PRECO_LITRO + 1, Math.max(totalColunas_(COL_CARGA) - COL_CARGA.PRECO_LITRO, 1)]]);
     limparLinhas(ABAS.HISTORICO, [[1, 6]]);
+    // Comprovante atrasado é MOVIMENTO, não cadastro: sai junto com os lançamentos
+    // em qualquer escopo. Mantê-lo faria o relatório apontar para linhas apagadas.
+    limparLinhas(ABAS.COMPROVANTES, [[1, TOTAL_COL_COMP]]);
     limparLinhas(ABAS.EXCLUIDOS, [[1, 3 + TOTAL_COL_LANC]]);
     if (zerarValores) {
       const veic = planilha.getSheetByName(ABAS.VEICULOS);

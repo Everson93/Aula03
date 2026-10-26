@@ -917,6 +917,87 @@ futuras, e o número cai de um em um a cada mês.
 
 ---
 
+# V4.11 — comprovantes atrasados
+
+Veículo que fica em loja abastece fora, e o comprovante chega um mês ou mais
+depois. Hoje o formulário recusa data fora do período aberto — **e com razão**,
+porque aceitar mudaria o total e o hash de um mês já assinado.
+
+Só que recusar também significa que o papel some: a despesa nunca entra, e o
+custo por km daquela loja fica melhor do que foi, para sempre.
+
+## A saída: registro apartado
+
+Aba nova **Comprovantes Atrasados**. O comprovante entra com a **data real do
+abastecimento**, aparece no relatório de fora de período, e **não toca em
+contabilidade nenhuma**. Quando alguém decidir, um botão o lança no período
+**aberto**, guardando a data original na observação.
+
+O veículo é resolvido por **placa ou patrimônio** — `resolverVeiculo_` já fazia
+os dois.
+
+### Duas coisas que ele não faz, de propósito
+
+**Não mexe em competência fechada.** Nunca, por nenhum caminho. Se o registro
+alterasse o mês de origem, ele deixaria de resolver o problema e passaria a ser
+mais um jeito de mexer num mês assinado — exatamente o que o sistema inteiro
+vem evitando.
+
+**Não alimenta a série do odômetro.** O KM do papel fica guardado no
+comprovante e aparece no relatório, mas inserir uma leitura antiga mudaria o KM
+rodado e o km/l de um mês já apurado.
+
+## Incorporar: a data é a de hoje, não a do abastecimento
+
+Ao incorporar, o lançamento recebe a data de **hoje** (ou o último dia do
+período, se hoje já passou dele). Usar a data verdadeira seria o reflexo
+natural — e jogaria a despesa dentro de um mês fechado. A data real vai para a
+observação, onde fica rastreável:
+
+> `Comprovante atrasado de 14/09/2026 (competência 2026-09)`
+
+Há mutação cobrindo essa linha: trocando para a data original, a prova de que o
+lançamento cai no período aberto falha.
+
+### O aviso dos litros não é enfeite
+
+Trazer o combustível de setembro para novembro **sem o KM correspondente** piora
+o km/l de novembro. A mensagem de incorporação diz isso com o número, porque
+quem fecha o mês precisa saber explicar a variação.
+
+## Regras do registro
+
+- **Data dentro do período aberto é recusada.** Ali não há atraso, e o caminho é
+  o lançamento normal. Duas portas para a mesma despesa acabariam sendo usadas
+  pelas duas.
+- **Data futura é recusada.** Comprovante atrasado é do passado.
+- **Duplicata** (mesma placa + data + documento, ou + valor quando não há
+  documento) é barrada, com opção de confirmar. Barrar sem saída travaria o
+  trabalho: o atraso faz justamente perder a noção do que já entrou.
+- **Descarte exige motivo** de 5 caracteres, e não apaga a linha — a trilha
+  fica. Comprovante já incorporado não pode ser descartado: o lançamento existe
+  na base, e desfazer é pela tela de exclusão, com justificativa.
+- O comprovante é **movimento**, não cadastro: `zerarSistema_` o limpa em
+  qualquer escopo, junto com os lançamentos.
+
+## Relatório e alerta
+
+O relatório mostra os pendentes agrupados por **competência de origem**, com o
+valor e os litros que ainda estão fora do mapa. É o número que diz de quanto o
+custo daquele mês está subestimado.
+
+O alerta diário ganhou uma linha: comprovante parado é despesa real fora do
+mapa, e quanto mais tempo fica, pior.
+
+## Suíte
+
+`conferir_comprovantes.js` — 45 provas. A central é a do bloco 2: **depois de
+registrar, nenhum lançamento foi criado**. É a promessa inteira do módulo em uma
+asserção.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
