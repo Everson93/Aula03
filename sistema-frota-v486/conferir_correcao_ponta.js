@@ -251,6 +251,61 @@ ok('some só a que foi corrigida', depois.length === antes - 1,
 ok('a outra continua, como deve', depois.indexOf('Oficina sem natureza da despesa') !== -1,
   JSON.stringify(depois));
 
+console.log('\n3b. O caso do gás: corrigir o campo errado não resolve, e o sistema DIZ');
+// Caso real: "Preço por quilo fora da curva", R$ 63,90/kg num botijão. A
+// correção oferecida é a QUANTIDADE — mas se o errado for o VALOR, nenhuma
+// quantidade plausível resolve, e antes o item só voltava, sem explicação.
+montar();
+(function () {
+  const l = new Array(ctx.TOTAL_COL_LANC).fill('');
+  l[ctx.L_.DATA] = dataVm(2026, 11, 10);
+  l[ctx.L_.PLACA] = 'AAA1A11';
+  l[ctx.L_.TIPO] = 'Gás';
+  l[ctx.L_.LITROS] = 20;
+  // Valor grosseiramente errado (três mil num botijão). Precisa de mais de
+  // 100 kg para sair da curva, e o maior botijão é 45 — então NENHUMA
+  // quantidade plausível resolve, que é justamente o caso a cobrir.
+  l[ctx.L_.VALOR] = 3000;
+  l[ctx.L_.DOCUMENTO] = 'NF-7';
+  l[ctx.L_.CENTRO] = 'Loja 08';
+  l[ctx.L_.CATEGORIA] = 'Pesado';
+  l[ctx.L_.ID] = 'LAN-G';
+  ABAS_FAKE[ctx.ABAS.LANCAMENTOS] = [new Array(ctx.TOTAL_COL_LANC).fill('cab'), l];
+})();
+ctx.escreverConferencia_(ctx.coletarProblemas_());
+ok('o problema aparece', nomesDasPendencias().indexOf('Preço por quilo fora da curva') !== -1,
+  JSON.stringify(nomesDasPendencias()));
+const lg = linhaDaPendencia('Preço por quilo fora da curva');
+const rg = ctx.webCorrigirPendencia('t', lg, '45');   // o maior botijão que existe
+ok('a quantidade é gravada', ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.LITROS] === 45,
+  String(ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.LITROS]));
+ok('o sistema avisa que NÃO resolveu', rg.resolvida === false, JSON.stringify(rg));
+ok('e mostra o número recalculado', /66\.67\/kg/.test(rg.mensagem || ''), rg.mensagem);
+ok('e diz onde consertar de verdade',
+  /Corrigir \/ excluir lançamento/.test(rg.mensagem || ''), rg.mensagem);
+
+console.log('\n3c. Corrigindo o campo certo, ele confirma que resolveu');
+montar();
+(function () {
+  const l = new Array(ctx.TOTAL_COL_LANC).fill('');
+  l[ctx.L_.DATA] = dataVm(2026, 11, 10);
+  l[ctx.L_.PLACA] = 'AAA1A11';
+  l[ctx.L_.TIPO] = 'Gás';
+  l[ctx.L_.LITROS] = 1;            // botijão lançado como 1 unidade
+  l[ctx.L_.VALOR] = 63.90;
+  l[ctx.L_.DOCUMENTO] = 'NF-8';
+  l[ctx.L_.CENTRO] = 'Loja 08';
+  l[ctx.L_.CATEGORIA] = 'Pesado';
+  l[ctx.L_.ID] = 'LAN-H';
+  ABAS_FAKE[ctx.ABAS.LANCAMENTOS] = [new Array(ctx.TOTAL_COL_LANC).fill('cab'), l];
+})();
+ctx.escreverConferencia_(ctx.coletarProblemas_());
+const rh = ctx.webCorrigirPendencia('t', linhaDaPendencia('Preço por quilo fora da curva'), '20');
+ok('informa que resolveu', rh.resolvida === true, JSON.stringify(rh));
+ok('e a pendência sai da lista',
+  nomesDasPendencias().indexOf('Preço por quilo fora da curva') === -1,
+  JSON.stringify(nomesDasPendencias()));
+
 console.log('\n4. Quando a revalidação falha, o operador tem de saber');
 // É o caso real de quem colou o código novo sem rodar "Instalar / atualizar":
 // coletarProblemas_ chama garantirResumoAtualizado_, que lança com a aba Resumo

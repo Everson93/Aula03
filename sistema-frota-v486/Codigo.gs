@@ -548,7 +548,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.11.3';
+const VERSAO_SISTEMA = '4.11.4';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11251,9 +11251,22 @@ function webCorrigirPendencia(token, linhaPendencia, valorNovo) {
         '"🚚 Sistema de Frota → Instalar / atualizar sistema" e clique em Revalidar.',
     };
   }
+  // O campo foi gravado e a lista foi refeita — mas a condicao pode continuar
+  // valendo. Dizer isso agora evita o operador corrigir a mesma coisa de novo
+  // achando que o sistema nao gravou.
+  const aindaLa = pendenciaAindaPresente_(revalidacao.problemas, origem, placa, problema);
+  if (aindaLa) {
+    return {
+      ok: true, revalidou: true, resolvida: false, pendentes: revalidacao.pendentes,
+      mensagem: gravou + ' Mas o problema CONTINUA, agora assim: "' + aindaLa + '". ' +
+        'O campo que você corrigiu não é o que está errado neste caso — ' +
+        'ajuste o lançamento em "Corrigir / excluir lançamento".',
+    };
+  }
   return {
-    ok: true, revalidou: true,
-    mensagem: gravou + ' ' + revalidacao.pendentes + ' pendência(s) em aberto.',
+    ok: true, revalidou: true, resolvida: true,
+    mensagem: gravou + ' Pendência resolvida. ' + revalidacao.pendentes +
+      ' em aberto no total.',
     pendentes: revalidacao.pendentes,
   };
 }
@@ -11289,12 +11302,34 @@ function revalidarPendenciasSeguro_() {
   // Sem forcar CONTEXTO_SISTEMA_INTERNO_: quem chama ja passou por
   // autorizarContextoWeb_, e manter o contexto do usuario preserva a autoria.
   try {
-    escreverConferencia_(coletarProblemas_());
-    return { ok: true, pendentes: contarPendenciasConferencia_() };
+    const problemas = coletarProblemas_();
+    escreverConferencia_(problemas);
+    return { ok: true, pendentes: contarPendenciasConferencia_(), problemas: problemas };
   } catch (e) {
     console.error('revalidar pendências: ' + e.message);
     return { ok: false, pendentes: null, erro: e.message };
   }
+}
+
+/**
+ * A pendencia que acabou de ser corrigida continua sendo coletada?
+ *
+ * Existe porque "corrigi e continua ali" tem mais de uma causa, e o operador
+ * nao tem como distinguir: o campo pode ter sido gravado e a condicao continuar
+ * valendo. No caso que motivou isto — "Preço por quilo fora da curva" num
+ * botijao de gas — a correcao oferecida e a QUANTIDADE, mas se o errado for o
+ * VALOR nenhuma quantidade plausivel resolve, e o item voltava sem explicacao
+ * nenhuma.
+ *
+ * Devolve o detalhe NOVO, que ja traz o numero recalculado.
+ */
+function pendenciaAindaPresente_(problemas, origem, placa, problema) {
+  const alvoPlaca = normalizaPlaca_(placa);
+  const achada = (problemas || []).filter(function (p) {
+    return String(p[0]) === origem && String(p[2]) === problema &&
+      normalizaPlaca_(p[1]) === alvoPlaca;
+  })[0];
+  return achada ? String(achada[3] || '') : null;
 }
 
 /**

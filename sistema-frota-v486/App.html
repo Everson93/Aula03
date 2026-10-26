@@ -2769,6 +2769,16 @@
             esc(r.mensagem) + '</div>';
           return;
         }
+        // Gravou, revalidou, e o problema CONTINUA: fica na tela em amarelo, do
+        // lado do campo, em vez de virar um toast verde que some em 7 segundos.
+        if (r.resolvida === false) {
+          botao.disabled = false;
+          botao.textContent = 'Corrigir';
+          el('pfixm_' + linha).innerHTML = '<div class="aviso" style="margin-top:8px">' +
+            esc(r.mensagem) + '</div>';
+          atualizarSelo(r.pendentes || 0);
+          return;
+        }
         // A lista inteira e refeita: corrigir um campo pode resolver mais de uma
         // pendencia da mesma linha, e os numeros de linha mudam na revalidacao.
         status(r.mensagem);

@@ -1206,6 +1206,64 @@ apontado.
 
 ---
 
+# V4.11.4 — "corrigi e continua ali": agora o sistema explica
+
+O caso que fechou o diagnóstico: **"Preço por quilo fora da curva"**, EMP YALE
+N 02, R$ 63,90/kg num botijão de gás. O operador preenchia a quantidade,
+clicava em Corrigir, e o item voltava.
+
+Não era defeito de gravação. **A correção oferecida é a QUANTIDADE, e no caso
+dele o errado era o VALOR.**
+
+```
+teto do Gás: R$ 30/kg
+valor R$    63,90 -> precisa de mais de  2,1 kg
+valor R$   200    -> precisa de mais de  6,7 kg
+valor R$ 1.278    -> precisa de mais de 42,6 kg
+valor R$ 3.000    -> precisa de mais de  100 kg   <- nenhum botijão resolve
+```
+
+Quando o valor está grosseiramente errado, **nenhuma quantidade plausível** tira
+o lançamento da curva. O campo era gravado, a lista era refeita corretamente, e
+o item reaparecia — sem uma palavra sobre o porquê.
+
+## O conserto: dizer se resolveu
+
+`pendenciaAindaPresente_` confere, depois da revalidação, se o **mesmo problema**
+(aba + placa + tipo) continua sendo coletado. Quando continua, a resposta traz o
+detalhe **recalculado**:
+
+> Quantidade (kg) gravado em Lançamentos, linha 41. Mas o problema CONTINUA,
+> agora assim: "linha 41 • R$ 66,67/kg em Gás...". O campo que você corrigiu não
+> é o que está errado neste caso — ajuste o lançamento em "Corrigir / excluir
+> lançamento".
+
+E aparece em **amarelo ao lado do campo**, não como um toast verde que some em
+sete segundos.
+
+Quando resolve, também diz: *"Pendência resolvida."* — antes a mensagem só
+informava o total em aberto, e o operador tinha de inferir.
+
+Isso vale para **qualquer** correção, não só a do gás: sempre que o campo
+oferecido não for o culpado, o sistema passa a dizer em vez de deixar o item
+voltar calado.
+
+## Nota sobre a fixture
+
+A primeira versão do teste usou R$ 1.278 e corrigiu para 45 kg, esperando que
+não resolvesse. Resolveu: 1.278 ÷ 45 = R$ 28,40/kg, logo abaixo do teto de 30.
+O teste estava errado, não o código — e serve de lembrete de que o teto é um
+instrumento grosso, calibrado para pegar erro de digitação, não para discutir
+preço.
+
+## Suíte
+
+`conferir_correcao_ponta.js` passou para **21 provas**. Por mutação, removendo a
+checagem de "ainda presente", 3 falham.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
