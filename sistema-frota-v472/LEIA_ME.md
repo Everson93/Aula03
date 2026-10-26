@@ -700,6 +700,89 @@ As regras estáticas que leem o código-fonte são a resposta que tem funcionado
 
 ---
 
+# V4.9.5 — "consumo fora da curva": 74 avisos que não eram avisos
+
+O primeiro alerta diário de verdade saiu com **83 pontos, 74 deles no mesmo
+bloco**. Não era sensibilidade alta: era erro de método, em cinco frentes. A
+evidência estava no próprio e-mail:
+
+```
+média da frota: 10,53 km/l        ← número de carro
+marcados:  2,14 · 2,30 · 2,35 · 3,08 · 3,21 km/l   ← números de caminhão
+```
+
+Carreta a 2,5 km/l é o normal dela. Como a média era puxada pelos carros, **toda
+carreta caía abaixo da metade por construção**. O alerta apontava sempre os
+mesmos veículos, pelo motivo errado — e aviso que aponta sempre não aponta nada.
+
+## As cinco frentes
+
+**1. Categorias misturadas.** A frota vai de Moto a Carreta Frigorífica. Agora a
+comparação é **dentro da categoria** do veículo.
+
+**2. Média como referência.** Esta apareceu escrevendo o teste, e é a mais
+sutil: num grupo de cinco carretas em que uma bebe o dobro, **o próprio outlier
+entra na média e levanta a barra que deveria julgá-lo** — 5,4 contra um limite
+de 2× a média (3,00) não dispara. A referência passou a ser a **mediana**, que
+não se move: 2× 2,40 = 4,80, e a culpada é pega.
+
+> Isso não contradiz o rodapé do relatório de consumo, que continua usando
+> total ÷ total. São perguntas diferentes: para **relatar** consumo o que importa
+> é o peso de cada veículo; para **detectar** outlier o que importa é robustez a
+> extremo.
+
+**3. O mesmo veículo contado duas vezes.** Quem roda pouco por litro gasta mais
+por km — é o mesmo fato físico. Cinco das placas do print apareciam duas vezes.
+Agora é **um achado por veículo**, citando os dois desvios na mesma linha.
+
+**4. Custo fixo no R$/km.** O `TOTAL` do Resumo inclui depreciação, IPVA, seguro,
+emplacamento e multa — nada disso varia com o uso, e tudo isso corre com o
+veículo parado na garagem. A conta passou a usar só o **custo variável**:
+combustível, lubrificante, ARLA, lavação, oficina, pneus, pedágio e gás.
+
+**5. Sem piso de rodagem.** Poucos quilômetros no período = divisor minúsculo =
+qualquer valor vira outlier. O piso é **20% da rodagem mediana da categoria** —
+relativo, não absoluto, porque empilhadeira marca HORA no mesmo campo em que a
+carreta marca KM, e um piso fixo excluiria todas as empilhadeiras ou nenhuma
+carreta.
+
+## O que o alerta diz quando não avalia
+
+Em vez de omitir em silêncio, ele conta:
+
+> — 6 veículo(s) não avaliados: a categoria deles tem menos de 4 veículos
+> rodando, e não dá para dizer o que é fora da curva com tão pouca referência.
+
+Grupo pequeno demais não vira julgamento: com dois ou três veículos, qualquer um
+deles move a própria referência.
+
+## O e-mail não deixa um bloco engolir os outros
+
+Um bloco de 74 linhas empurra os outros três para fora da primeira tela, e quem
+abre só vê um. Cada bloco mostra no máximo **12** itens, com "e mais N" e o
+caminho para a lista inteira. A contagem no título continua sendo a real.
+
+## Divergência conhecida, de propósito
+
+A formatação condicional do **Resumo** continua pintando de vermelho o R$/km
+acima de 2× a média da frota — a regra antiga, com o defeito antigo. Numa frota
+mista ela segue pintando todo caminhão.
+
+Não foi corrigida junto porque a correção em fórmula custaria um
+`MEDIAN(FILTER(...))` por linha — 170 varreduras a cada recálculo, logo depois de
+termos removido exatamente esse tipo de peso. **É um ponto em aberto**, não um
+descuido: o e-mail e a planilha hoje respondem perguntas diferentes, e só o
+e-mail responde a certa.
+
+## Suíte
+
+`conferir_alerta_diario.js` passou de 23 para **41 provas**, com frota mista de
+verdade. Por mutação, voltando a comparar tudo junto, as quatro carretas normais
+voltam a ser acusadas por serem carretas — o defeito exato que o usuário viu.
+
+
+---
+
 # Pendente
 
 - **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo

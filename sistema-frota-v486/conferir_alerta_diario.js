@@ -36,6 +36,8 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     alertasConsumo_, alertasTanqueEPendencias_, alertasOdometroEIpva_,
     montarAlertasDiarios_, destinatariosAlerta_, enviarAlertasDiariosAgendado_,
     corpoAlertaHtml_, R_, TOTAL_COL_RESUMO, COL_VEIC, PRODUTOS_BOMBA,
+    custoVariavelResumo_, R_CUSTO_VARIAVEL_, MINIMO_VEICULOS_REFERENCIA_, mediana_,
+    MAXIMO_ITENS_POR_BLOCO_,
   });
   exigirExecucaoMutacao_ = function () {};
   exigirExecucaoLeitura_ = function () {};
@@ -57,15 +59,28 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
 // odometro passavam com lista vazia — aprovando o codigo sem exercitar nada.
 const novaData = vm.runInContext('(function (a, m, d) { return new Date(a, m, d); })', ctx);
 
-function linhaResumo(placa, km, litros, total) {
+/**
+ * `custo` entra como COMBUSTIVEL (custo variável). A regra não olha mais
+ * R_.TOTAL: depreciação, IPVA, seguro e multa correm com o veículo parado.
+ */
+function linhaResumo(placa, km, litros, custo, categoria, fixo) {
   const l = new Array(ctx.TOTAL_COL_RESUMO).fill(0);
   l[ctx.R_.PLACA] = placa;
+  l[ctx.R_.CATEGORIA] = categoria || 'Carro';
   l[ctx.R_.KM] = km;
   l[ctx.R_.LITROS] = litros;
-  l[ctx.R_.TOTAL] = total;
+  l[ctx.R_.COMBUSTIVEL] = custo;
+  l[ctx.R_.DEPRECIACAO] = fixo || 0;
+  l[ctx.R_.TOTAL] = custo + (fixo || 0);
   l[ctx.R_.KM_LITRO] = litros > 0 ? km / litros : 0;
-  l[ctx.R_.RS_KM] = km > 0 ? total / km : 0;
+  l[ctx.R_.RS_KM] = km > 0 ? (custo + (fixo || 0)) / km : 0;
   return l;
+}
+/** Quatro veículos iguais de uma categoria, para ela servir de referência. */
+function grupo(prefixo, categoria, km, litros, custo) {
+  const saida = [];
+  for (let i = 1; i <= 4; i++) saida.push(linhaResumo(prefixo + i, km, litros, custo, categoria));
+  return saida;
 }
 
 function limpar() {
@@ -98,55 +113,82 @@ function ok(titulo, condicao, detalhe) {
 // ---- 1. silêncio quando está tudo certo -------------------------------------
 console.log('\n1. Frota saudável: o sistema fica calado');
 limpar();
-// frota homogenea: ninguem fora da curva, tanque cheio, nada pendente
-ctx.__resumo = [
-  linhaResumo('AAA1A11', 10000, 2000, 10000),
-  linhaResumo('BBB2B22', 12000, 2400, 12000),
-  linhaResumo('CCC3C33', 11000, 2200, 11000),
-];
+ctx.__resumo = grupo('CAR', 'Carro', 10000, 1000, 6000);
 let r = ctx.enviarAlertasDiariosAgendado_();
 ok('nada a relatar', ctx.montarAlertasDiarios_().total === 0,
   JSON.stringify(ctx.montarAlertasDiarios_().blocos));
 ok('nenhum e-mail enviado', ENVIADOS.length === 0 && r.enviado === false, JSON.stringify(r));
 
-// ---- 2. custo por km fora da curva ------------------------------------------
-console.log('\n2. Custo por km acima de 2x a média da frota');
+// ---- 2. O CASO REAL: frota mista ---------------------------------------------
+// Era isto que gerava 74 avisos: carros a ~10 km/l puxavam a media, e TODA
+// carreta — que faz 2,5 km/l normalmente — caía abaixo da metade dela.
+console.log('\n2. Frota mista: carreta não é carro fora da curva');
 limpar();
-// frota em ~R$1/km; o DDD gasta R$4/km
-ctx.__resumo = [
-  linhaResumo('AAA1A11', 10000, 2000, 10000),
-  linhaResumo('BBB2B22', 10000, 2000, 10000),
-  linhaResumo('DDD4D44', 1000, 200, 4000),
-];
+ctx.__resumo = grupo('CAR', 'Carro', 10000, 1000, 6000)            // 10 km/l
+  .concat(grupo('CRT', 'Carreta Normal', 10000, 4000, 24000));     // 2,5 km/l, normal
 let achados = ctx.alertasConsumo_();
-ok('o veículo caro aparece', achados.some(function (a) { return a.indexOf('DDD4D44') === 0; }),
+ok('nenhuma carreta é acusada por ser carreta', achados.length === 0,
   JSON.stringify(achados));
-ok('os veículos normais não aparecem',
-  !achados.some(function (a) { return a.indexOf('AAA') === 0 || a.indexOf('BBB') === 0; }),
-  JSON.stringify(achados));
-// Prova que o criterio e 2x, e nao "acima da media": um veiculo 50% acima da
-// media e caro, mas a tela nao o marca — o e-mail tambem nao pode marcar.
-limpar();
-ctx.__resumo = [
-  linhaResumo('AAA1A11', 10000, 2000, 10000),
-  linhaResumo('BBB2B22', 10000, 2000, 10000),
-  linhaResumo('EEE5E55', 10000, 2000, 15000),   // 1,5x a media
-];
-ok('1,5x a média NÃO dispara (mesmo critério do Resumo: 2x)',
-  !ctx.alertasConsumo_().some(function (a) { return a.indexOf('EEE5E55') === 0 && a.indexOf('custo por km') !== -1; }),
-  JSON.stringify(ctx.alertasConsumo_()));
 
-// ---- 3. consumo (km/l) abaixo da metade -------------------------------------
-console.log('\n3. Consumo abaixo da metade da média');
+console.log('\n3. Mas o desvio DENTRO da categoria continua sendo pego');
 limpar();
-ctx.__resumo = [
-  linhaResumo('AAA1A11', 10000, 2000, 10000),   // 5 km/l
-  linhaResumo('BBB2B22', 10000, 2000, 10000),   // 5 km/l
-  linhaResumo('FFF6F66', 1000, 1000, 1000),     // 1 km/l
-];
-ok('o veículo beberrão aparece',
-  ctx.alertasConsumo_().some(function (a) { return a.indexOf('FFF6F66') === 0 && a.indexOf('km/l') !== -1; }),
+ctx.__resumo = grupo('CAR', 'Carro', 10000, 1000, 6000)
+  .concat(grupo('CRT', 'Carreta Normal', 10000, 4000, 24000));
+// uma carreta bebendo o dobro das outras carretas
+ctx.__resumo.push(linhaResumo('CRT9', 10000, 9000, 54000, 'Carreta Normal'));
+achados = ctx.alertasConsumo_();
+ok('a carreta ruim aparece', achados.some(function (a) { return a.indexOf('CRT9') === 0; }),
+  JSON.stringify(achados));
+ok('e nomeia a categoria usada como referência',
+  achados.some(function (a) { return a.indexOf('Carreta Normal') !== -1; }), JSON.stringify(achados));
+ok('as carretas normais continuam de fora',
+  !achados.some(function (a) { return /^CRT[1-4] /.test(a); }), JSON.stringify(achados));
+ok('e nenhum carro foi arrastado junto',
+  !achados.some(function (a) { return a.indexOf('CAR') === 0; }), JSON.stringify(achados));
+
+console.log('\n3b. Um achado por veículo, não dois');
+ok('o veículo que desvia nos DOIS critérios gera UMA linha',
+  achados.filter(function (a) { return a.indexOf('CRT9') === 0; }).length === 1,
+  JSON.stringify(achados.filter(function (a) { return a.indexOf('CRT9') === 0; })));
+ok('e a linha menciona os dois desvios',
+  achados.filter(function (a) { return a.indexOf('CRT9') === 0; })[0].indexOf(';') !== -1,
+  achados.filter(function (a) { return a.indexOf('CRT9') === 0; })[0]);
+
+console.log('\n3c. Custo fixo não entra no R$/km');
+limpar();
+ctx.__resumo = grupo('CAR', 'Carro', 10000, 1000, 6000);
+// mesmo consumo dos outros, mas carregando IPVA e depreciação pesados
+ctx.__resumo.push(linhaResumo('CAR9', 10000, 1000, 6000, 'Carro', 90000));
+ok('veículo com depreciação alta e consumo normal NÃO é acusado',
+  !ctx.alertasConsumo_().some(function (a) { return a.indexOf('CAR9') === 0; }),
   JSON.stringify(ctx.alertasConsumo_()));
+ok('custoVariavelResumo_ ignora mesmo o fixo',
+  ctx.custoVariavelResumo_(ctx.__resumo[4]) === 6000,
+  String(ctx.custoVariavelResumo_(ctx.__resumo[4])));
+
+console.log('\n3d. Rodagem baixa não vira outlier');
+limpar();
+ctx.__resumo = grupo('CAR', 'Carro', 10000, 1000, 6000);
+// rodou 100 km e teve uma oficina de 3.000: R$ 30/km, mas sem significado
+const parado = linhaResumo('CAR8', 100, 10, 60, 'Carro');
+parado[ctx.R_.OFICINA] = 3000;
+ctx.__resumo.push(parado);
+achados = ctx.alertasConsumo_();
+ok('o veículo que mal rodou não é acusado',
+  !achados.some(function (a) { return a.indexOf('CAR8') === 0; }), JSON.stringify(achados));
+ok('mas o alerta DIZ que ele ficou de fora, em vez de omitir',
+  achados.some(function (a) { return a.indexOf('rodagem baixa') !== -1; }), JSON.stringify(achados));
+
+console.log('\n3e. Categoria pequena demais não serve de referência');
+limpar();
+ctx.__resumo = grupo('CAR', 'Carro', 10000, 1000, 6000)
+  .concat([linhaResumo('MOT1', 5000, 100, 600, 'Moto'),
+           linhaResumo('MOT2', 5000, 500, 3000, 'Moto')]);   // só 2 motos
+achados = ctx.alertasConsumo_();
+ok('não acusa nada numa categoria com menos de ' + ctx.MINIMO_VEICULOS_REFERENCIA_,
+  !achados.some(function (a) { return a.indexOf('MOT') === 0; }), JSON.stringify(achados));
+ok('e avisa quantos ficaram sem referência',
+  achados.some(function (a) { return a.indexOf('menos de') !== -1; }), JSON.stringify(achados));
 
 // ---- 4. tanque e pendências --------------------------------------------------
 console.log('\n4. Tanque e pendências');
@@ -252,6 +294,34 @@ ok('o bloco quebrado vira aviso em vez de matar o alerta',
 ok('os outros blocos continuam chegando',
   comErro.blocos.some(function (b) { return b.itens.some(function (i) { return i.indexOf('4 pendência') === 0; }); }),
   JSON.stringify(comErro.blocos));
+
+console.log('\n8b. Por que mediana e não média');
+// O defeito que a propria fixture revelou: com 4 carretas normais + 1 bebendo o
+// dobro, a MEDIA sobe o bastante para a culpada passar. A mediana nao se move.
+const custos = [2.4, 2.4, 2.4, 2.4, 5.4];
+const media = custos.reduce(function (a, b) { return a + b; }, 0) / custos.length;
+ok('a média seria arrastada pelo próprio outlier (5,4 não passa de 2x ' + media.toFixed(2) + ')',
+  !(5.4 > 2 * media), 'média ' + media.toFixed(3));
+ok('a mediana não se move e o outlier é pego',
+  5.4 > 2 * ctx.mediana_(custos), 'mediana ' + ctx.mediana_(custos));
+ok('mediana de lista par é a média dos dois do meio', ctx.mediana_([1, 2, 3, 4]) === 2.5);
+ok('mediana de lista vazia é 0, sem NaN', ctx.mediana_([]) === 0);
+ok('mediana não depende da ordem de entrada',
+  ctx.mediana_([5.4, 2.4, 2.4, 2.4, 2.4]) === ctx.mediana_(custos));
+
+console.log('\n9. O e-mail não deixa um bloco engolir os outros');
+limpar();
+const muitos = { blocos: [{ titulo: 'Consumo fora da curva',
+  itens: Array.apply(null, Array(74)).map(function (_, i) { return 'VEI' + i + ' — algo'; }) },
+  { titulo: 'Tanque e pendências', itens: ['saldo baixo'] }], total: 75 };
+const html = ctx.corpoAlertaHtml_(muitos, '2026-10');
+ok('mostra no máximo ' + ctx.MAXIMO_ITENS_POR_BLOCO_ + ' itens do bloco grande',
+  (html.match(/<li>VEI/g) || []).length === ctx.MAXIMO_ITENS_POR_BLOCO_,
+  (html.match(/<li>VEI/g) || []).length + ' itens');
+ok('diz quantos ficaram de fora', /e mais 62/.test(html));
+ok('mas a contagem no título continua a real', /\(74\)/.test(html));
+ok('e o bloco seguinte continua chegando', /saldo baixo/.test(html),
+  'de nada adianta cortar se o bloco pequeno sumir junto');
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

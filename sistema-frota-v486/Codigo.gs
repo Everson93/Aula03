@@ -477,7 +477,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.9.4';
+const VERSAO_SISTEMA = '4.9.5';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11843,32 +11843,139 @@ const FUNCAO_ALERTA_DIARIO_ = 'enviarAlertasDiariosAgendado_';
 const ESTOQUE_MINIMO_PADRAO_ = 500;
 
 /** Veiculos com custo por km ou consumo fora da curva na competencia aberta. */
+/**
+ * Colunas de custo que VARIAM com o uso do veiculo.
+ *
+ * Depreciacao, IPVA, seguro e emplacamento correm igual com o veiculo parado na
+ * garagem; multa e comportamento, nao consumo. Deixa-los no R$/km fazia um
+ * veiculo que rodou pouco aparecer caríssimo por km sem ter nada de errado no
+ * consumo — o divisor e que era pequeno.
+ */
+const R_CUSTO_VARIAVEL_ = ['COMBUSTIVEL', 'LUBRIFICANTE', 'ARLA', 'LAVACAO',
+  'OFICINA', 'PNEUS', 'PEDAGIO', 'GAS'];
+
+/** Minimo de veiculos com rodagem na categoria para ela servir de referencia. */
+const MINIMO_VEICULOS_REFERENCIA_ = 4;
+/** Fracao da rodagem mediana da categoria abaixo da qual o veiculo nao e avaliado. */
+const FRACAO_RODAGEM_MINIMA_ = 0.2;
+
+function custoVariavelResumo_(linha) {
+  let total = 0;
+  R_CUSTO_VARIAVEL_.forEach(function (nome) { total += Number(linha[R_[nome]]) || 0; });
+  return total;
+}
+
+/**
+ * Mediana de uma lista de numeros.
+ *
+ * E a referencia certa para DETECTAR outlier, e a media nao e — pelo motivo
+ * simples de que o proprio outlier entra na media e levanta a barra que deveria
+ * julga-lo. Num grupo de cinco carretas em que uma bebe o dobro, a media sobe o
+ * bastante para a culpada passar despercebida. A mediana nao se move.
+ *
+ * Para RELATAR consumo a conta continua sendo total/total (ver o rodape do
+ * relatorio de consumo): ali o que importa e o peso de cada veiculo, nao a
+ * robustez a extremo. Sao perguntas diferentes.
+ */
+function mediana_(valores) {
+  const ordenados = valores.slice().sort(function (a, b) { return a - b; });
+  if (!ordenados.length) return 0;
+  const meio = Math.floor(ordenados.length / 2);
+  return ordenados.length % 2 ? ordenados[meio] : (ordenados[meio - 1] + ordenados[meio]) / 2;
+}
+
+/**
+ * Veiculos fora da curva DA PROPRIA CATEGORIA na competencia aberta.
+ *
+ * A primeira versao comparava todo mundo com a media da frota inteira e gerava
+ * 74 avisos de uma vez. Nao era sensibilidade: era erro de metodo, em cinco
+ * frentes.
+ *
+ *  1. CATEGORIAS MISTURADAS. Numa frota com carro e carreta, a media geral fica
+ *     em ~10 km/l — numero de carro. Carreta faz 2,5 km/l, que e o normal dela,
+ *     e caía abaixo da metade da media POR CONSTRUCAO. Todo caminhao era eterno
+ *     "fora da curva", e aviso que aponta sempre os mesmos nao aponta nada.
+ *  2. MEDIA COMO REFERENCIA. Ver mediana_.
+ *  3. O MESMO VEICULO CONTADO DUAS VEZES. Quem roda pouco por litro gasta mais
+ *     por km — e o mesmo fato fisico. Saiam duas linhas por veiculo.
+ *  4. CUSTO FIXO NO R$/KM. Ver R_CUSTO_VARIAVEL_.
+ *  5. SEM PISO DE RODAGEM. Poucos km no periodo = divisor minusculo = qualquer
+ *     valor vira outlier.
+ *
+ * O piso e relativo a categoria, nao um numero fixo: empilhadeira marca HORA no
+ * mesmo campo em que o caminhao marca KM, e um piso absoluto excluiria todas as
+ * empilhadeiras ou nenhuma carreta.
+ */
 function alertasConsumo_() {
   const linhas = lerResumo_().filter(function (l) { return Number(l[R_.KM]) > 0; });
   if (!linhas.length) return [];
 
-  const kmTotal = linhas.reduce(function (s, l) { return s + (Number(l[R_.KM]) || 0); }, 0);
-  const custoTotal = linhas.reduce(function (s, l) { return s + (Number(l[R_.TOTAL]) || 0); }, 0);
-  const litrosTotal = linhas.reduce(function (s, l) { return s + (Number(l[R_.LITROS]) || 0); }, 0);
-  // Media da frota = total/total, nunca media das medias: um carro que rodou
-  // 200 km pesaria igual a um caminhao que rodou 20.000.
-  const custoKmFrota = kmTotal > 0 ? custoTotal / kmTotal : 0;
-  const kmLitroFrota = litrosTotal > 0 ? kmTotal / litrosTotal : 0;
+  const grupos = {};
+  linhas.forEach(function (l) {
+    const cat = String(l[R_.CATEGORIA] || '').trim() || '(sem categoria)';
+    (grupos[cat] || (grupos[cat] = [])).push(l);
+  });
 
   const achados = [];
-  linhas.forEach(function (l) {
-    const placa = String(l[R_.PLACA] || '');
-    const custoKm = Number(l[R_.RS_KM]) || 0;
-    const kmLitro = Number(l[R_.KM_LITRO]) || 0;
-    if (custoKmFrota > 0 && custoKm > 2 * custoKmFrota) {
-      achados.push(placa + ' — custo por km R$ ' + custoKm.toFixed(3) +
-        ', mais que o dobro da média da frota (R$ ' + custoKmFrota.toFixed(3) + ')');
+  let semReferencia = 0, poucaRodagem = 0;
+
+  Object.keys(grupos).sort().forEach(function (cat) {
+    const grupo = grupos[cat];
+    if (grupo.length < MINIMO_VEICULOS_REFERENCIA_) {
+      // Com dois ou tres veiculos nao da para separar sinal de ruido: qualquer um
+      // deles move a propria referencia. Melhor nao afirmar nada do que errar.
+      semReferencia += grupo.length;
+      return;
     }
-    if (kmLitroFrota > 0 && kmLitro > 0 && kmLitro < kmLitroFrota / 2) {
-      achados.push(placa + ' — ' + kmLitro.toFixed(2) + ' km/l, menos da metade da ' +
-        'média da frota (' + kmLitroFrota.toFixed(2) + ' km/l)');
+    const rodagemMinima = mediana_(grupo.map(function (l) { return Number(l[R_.KM]) || 0; })) *
+      FRACAO_RODAGEM_MINIMA_;
+
+    const avaliados = grupo.filter(function (l) {
+      if ((Number(l[R_.KM]) || 0) >= rodagemMinima) return true;
+      poucaRodagem++;
+      return false;
+    });
+    if (avaliados.length < MINIMO_VEICULOS_REFERENCIA_) {
+      semReferencia += avaliados.length;
+      return;
     }
+
+    const medida = avaliados.map(function (l) {
+      const km = Number(l[R_.KM]) || 0;
+      const litros = Number(l[R_.LITROS]) || 0;
+      return { placa: String(l[R_.PLACA] || ''), km: km,
+        custoKm: km > 0 ? custoVariavelResumo_(l) / km : 0,
+        kmLitro: litros > 0 ? km / litros : 0 };
+    });
+    const refCustoKm = mediana_(medida.map(function (m) { return m.custoKm; }));
+    const comLitros = medida.filter(function (m) { return m.kmLitro > 0; });
+    const refKmLitro = mediana_(comLitros.map(function (m) { return m.kmLitro; }));
+
+    medida.forEach(function (m) {
+      const desvios = [];
+      if (refCustoKm > 0 && m.custoKm > 2 * refCustoKm) {
+        desvios.push('custo variável R$ ' + m.custoKm.toFixed(3) + '/km, mais que o dobro ' +
+          'da mediana da categoria (R$ ' + refCustoKm.toFixed(3) + ')');
+      }
+      if (refKmLitro > 0 && m.kmLitro > 0 && m.kmLitro < refKmLitro / 2) {
+        desvios.push('rendimento ' + m.kmLitro.toFixed(2) + ' km/l, menos da metade ' +
+          'da mediana da categoria (' + refKmLitro.toFixed(2) + ')');
+      }
+      // Um achado por veiculo: os dois desvios sao o mesmo fato visto de dois
+      // angulos, e duas linhas so inflam a contagem.
+      if (desvios.length) achados.push(m.placa + ' (' + cat + ') — ' + desvios.join('; '));
+    });
   });
+
+  if (semReferencia) {
+    achados.push('— ' + semReferencia + ' veículo(s) não avaliados: a categoria deles tem ' +
+      'menos de ' + MINIMO_VEICULOS_REFERENCIA_ + ' veículos rodando, e não dá para ' +
+      'dizer o que é fora da curva com tão pouca referência.');
+  }
+  if (poucaRodagem) {
+    achados.push('— ' + poucaRodagem + ' veículo(s) não avaliados por rodagem baixa no ' +
+      'período: com poucos quilômetros, o custo por km não significa nada.');
+  }
   return achados;
 }
 
@@ -11969,13 +12076,24 @@ function destinatariosAlerta_() {
     .slice(0, 20);
 }
 
+/**
+ * Quantos itens de um bloco cabem no e-mail antes de virar rolagem inutil.
+ * Um bloco com 74 linhas empurra os outros tres para fora da primeira tela, e
+ * quem abre so ve um deles.
+ */
+const MAXIMO_ITENS_POR_BLOCO_ = 12;
+
 function corpoAlertaHtml_(alertas, mesRef) {
   const periodo = periodoDoMes_(mesRef);
   const linhas = alertas.blocos.map(function (b) {
+    const mostrados = b.itens.slice(0, MAXIMO_ITENS_POR_BLOCO_);
+    const resto = b.itens.length - mostrados.length;
     return '<h3 style="margin:18px 0 6px;font-size:15px;color:#222">' + b.titulo +
       ' <span style="color:#888;font-weight:normal">(' + b.itens.length + ')</span></h3>' +
       '<ul style="margin:0;padding-left:20px;color:#333;font-size:14px;line-height:1.6">' +
-      b.itens.map(function (i) { return '<li>' + i + '</li>'; }).join('') + '</ul>';
+      mostrados.map(function (i) { return '<li>' + i + '</li>'; }).join('') +
+      (resto > 0 ? '<li style="color:#888">e mais ' + resto + ' — veja a lista inteira ' +
+        'no sistema, em Configurações → Ver o alerta de hoje.</li>' : '') + '</ul>';
   }).join('');
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:640px">' +
     '<p style="font-size:14px;color:#333">Competência <b>' + mesRef + '</b> — período de ' +
