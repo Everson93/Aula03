@@ -548,7 +548,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.11.1';
+const VERSAO_SISTEMA = '4.11.2';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -4690,10 +4690,67 @@ function contarPendenciasConferencia_() {
   }, 0);
 }
 
+/**
+ * Chave de uma pendencia, para casar o que foi coletado agora com o status e a
+ * observacao de antes.
+ *
+ * O numero da linha sai da chave de proposito. Excluir um lancamento nao apaga
+ * a linha: ele SOBE as de baixo uma casa (ver removerLinhaLancamento_). Com o
+ * numero na chave, uma exclusao mudava a chave de TODAS as pendencias abaixo, e
+ * o operador perdia o status e a observacao que tinha escrito — sem erro, sem
+ * aviso, e sem relacao aparente com o que ele acabou de fazer.
+ *
+ * Duas pendencias iguais do mesmo veiculo passam a ter a MESMA chave. Isso nao
+ * as confunde: escreverConferencia_ casa a primeira com a primeira, a segunda
+ * com a segunda. Veja casarAnteriores_.
+ */
 function chavePendencia_(linha) {
-  return [linha[0], linha[1], linha[2], linha[3]].map(function (x) {
+  const detalhe = String(linha[3] == null ? '' : linha[3]).trim()
+    .replace(/^linha\s+\d+\s*(•\s*)?/, '');
+  return [linha[0], linha[1], linha[2], detalhe].map(function (x) {
     return String(x == null ? '' : x).trim();
   }).join('||');
+}
+
+/**
+ * Casa cada pendencia nova com a anterior de mesma chave, por ordem de
+ * aparicao. Fila por chave em vez de um valor so: com duas pendencias iguais do
+ * mesmo veiculo, um mapa simples daria o mesmo status as duas, e marcar uma
+ * como EM ANALISE marcaria a outra junto.
+ */
+function casarAnteriores_(linhasAnteriores) {
+  const filas = {};
+  linhasAnteriores.forEach(function (linha) {
+    const k = chavePendencia_(linha);
+    (filas[k] || (filas[k] = [])).push({
+      status: String(linha[4] || 'PENDENTE').trim().toUpperCase(),
+      observacao: String(linha[5] || ''),
+    });
+  });
+  return {
+    proximo: function (problema) {
+      const fila = filas[chavePendencia_(problema)];
+      return (fila && fila.length) ? fila.shift() : {};
+    },
+  };
+}
+
+/**
+ * RESOLVIDO sobrevive a revalidacao? Depende do tipo de problema.
+ *
+ * Para quem NAO tem conserto por campo — "sem nenhum custo no periodo" num
+ * veiculo que de fato ficou parado — marcar resolvido e um julgamento do
+ * operador, e tem de valer nas proximas revalidacoes. Senao o aviso volta todo
+ * mes e ele aprende a ignorar a tela.
+ *
+ * Para quem TEM conserto (CORRECOES_PENDENCIA_), nao: se o coletor ainda o
+ * encontra, o dado continua errado. Antes da V4.9.1 marcar RESOLVIDO era a
+ * UNICA forma de limpar a tela, e o habito ficou — com o efeito de sumir da
+ * contagem um lancamento que segue sem centro de custo. Agora ele volta a
+ * PENDENTE, com a observacao preservada e o motivo anotado.
+ */
+function resolvidoSobrevive_(problema) {
+  return !specDaPendencia_(problema);
 }
 
 /**
@@ -4704,16 +4761,12 @@ function chavePendencia_(linha) {
 function escreverConferencia_(problemas) {
   exigirExecucaoMutacao_();
   const sheet = garantirAbaPendencias_(true);
-  const anteriores = {};
-  if (sheet.getLastRow() >= 3) {
-    sheet.getRange(3, 1, sheet.getLastRow() - 2, 7).getValues().forEach(function (linha) {
-      if (!linha[0] || String(linha[0]).trim() === 'Nenhum problema encontrado.') return;
-      anteriores[chavePendencia_(linha)] = {
-        status: String(linha[4] || 'PENDENTE').trim().toUpperCase(),
-        observacao: String(linha[5] || '')
-      };
-    });
-  }
+  const brutasAnteriores = (sheet.getLastRow() >= 3)
+    ? sheet.getRange(3, 1, sheet.getLastRow() - 2, 7).getValues().filter(function (linha) {
+      return linha[0] && String(linha[0]).trim() !== 'Nenhum problema encontrado.';
+    })
+    : [];
+  const anteriores = casarAnteriores_(brutasAnteriores);
 
   removerFiltro_(sheet);
   // A versão antiga tinha A1:D1 mesclado; desfaz antes de ampliar o cabeçalho para A1:G1.
@@ -4734,10 +4787,18 @@ function escreverConferencia_(problemas) {
   if (problemas.length) {
     const agora = new Date();
     const linhas = problemas.map(function (p) {
-      const ant = anteriores[chavePendencia_(p)] || {};
+      const ant = anteriores.proximo(p);
       let status = String(ant.status || 'PENDENTE').toUpperCase();
       if (['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO'].indexOf(status) === -1) status = 'PENDENTE';
-      return [p[0], p[1], p[2], p[3], status, ant.observacao || '', agora];
+      let observacao = ant.observacao || '';
+      // O problema foi coletado DE NOVO: se ele tem conserto por campo, não está
+      // resolvido, por mais que alguém tenha dito que estava.
+      if (status === 'RESOLVIDO' && !resolvidoSobrevive_(p[2])) {
+        status = 'PENDENTE';
+        observacao = ('↩ marcado como resolvido, mas o problema continua na base. ' +
+          observacao).trim().slice(0, 500);
+      }
+      return [p[0], p[1], p[2], p[3], status, observacao, agora];
     });
     sheet.getRange(3, 1, linhas.length, 7).setValues(linhas);
     sheet.getRange(3, 7, linhas.length, 1).setNumberFormat('dd/mm/yyyy hh:mm');
@@ -11207,7 +11268,15 @@ function revalidarPendenciasSeguro_() {
   }
 }
 
-function webAtualizarPendencia(token, linha, status, observacao) {
+/**
+ * `esperado` e o texto do problema que a tela estava mostrando naquela linha.
+ *
+ * Sem ele, bastava alguem revalidar entre o carregamento da tela e o clique em
+ * Salvar para a linha 12 passar a ser outra pendencia — e o status ia para o
+ * problema errado, em silencio. webCorrigirPendencia ja reverificava o alvo
+ * desde a V4.9.1; este endpoint, mais antigo, tinha ficado de fora.
+ */
+function webAtualizarPendencia(token, linha, status, observacao, esperado) {
   autorizarContextoWeb_(token, ['OPERADOR', 'ADMIN']);
   status = String(status || '').trim().toUpperCase();
   if (['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO'].indexOf(status) === -1) {
@@ -11216,9 +11285,19 @@ function webAtualizarPendencia(token, linha, status, observacao) {
   const sheet = garantirAbaPendencias_(true);
   linha = Number(linha);
   if (!Number.isInteger(linha) || !(linha >= 3 && linha <= sheet.getLastRow())) return { ok: false, mensagem: 'Pendência não encontrada.' };
+
+  const atual = String(sheet.getRange(linha, 3).getValue() || '').trim();
+  const visto = String(esperado || '').trim();
+  if (visto && atual !== visto) {
+    return { ok: false, recarregar: true,
+      mensagem: 'A lista mudou desde que você abriu a tela: a linha ' + linha +
+        ' agora é "' + atual + '", não "' + visto + '". Nada foi gravado. ' +
+        'A tela vai recarregar.' };
+  }
+
   sheet.getRange(linha, 5).setValue(status);
   sheet.getRange(linha, 6).setValue(String(observacao || ''));
-  registrarLog_('Atualizar pendência', 'linha ' + linha + ' • ' + status);
+  registrarLog_('Atualizar pendência', 'linha ' + linha + ' • ' + atual + ' • ' + status);
 
   invalidarCacheInicio_();
   return { ok: true, mensagem: status === 'RESOLVIDO' ? 'Pendência marcada como resolvida.' : 'Pendência atualizada.' };

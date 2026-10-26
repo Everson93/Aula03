@@ -1061,6 +1061,87 @@ promessa falsa.
 
 ---
 
+# V4.11.2 — revisão do módulo de pendências
+
+Três defeitos, todos da mesma família: **estado que o operador escreveu sendo
+perdido ou aplicado no item errado, sempre em silêncio**.
+
+## 1. RESOLVIDO escondia problema que continuava existindo
+
+`escreverConferencia_` preservava o status entre revalidações, e
+`contarPendenciasConferencia_` ignora RESOLVIDO. Resultado: marcar um lançamento
+sem centro de custo como resolvido — **sem corrigir nada** — tirava-o da
+contagem para sempre, e o dado seguia errado.
+
+Isso não era descuido de quem operava. Até a V4.9.1, marcar RESOLVIDO era a
+**única** forma de limpar a tela, e o hábito ficou.
+
+A regra agora separa dois casos, em `resolvidoSobrevive_`:
+
+| Tipo de pendência | RESOLVIDO sobrevive? |
+|---|---|
+| Tem conserto por campo (`CORRECOES_PENDENCIA_`) | **Não.** Se o coletor ainda o encontra, não está resolvido |
+| Não tem (ex.: "sem nenhum custo no período") | **Sim.** É julgamento do operador |
+
+Quando volta a PENDENTE, a observação é preservada e ganha um prefixo dizendo
+por quê: `↩ marcado como resolvido, mas o problema continua na base.`
+
+O segundo caso tinha de continuar valendo: repetir todo mês o aviso de um
+veículo que você sabe que está encostado ensina a ignorar a tela.
+
+## 2. A chave da pendência incluía o número da linha
+
+`chavePendencia_` usava o detalhe inteiro — e o detalhe começa com `linha 645`.
+
+Excluir um lançamento **não apaga a linha**: sobe as de baixo uma casa (ver
+`removerLinhaLancamento_`). Então **uma exclusão mudava a chave de todas as
+pendências abaixo**, e o operador perdia status e observação de todas elas. Sem
+erro, sem aviso, e sem relação aparente com o que ele tinha acabado de fazer.
+
+O número saiu da chave. Duas pendências iguais do mesmo veículo passam a
+compartilhar chave — e isso **não** as mistura: `casarAnteriores_` mantém uma
+**fila por chave** e casa a primeira com a primeira, a segunda com a segunda. Um
+mapa simples daria o mesmo status às duas, e marcar uma como EM ANÁLISE marcaria
+a outra junto.
+
+## 3. `webAtualizarPendencia` gravava sem conferir o alvo
+
+Bastava alguém revalidar entre o carregamento da tela e o clique em Salvar para
+a linha 12 virar outra pendência — e o status ia para o problema errado.
+
+`webCorrigirPendencia` já reverificava o alvo desde a V4.9.1. Este endpoint, mais
+antigo, tinha ficado de fora — e foi justamente por isso que eu não olhei para
+ele na época. A tela agora manda junto o problema que estava exibindo, e o
+servidor recusa quando não confere, nomeando os dois.
+
+O parâmetro é opcional: sem ele a gravação ainda funciona, para não quebrar uma
+aba já aberta no navegador durante a atualização.
+
+## Suíte
+
+`conferir_pendencias_estado.js` — 19 provas sobre **o que acontece entre duas
+revalidações**, que é onde os três defeitos viviam. Uma mutação por defeito:
+
+| Mutação | Provas que falham |
+|---|---|
+| número da linha de volta na chave | 3 |
+| RESOLVIDO sempre sobrevive | 4 |
+| alvo não reverificado | 4 |
+
+## Também revisado, sem alteração
+
+- `coletarProblemas_` (272 linhas) — a maior função do sistema, mas é uma
+  sequência linear de checagens independentes; quebrar em partes espalharia o
+  contexto sem reduzir complexidade.
+- Os 48 `catch (e) {}` do arquivo: os do módulo são rollback de escrita e
+  fallback de cache corrompido, ambos legítimos.
+- `chavePendencia_` continua sem o ID do lançamento. Seria a chave ideal, mas
+  exigiria um quinto elemento em ~25 `problemas.push`; a fila por chave resolve
+  o mesmo problema sem esse risco.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de

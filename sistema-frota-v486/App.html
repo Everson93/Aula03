@@ -2828,10 +2828,15 @@
   function salvarPendencia(linha) {
     var statusP = el('pst_'+linha).value;
     var obs = el('pobs_'+linha).value;
+    // Manda junto o problema que ESTA tela está mostrando nessa linha. Se alguém
+    // revalidou no meio, o servidor recusa em vez de gravar no item errado.
+    var atual = (PENDENCIAS_CLIENTE && PENDENCIAS_CLIENTE.linhas || [])
+      .filter(function (p) { return p.linha === linha; })[0];
     google.script.run.withSuccessHandler(function(r){
-      status(r.mensagem || 'Pendência atualizada.');
+      status(r.mensagem || 'Pendência atualizada.', r.ok === false);
       telaPendencias();
-    }).withFailureHandler(falha).webAtualizarPendencia(TOKEN, linha, statusP, obs);
+    }).withFailureHandler(falha)
+      .webAtualizarPendencia(TOKEN, linha, statusP, obs, atual ? atual.problema : '');
   }
 
   function revalidarPendencias() {
