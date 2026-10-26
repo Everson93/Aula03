@@ -783,8 +783,84 @@ voltam a ser acusadas por serem carretas — o defeito exato que o usuário viu.
 
 ---
 
+# V4.10 — indicadores por grupo de frota
+
+`custoKm`, `kmLitro` e `precoLitro` do painel somavam a frota inteira. Numa
+frota que vai de Moto a Carreta Frigorífica, esses três números não descrevem
+veículo nenhum: ficam entre dois mundos.
+
+Agora o painel tem um seletor **Frota inteira / Transporte / Apoio / Operação
+interna**, e os KPIs recalculam para o recorte.
+
+## De onde sai o agrupamento
+
+Da **categoria**, que o cadastro já mantém — não de uma coluna nova. Categoria
+certa implica grupo certo, sem nada a preencher por veículo; uma coluna a mais
+seria mais um campo para ficar vazio.
+
+O mapa fica no parâmetro `GRUPOS_FROTA`, editável em Configurações:
+
+```
+Transporte: Truck Normal, Truck Frigorifico, Carreta Normal, Carreta Frigorifica |
+Apoio: Carro, Moto, Leve |
+Operação interna: Empilhadeira/Paleteira, Maquina
+```
+
+A comparação ignora acento, caixa e espaço sobrando. Categoria que não aparece
+em grupo nenhum cai em **Outros**, visível no seletor — somá-la em silêncio
+faria os grupos não fecharem com o total e ninguém saberia onde foi parar a
+diferença. Categoria listada em dois grupos fica **no primeiro**: nos dois, o
+custo dela entraria duas vezes.
+
+## Sem custo de desempenho
+
+Os KPIs de **todos os grupos** vêm na mesma resposta, calculados na **mesma
+varredura** que já produzia o total. Trocar o seletor não chama o servidor, e o
+aquecimento de cache continua valendo igual — uma chave só, como antes.
+
+Calcular depois custaria outra passada e, pior, abriria espaço para o total e os
+grupos divergirem.
+
+## O que o recorte NÃO muda
+
+Evolução mensal, composição do custo, rankings e pendências seguem sendo da
+frota inteira, e os títulos passaram a dizer isso. O histórico fechado é gravado
+por competência, sem quebra por grupo — recortá-lo exigiria recalcular doze
+meses a cada abertura do painel.
+
+## Suíte
+
+`conferir_grupos_frota.js` — 21 provas. A central é o invariante: **a soma dos
+grupos tem de fechar com o total**. Por mutação, fazendo a última ocorrência
+vencer em vez da primeira, a prova de duplicidade falha.
+
+### Dois testes que eu escrevi errado
+
+Vale registrar, porque é o mesmo vício de sempre em roupa nova: **limiar
+arbitrário**.
+
+A primeira versão afirmava "o km/l do transporte difere do da frota em mais de
+0,5". O número 0,5 não vinha de lugar nenhum, e quase reprovou uma fixture
+correta (a diferença deu 0,49). A afirmação que importa não é essa — é que o
+número da frota **fica entre os grupos**, não sendo de ninguém.
+
+A segunda era pior: afirmava que o R$/km do transporte difere do da frota. Isso
+é **falso** quando o transporte responde por 85% do custo — é correto que a
+média fique colada na dele. O teste passou a cobrar o risco real e oposto: o
+grupo dominante sequestra a média, e o número da frota **mente sobre os grupos
+pequenos** (no cenário, R$ 0,45/km do apoio contra R$ 2,08 da frota).
+
+
+---
+
 # Pendente
 
+- **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
+  origem na migração das 170 abas, e **nada no código atual lê ou escreve nela**.
+  Pode já conter um agrupamento útil da planilha antiga; vale olhar antes de
+  descartar.
+- **Formatação condicional do Resumo** ainda usa a regra antiga (2× a média da
+  frota no R$/km) e segue pintando todo caminhão. Ver V4.9.5.
 - **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo
   controla saldo e custo, não vencimento.
 - **Manutenção preventiva** — o KM é capturado no abastecimento, mas o lançamento

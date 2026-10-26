@@ -83,6 +83,55 @@ const TIPOS_COM_LITROS = [
   'Gás',
 ];
 
+/**
+ * Grupos de frota, lidos do parametro GRUPOS_FROTA.
+ *
+ * Existe porque custo por km e km/l da FROTA INTEIRA nao significam nada quando
+ * a frota vai de moto a carreta frigorifica: a media fica entre dois mundos e
+ * nao descreve nenhum dos dois. "R$/km da frota de transporte" e um numero de
+ * gestao; "R$/km da frota" nao e.
+ *
+ * O agrupamento sai da CATEGORIA, que o cadastro ja mantem, e nao de uma coluna
+ * nova: categoria certa implica grupo certo, sem nada a preencher por veiculo.
+ *
+ * Formato: "Transporte: Truck Normal, Carreta Normal | Apoio: Carro, Moto"
+ */
+const GRUPO_FROTA_OUTROS_ = 'Outros';
+
+function gruposFrota_() {
+  const bruto = String(param_('GRUPOS_FROTA') || '');
+  const ordem = [];
+  const porCategoria = {};
+  bruto.split('|').forEach(function (parte) {
+    const pos = parte.indexOf(':');
+    if (pos === -1) return;
+    const nome = parte.slice(0, pos).trim();
+    if (!nome) return;
+    const categorias = parte.slice(pos + 1).split(',')
+      .map(function (c) { return c.trim(); })
+      .filter(function (c) { return c; });
+    if (!categorias.length) return;
+    if (ordem.indexOf(nome) === -1) ordem.push(nome);
+    categorias.forEach(function (c) {
+      // Primeira ocorrencia vence: uma categoria listada em dois grupos somaria
+      // o mesmo custo duas vezes, e os grupos deixariam de fechar com o total.
+      if (porCategoria[chaveCategoria_(c)] === undefined) porCategoria[chaveCategoria_(c)] = nome;
+    });
+  });
+  return { ordem: ordem, porCategoria: porCategoria };
+}
+
+/** Chave de comparacao de categoria: sem acento, sem caixa, sem espaco sobrando. */
+function chaveCategoria_(valor) {
+  return String(valor == null ? '' : valor).trim().toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function grupoDaCategoria_(categoria, mapa) {
+  const m = mapa || gruposFrota_();
+  return m.porCategoria[chaveCategoria_(categoria)] || GRUPO_FROTA_OUTROS_;
+}
+
 /** Tipos cuja quantidade é em quilos, não litros (o formulário troca o rótulo). */
 const TIPOS_QUANTIDADE_KG = ['Gás'];
 
@@ -451,6 +500,10 @@ const PARAMETROS_PADRAO = [
   ['EMAIL_ALERTAS', '', 'E-mails que recebem o alerta diário, separados por vírgula (vazio desliga)'],
   ['HORA_ALERTA', 7, 'Hora do dia (0-23) em que o alerta diário é enviado'],
   ['ESTOQUE_MINIMO_L', 500, 'Litros abaixo dos quais o tanque interno entra no alerta diário'],
+  ['GRUPOS_FROTA',
+    'Transporte: Truck Normal, Truck Frigorifico, Carreta Normal, Carreta Frigorifica | ' +
+    'Apoio: Carro, Moto, Leve | Operação interna: Empilhadeira/Paleteira, Maquina',
+    'Grupos de frota para os indicadores. Formato: Nome: categoria, categoria | Nome: ...'],
 ];
 
 /** Linha da aba Parâmetros onde cada valor fica (a instalacao reescreve tudo). */
@@ -477,7 +530,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.9.5';
+const VERSAO_SISTEMA = '4.10.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8394,8 +8447,27 @@ function construirDadosInicio_(mesRef) {
   const centros = {};
   let veiculosComCusto = 0;
 
+  // Os grupos saem da MESMA varredura do total: calcular depois custaria outra
+  // passada e, pior, abriria espaco para os dois divergirem.
+  const mapaGrupos = gruposFrota_();
+  const porGrupo = {};
+  function acumularGrupo(nome, linha, totalLinha) {
+    const g = porGrupo[nome] || (porGrupo[nome] = {
+      nome: nome, total: 0, km: 0, litros: 0, combustivel: 0, oficina: 0,
+      depreciacao: 0, veiculos: 0, veiculosComCusto: 0 });
+    g.total += totalLinha;
+    g.km += Number(linha[R_.KM]) || 0;
+    g.litros += Number(linha[R_.LITROS]) || 0;
+    g.combustivel += Number(linha[R_.COMBUSTIVEL]) || 0;
+    g.oficina += (Number(linha[R_.OFICINA]) || 0) + (Number(linha[R_.OFICINA_ATIVO]) || 0);
+    g.depreciacao += Number(linha[R_.DEPRECIACAO]) || 0;
+    g.veiculos++;
+    if (totalLinha > 0) g.veiculosComCusto++;
+  }
+
   resumo.forEach(function (linha) {
     const totalLinha = Number(linha[R_.TOTAL]) || 0;
+    acumularGrupo(grupoDaCategoria_(linha[R_.CATEGORIA], mapaGrupos), linha, totalLinha);
     totais.total += totalLinha;
     totais.km += Number(linha[R_.KM]) || 0;
     totais.litros += Number(linha[R_.LITROS]) || 0;
@@ -8459,6 +8531,26 @@ function construirDadosInicio_(mesRef) {
     .sort(function (a, b) { return b.valor - a.valor; })
     .slice(0, 8);
 
+  // Ordem do parametro primeiro; o que sobrou (categoria nao mapeada) vai para o
+  // fim, visivel — some-lo em silencio faria os grupos nao fecharem com o total
+  // e ninguem saberia onde foi parar a diferenca.
+  const nomesGrupo = mapaGrupos.ordem.filter(function (n) { return porGrupo[n]; })
+    .concat(Object.keys(porGrupo).filter(function (n) {
+      return mapaGrupos.ordem.indexOf(n) === -1;
+    }).sort());
+  const grupos = nomesGrupo.map(function (nome) {
+    const g = porGrupo[nome];
+    return {
+      nome: nome, total: g.total, km: g.km, litros: g.litros,
+      combustivel: g.combustivel, oficina: g.oficina, depreciacao: g.depreciacao,
+      veiculos: g.veiculos, veiculosComCusto: g.veiculosComCusto,
+      custoKm: g.km > 0 ? g.total / g.km : 0,
+      kmLitro: g.litros > 0 ? g.km / g.litros : 0,
+      precoLitro: g.litros > 0 ? g.combustivel / g.litros : 0,
+      custoMedioVeiculo: g.veiculosComCusto > 0 ? g.total / g.veiculosComCusto : 0,
+    };
+  });
+
   const ativos = listaPlacas_(true).length;
   const lancamentosPeriodo = contarLancamentosCompetencia_(mesRef);
   const lancamentosTotal = quantidadeLancamentosReais_();
@@ -8485,6 +8577,7 @@ function construirDadosInicio_(mesRef) {
     lancamentosPeriodo: lancamentosPeriodo,
     pendencias: contarPendenciasConferencia_(),
     top: top,
+    grupos: grupos,
     centros: centrosRanking,
     composicao: composicao,
     evolucao: historicoCompleto.slice(-12),

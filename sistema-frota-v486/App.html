@@ -1164,11 +1164,65 @@
       ' • painel '+num(x.inicioMs||0)+' ms'+(x.dashboardCache?' ✓':'');
   }
 
+  // Grupo de frota em exibicao no painel. Os KPIs de todos os grupos vem na
+  // MESMA resposta do servidor, entao trocar aqui nao custa ida nenhuma — e o
+  // aquecimento de cache continua valendo igual.
+  var GRUPO_FROTA = 'TODAS';
+
+  function trocarGrupoFrota() {
+    var sel = el('grupoFrota');
+    GRUPO_FROTA = sel ? sel.value : 'TODAS';
+    if (INICIO_CLIENTE) renderizarInicio(INICIO_CLIENTE);
+  }
+
+  /**
+   * KPIs do grupo escolhido. Custo por km e km/l da frota INTEIRA não
+   * significam nada quando ela vai de moto a carreta: a média fica entre dois
+   * mundos e não descreve nenhum deles.
+   */
+  function kpisDoGrupo(d) {
+    if (GRUPO_FROTA === 'TODAS') return d;
+    var g = (d.grupos || []).filter(function (x) { return x.nome === GRUPO_FROTA; })[0];
+    if (!g) return d;
+    // Só os indicadores que mudam com o recorte. Evolução, composição e
+    // pendências seguem sendo da frota inteira — e os títulos dizem isso.
+    return {
+      total: g.total, km: g.km, litros: g.litros, custoKm: g.custoKm,
+      kmLitro: g.kmLitro, precoLitro: g.precoLitro, oficina: g.oficina,
+      custoMedioVeiculo: g.custoMedioVeiculo, veiculos: g.veiculos,
+      veiculosComCusto: g.veiculosComCusto,
+      variacao: null,          // a variação do histórico é da frota toda
+      lancamentosPeriodo: d.lancamentosPeriodo,
+    };
+  }
+
+  function seletorGrupoFrota(d) {
+    var grupos = d.grupos || [];
+    if (grupos.length < 2) return '';
+    return '<select id="grupoFrota" onchange="trocarGrupoFrota()" ' +
+      'style="width:auto;min-width:170px">' +
+      '<option value="TODAS"' + (GRUPO_FROTA === 'TODAS' ? ' selected' : '') + '>' +
+        'Frota inteira</option>' +
+      grupos.map(function (g) {
+        return '<option value="' + esc(g.nome) + '"' +
+          (GRUPO_FROTA === g.nome ? ' selected' : '') + '>' + esc(g.nome) +
+          ' (' + g.veiculos + ')</option>';
+      }).join('') + '</select>';
+  }
+
   function renderizarInicio(d) {
     INICIO_CLIENTE = d;
+    // Grupo que sumiu (categoria remapeada, parâmetro editado) volta para a
+    // frota inteira, em vez de mostrar um painel vazio sem explicação.
+    if (GRUPO_FROTA !== 'TODAS' &&
+        !(d.grupos || []).some(function (g) { return g.nome === GRUPO_FROTA; })) {
+      GRUPO_FROTA = 'TODAS';
+    }
+    var k = kpisDoGrupo(d);
+    var recorte = GRUPO_FROTA === 'TODAS' ? '' : ' • ' + GRUPO_FROTA;
     el('titulo').textContent = d.empresa;
     atualizarSelo(d.pendencias);
-    var delta=d.variacao===null||d.variacao===undefined?null:Number(d.variacao);
+    var delta=k.variacao===null||k.variacao===undefined?null:Number(k.variacao);
     var deltaTxt=delta===null?'Sem base anterior':(delta>0?'▲ ':'▼ ')+Math.abs(delta*100).toFixed(1).replace('.',',')+'% vs. anterior';
     var deltaCls=delta===null?'neutro':(delta>0?'alta':'baixa');
     var pend = Number(d.pendencias||0);
@@ -1176,20 +1230,20 @@
 
     el('tela').innerHTML =
       '<div class="dash-head"><div><div class="dash-eyebrow">Visão executiva da frota</div><h2>'+esc(d.mesExtenso)+'</h2><p>Período operacional '+esc(d.periodo)+'</p></div>'+
-      '<div class="dash-acoes"><span class="dash-chip ok">Período aberto</span><button class="dash-refresh" onclick="telaInicio(true)">↻ Atualizar</button></div></div>'+alerta+
+      '<div class="dash-acoes">'+seletorGrupoFrota(d)+'<span class="dash-chip ok">Período aberto</span><button class="dash-refresh" onclick="telaInicio(true)">↻ Atualizar</button></div></div>'+alerta+
       '<div class="dash-kpis">'+
-        '<div class="dash-kpi"><div class="label">Custo total do período</div><div class="numero">'+brl(d.total)+'</div><span class="delta '+deltaCls+'">'+esc(deltaTxt)+'</span></div>'+
-        '<div class="dash-kpi"><div class="label">Custo por KM</div><div class="numero">'+brl(d.custoKm,3)+'</div><div class="nota">'+num(d.km)+' km rodados</div></div>'+
-        '<div class="dash-kpi"><div class="label">Eficiência média</div><div class="numero">'+num(d.kmLitro,2)+' km/L</div><div class="nota">'+num(d.litros,0)+' litros consumidos</div></div>'+
-        '<div class="dash-kpi"><div class="label">Custo médio / veículo</div><div class="numero">'+brl(d.custoMedioVeiculo)+'</div><div class="nota">'+num(d.veiculosComCusto)+' veículos com custo</div></div>'+
+        '<div class="dash-kpi"><div class="label">Custo total do período'+esc(recorte)+'</div><div class="numero">'+brl(k.total)+'</div><span class="delta '+deltaCls+'">'+esc(deltaTxt)+'</span></div>'+
+        '<div class="dash-kpi"><div class="label">Custo por KM'+esc(recorte)+'</div><div class="numero">'+brl(k.custoKm,3)+'</div><div class="nota">'+num(k.km)+' km rodados</div></div>'+
+        '<div class="dash-kpi"><div class="label">Eficiência média'+esc(recorte)+'</div><div class="numero">'+num(k.kmLitro,2)+' km/L</div><div class="nota">'+num(k.litros,0)+' litros consumidos</div></div>'+
+        '<div class="dash-kpi"><div class="label">Custo médio / veículo'+esc(recorte)+'</div><div class="numero">'+brl(k.custoMedioVeiculo)+'</div><div class="nota">'+num(k.veiculosComCusto)+' veículos com custo</div></div>'+
       '</div>'+
       '<div class="dash-mini">'+
-        '<div class="item"><div class="r">Veículos ativos</div><div class="v">'+num(d.veiculos)+'</div></div>'+
+        '<div class="item"><div class="r">'+(GRUPO_FROTA==='TODAS'?'Veículos ativos':'Veículos no grupo')+'</div><div class="v">'+num(GRUPO_FROTA==='TODAS'?d.veiculos:k.veiculos)+'</div></div>'+
         '<div class="item"><div class="r">Lançamentos no período</div><div class="v">'+num(d.lancamentosPeriodo)+'</div></div>'+
-        '<div class="item"><div class="r">Preço médio / litro</div><div class="v">'+brl(d.precoLitro,3)+'</div></div>'+
-        '<div class="item"><div class="r">Oficina / manutenção</div><div class="v">'+brl(d.oficina)+'</div></div>'+
+        '<div class="item"><div class="r">Preço médio / litro'+esc(recorte)+'</div><div class="v">'+brl(k.precoLitro,3)+'</div></div>'+
+        '<div class="item"><div class="r">Oficina / manutenção'+esc(recorte)+'</div><div class="v">'+brl(k.oficina)+'</div></div>'+
       '</div>'+
-      '<div class="dash-grid"><div class="dash-card"><div class="dash-card-head"><div><h3>Evolução mensal</h3><div class="hint">Histórico fechado + competência atual</div></div><span class="chip">12 meses</span></div><div class="dash-chart">'+graficoEvolucao(d)+'</div></div>'+
+      '<div class="dash-grid"><div class="dash-card"><div class="dash-card-head"><div><h3>Evolução mensal</h3><div class="hint">Frota inteira • histórico fechado + competência atual</div></div><span class="chip">12 meses</span></div><div class="dash-chart">'+graficoEvolucao(d)+'</div></div>'+
       '<div class="dash-card"><div class="dash-card-head"><div><h3>Composição do custo</h3><div class="hint">Participação das principais rubricas</div></div></div>'+graficoDonut(d)+'</div></div>'+
       '<div class="dash-grid meio"><div class="dash-card"><div class="dash-card-head"><div><h3>Maiores custos por veículo</h3><div class="hint">Top 8 da competência</div></div></div>'+rankingBarras(d.top,'veiculo')+'</div>'+
       '<div class="dash-card"><div class="dash-card-head"><div><h3>Custo por centro</h3><div class="hint">Centros com maior participação</div></div></div>'+rankingBarras(d.centros,'centro')+'</div></div>'+
