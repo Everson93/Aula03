@@ -340,13 +340,28 @@ const CORES = {
 const PERFIS_ACESSO = ['CONSULTA', 'OPERADOR', 'ADMIN'];
 
 /** Telas que cada perfil poderá visualizar no App. */
+/**
+ * Telas visiveis em cada perfil.
+ *
+ * ATENCAO: esta lista e o que o menu do app realmente mostra. Uma tela pode
+ * existir no App.html, estar em TELAS_WEB e mesmo assim NAO APARECER para
+ * ninguem se o id faltar aqui — foi o que aconteceu com 'orcamento' (V4.9) e
+ * 'comprovantes' (V4.11), entregues e invisiveis ate alguem perguntar onde
+ * estavam. Ha regra estatica cobrando as tres listas: conferir_telas.js.
+ */
 const TELAS_POR_PERFIL = {
   // Carga na bomba e operacao do dia a dia; cadastro de fornecedor e administrativo,
   // porque criar fornecedor solto derrubaria a consistencia do relatorio por fornecedor.
-  CONSULTA: ['inicio', 'consulta', 'relatorios', 'resumo', 'rateio', 'veiculos', 'centros', 'fornecedores'],
-  OPERADOR: ['inicio', 'lancar', 'lancamentos', 'bomba', 'consulta', 'relatorios', 'resumo', 'rateio',
+  // Orcamento entra como LEITURA: a gravacao e barrada no servidor (ADMIN).
+  CONSULTA: ['inicio', 'consulta', 'relatorios', 'resumo', 'rateio', 'orcamento',
+    'veiculos', 'centros', 'fornecedores'],
+  // Comprovante atrasado e do OPERADOR: quem recebe o papel na loja e quem registra.
+  // Incorporar e descartar continuam sendo ADMIN, barrados no servidor.
+  OPERADOR: ['inicio', 'lancar', 'lancamentos', 'bomba', 'comprovantes', 'consulta',
+    'relatorios', 'resumo', 'rateio', 'orcamento',
     'veiculos', 'centros', 'fornecedores', 'pendencias'],
-  ADMIN: ['inicio', 'lancar', 'lancamentos', 'bomba', 'consulta', 'relatorios', 'resumo', 'rateio',
+  ADMIN: ['inicio', 'lancar', 'lancamentos', 'bomba', 'comprovantes', 'consulta',
+    'relatorios', 'resumo', 'rateio', 'orcamento',
     'veiculos', 'fornecedores', 'centros', 'pendencias', 'depreciacao', 'ipva', 'fechamento',
     'saude', 'config', 'usuarios', 'log'],
 };
@@ -533,7 +548,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.11.0';
+const VERSAO_SISTEMA = '4.11.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;

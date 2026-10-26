@@ -998,6 +998,69 @@ asserção.
 
 ---
 
+# V4.11.1 — duas telas entregues e invisíveis
+
+O usuário perguntou onde ficava o módulo de comprovantes atrasados. Não ficava
+em lugar nenhum: **o item não aparecia no menu, para nenhum perfil — nem para o
+ADMIN**. E o Orçamento, da V4.9, estava igual, havia semanas.
+
+## Três listas que precisam concordar
+
+Uma tela existe de verdade quando está em **três** lugares:
+
+| Onde | Se faltar |
+|---|---|
+| `MENU` no App.html | não há item nem função |
+| `TELAS_WEB` no Codigo.gs | `doGet` recusa abrir por `?pagina=` |
+| `TELAS_POR_PERFIL` | **o item simplesmente não aparece** |
+
+Eu havia acertado as duas primeiras nas duas versões, e esquecido a terceira nas
+duas. E faltar na terceira **não dá erro nenhum**: o servidor responde certo, as
+funções existem, os callbacks resolvem. A funcionalidade fica pronta e
+inalcançável.
+
+## Por que nenhuma suíte pegou
+
+`conferir_callbacks.js` confere que toda chamada `google.script.run` tem função
+no servidor — e tinha. As suítes de cada módulo exercitam o servidor — e ele
+respondia. Nenhuma olhava o **acordo entre as três listas**, que vivem em
+arquivos diferentes.
+
+É o mesmo padrão pela quarta vez: **o teste olha um lado de um contrato que tem
+dois ou três**. Os outros três casos estão registrados nas V4.9.5, V4.9.4 e
+V4.10.
+
+## `conferir_telas.js`
+
+Lê o `MENU` do App.html, o `TELAS_WEB` e o `TELAS_POR_PERFIL` do Codigo.gs, e
+cobra:
+
+- toda tela do menu está em `TELAS_WEB`;
+- toda tela do menu é **visível para o ADMIN**;
+- a função que desenha cada tela existe;
+- nenhum perfil aponta para tela inexistente (id morto esconde erro de
+  digitação);
+- **hierarquia**: ADMIN enxerga tudo que OPERADOR enxerga, que enxerga tudo que
+  CONSULTA enxerga. Perfil mais alto com menos acesso é sempre esquecimento, e
+  foi exatamente a forma deste defeito.
+
+Por mutação, removendo `comprovantes` do ADMIN, três provas falham e **nomeiam a
+tela e o rótulo**.
+
+## Quem vê o quê agora
+
+| Tela | CONSULTA | OPERADOR | ADMIN |
+|---|:--:|:--:|:--:|
+| Orçamento por centro | ✓ leitura | ✓ leitura | ✓ edita |
+| Comprovantes atrasados | — | ✓ registra | ✓ incorpora / descarta |
+
+CONSULTA fica fora dos comprovantes de propósito: a tela é um formulário de
+registro, e o servidor recusaria esse perfil. Mostrar o que não funciona é
+promessa falsa.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
