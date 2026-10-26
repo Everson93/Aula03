@@ -1142,6 +1142,70 @@ revalidações**, que é onde os três defeitos viviam. Uma mutação por defeit
 
 ---
 
+# V4.11.3 — "mesmo corrigindo, as pendências permanecem ali"
+
+Relato do usuário. Fui testar o caminho de ponta a ponta e ele **funciona**:
+corrigir grava o campo e o coletor real para de reportar o problema. Então o
+sintoma vinha de outro lugar — e eram duas coisas, mais uma falha do teste.
+
+## A falha do teste, primeiro
+
+`conferir_corrigir_pendencia.js` stubba `coletarProblemas_ = function () { return []; }`.
+Ela prova que o campo foi gravado e que a revalidação foi **chamada** — e nada
+mais. Se a gravação não satisfizesse a condição que gerou a pendência, a suíte
+passaria igual.
+
+É o mesmo vício pela quinta vez: **o teste olha um lado do contrato**. Aqui os
+lados são `webCorrigirPendencia` (quem grava) e `coletarProblemas_` (quem
+julga). `conferir_correcao_ponta.js` exercita os dois juntos, com o coletor de
+verdade.
+
+> Escrevendo o fixture, a planilha falsa mapeava `dados[linha - 2]`, o que serve
+> para abas cujos dados começam na linha 2 e **quebra** na de Pendências, cujo
+> cabeçalho fica na 2 e os dados na 3 — o cabeçalho entrava na lista como se
+> fosse pendência. Fixture errado reprova código certo e, pior, pode aprovar
+> código errado.
+
+## Causa 1: a revalidação falhava em silêncio
+
+`revalidarPendenciasSeguro_` devolvia um número ou `null`, e quem chamava
+transformava o `null` numa frase mansa no **fim de uma mensagem de sucesso**:
+
+> *"Detalhe gravado em Lançamentos, linha 35. Conferência não pôde ser refeita
+> agora."*
+
+O operador lê o verde, vê o item continuar na tela, e corrige de novo achando
+que não pegou.
+
+E a falha não é hipotética: `coletarProblemas_` chama
+`garantirResumoAtualizado_`, que **lança** quando a aba Resumo está na largura
+de uma versão anterior. **Quem colou o código novo sem rodar "Instalar /
+atualizar" cai exatamente nisso** — e as V4.9, V4.10 e V4.11 todas pediram
+reinstalação.
+
+Agora o motivo sobe junto e a tela mostra em vermelho, dizendo que o campo
+**foi** gravado, que o item vai continuar aparecendo, qual foi o erro, e o que
+fazer.
+
+## Causa 2: RESOLVIDO saía da contagem, não da lista
+
+A tela listava todas as pendências, inclusive as resolvidas — para sempre. Quem
+usava **Salvar + RESOLVIDO** em vez do botão **Corrigir** via o item
+literalmente permanecer ali.
+
+Agora há filtro por **Situação**, começando em *"Em aberto (esconde
+resolvidas)"*, com a contagem de cada estado ao lado.
+
+## Suíte
+
+`conferir_correcao_ponta.js` — 14 provas. A central é a do bloco 2: depois de
+corrigir, **o coletor real** não reporta mais o problema. O bloco 4 cobre a
+falha de revalidação: campo gravado, aviso vermelho, motivo real e conserto
+apontado.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de

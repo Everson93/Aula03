@@ -320,6 +320,9 @@
   var PENDENCIAS_CLIENTE = null;
   var FILTRO_PEND_VEICULO = 'TODOS';
   var FILTRO_PEND_TIPO = 'TODOS';
+  // Começa escondendo as resolvidas: elas saem da contagem mas não saíam da
+  // lista, e a tela parecia nunca esvaziar.
+  var FILTRO_PEND_SITUACAO = 'ABERTAS';
 
   // ------------------------------------------------------------ utilidades
   function el(id) { return document.getElementById(id); }
@@ -2634,10 +2637,12 @@
     if (!PENDENCIAS_CLIENTE) return;
     FILTRO_PEND_VEICULO = el('filtroPendVeiculo') ? el('filtroPendVeiculo').value : FILTRO_PEND_VEICULO;
     FILTRO_PEND_TIPO = el('filtroPendTipo') ? el('filtroPendTipo').value : FILTRO_PEND_TIPO;
+    FILTRO_PEND_SITUACAO = el('filtroPendSituacao') ? el('filtroPendSituacao').value : FILTRO_PEND_SITUACAO;
     renderPendencias(PENDENCIAS_CLIENTE);
   }
 
   function limparFiltrosPendencias() {
+    FILTRO_PEND_SITUACAO = 'ABERTAS';
     FILTRO_PEND_VEICULO = 'TODOS';
     FILTRO_PEND_TIPO = 'TODOS';
     if (PENDENCIAS_CLIENTE) renderPendencias(PENDENCIAS_CLIENTE);
@@ -2754,6 +2759,16 @@
             esc(r.mensagem) + '</div>';
           return;
         }
+        // Gravou mas não conseguiu refazer a lista: isso TEM de aparecer como
+        // erro, senão o operador vê verde, continua vendo o item, e corrige de
+        // novo achando que não pegou.
+        if (r.revalidou === false) {
+          botao.disabled = false;
+          botao.textContent = 'Corrigir';
+          el('pfixm_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
+            esc(r.mensagem) + '</div>';
+          return;
+        }
         // A lista inteira e refeita: corrigir um campo pode resolver mais de uma
         // pendencia da mesma linha, e os numeros de linha mudam na revalidacao.
         status(r.mensagem);
@@ -2781,9 +2796,16 @@
     if (FILTRO_PEND_VEICULO !== 'TODOS' && placas.indexOf(FILTRO_PEND_VEICULO) === -1) FILTRO_PEND_VEICULO = 'TODOS';
     if (FILTRO_PEND_TIPO !== 'TODOS' && tipos.indexOf(FILTRO_PEND_TIPO) === -1) FILTRO_PEND_TIPO = 'TODOS';
 
+    // Sem este filtro, item RESOLVIDO ficava na tela para sempre: ele sai da
+    // CONTAGEM, não da lista. É provavelmente o que faz parecer que "mesmo
+    // corrigindo, elas permanecem ali".
+    var resolvidos = todos.filter(function(p){ return p.status === 'RESOLVIDO'; }).length;
     var filtradas = todos.filter(function(p){
       if (FILTRO_PEND_VEICULO !== 'TODOS' && String(p.placa || '') !== FILTRO_PEND_VEICULO) return false;
       if (FILTRO_PEND_TIPO !== 'TODOS' && String(p.problema || '') !== FILTRO_PEND_TIPO) return false;
+      if (FILTRO_PEND_SITUACAO === 'ABERTAS' && p.status === 'RESOLVIDO') return false;
+      if (FILTRO_PEND_SITUACAO !== 'ABERTAS' && FILTRO_PEND_SITUACAO !== 'TODOS'
+          && p.status !== FILTRO_PEND_SITUACAO) return false;
       return true;
     });
 
@@ -2802,7 +2824,8 @@
           '<button class="acao secundaria" onclick="salvarPendencia('+p.linha+')">Salvar</button></div></div>';
     }).join('');
 
-    var filtrosAtivos = FILTRO_PEND_VEICULO !== 'TODOS' || FILTRO_PEND_TIPO !== 'TODOS';
+    var filtrosAtivos = FILTRO_PEND_VEICULO !== 'TODOS' || FILTRO_PEND_TIPO !== 'TODOS' ||
+      FILTRO_PEND_SITUACAO !== 'ABERTAS';
     el('tela').innerHTML =
       '<div class="dash-head"><div><div class="dash-eyebrow">Controle operacional</div><h2>Pendências de Conferência</h2><p>Filtre por veículo ou pelo tipo de inconsistência para revisar a fila com mais rapidez.</p></div>'+
       '<div class="dash-acoes">'+(podeRevalidar?'<button class="dash-refresh" onclick="revalidarPendencias()">↻ Revalidar</button>':'')+'</div></div>'+
@@ -2815,6 +2838,15 @@
         '<div class="linha">'+
           '<div><label for="filtroPendVeiculo">Veículo</label><select id="filtroPendVeiculo" onchange="aplicarFiltrosPendencias()">'+opcoesFiltroPendencias(placas,FILTRO_PEND_VEICULO,'Todos os veículos')+'</select></div>'+
           '<div><label for="filtroPendTipo">Tipo de pendência</label><select id="filtroPendTipo" onchange="aplicarFiltrosPendencias()">'+opcoesFiltroPendencias(tipos,FILTRO_PEND_TIPO,'Todos os tipos')+'</select></div>'+
+          '<div><label for="filtroPendSituacao">Situação</label><select id="filtroPendSituacao" onchange="aplicarFiltrosPendencias()">'+
+            ['ABERTAS','PENDENTE','EM ANÁLISE','RESOLVIDO','TODOS'].map(function(sit){
+              var rot = sit === 'ABERTAS' ? 'Em aberto (esconde resolvidas)' : sit;
+              var n = sit === 'ABERTAS' ? todos.length - resolvidos
+                    : sit === 'TODOS' ? todos.length
+                    : todos.filter(function(p){ return p.status === sit; }).length;
+              return '<option value="'+sit+'"'+(sit===FILTRO_PEND_SITUACAO?' selected':'')+'>'+
+                esc(rot)+' ('+n+')</option>';
+            }).join('')+'</select></div>'+
           '<div style="flex:0 0 auto;align-self:flex-end"><button class="acao secundaria" onclick="limparFiltrosPendencias()"'+(filtrosAtivos?'':' disabled')+'>Limpar filtros</button></div>'+
         '</div></div>'+
       (linhas || (todos.length ? '<div class="aviso">Nenhuma pendência corresponde aos filtros selecionados.</div>' : '<div class="ok-caixa">Nenhuma pendência ativa. Os dados estão consistentes.</div>'));

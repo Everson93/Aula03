@@ -548,7 +548,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.11.2';
+const VERSAO_SISTEMA = '4.11.3';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11004,13 +11004,17 @@ function webAcaoPendencia(token, linhaPendencia) {
 
   invalidarCachesDaAba_(ABAS.LANCAMENTOS);
   registrarLog_('Rotina de pendência', problema + ' • ' + acao.executar + ' • ' + feito + ' item(ns)');
-  const restantes = revalidarPendenciasSeguro_();
+  const revalidacao = revalidarPendenciasSeguro_();
+  if (!revalidacao.ok) {
+    return { ok: true, revalidou: false, pendentes: null,
+      mensagem: feito + ' lançamento(s) receberam ID. MAS a lista não pôde ser ' +
+        'refeita: ' + revalidacao.erro + ' — rode "Instalar / atualizar sistema".' };
+  }
   return {
-    ok: true,
+    ok: true, revalidou: true,
     mensagem: feito + ' lançamento(s) receberam ID. ' +
-      (restantes === null ? 'Conferência não pôde ser refeita agora.'
-        : restantes + ' pendência(s) em aberto.'),
-    pendentes: restantes,
+      revalidacao.pendentes + ' pendência(s) em aberto.',
+    pendentes: revalidacao.pendentes,
   };
 }
 
@@ -11234,13 +11238,23 @@ function webCorrigirPendencia(token, linhaPendencia, valorNovo) {
 
   // Refaz a conferencia inteira: corrigir um campo pode resolver mais de uma
   // pendencia da mesma linha, e deixar as outras na tela seria mentira.
-  const restantes = revalidarPendenciasSeguro_();
+  const revalidacao = revalidarPendenciasSeguro_();
+  const gravou = spec.rotulo + ' gravado em ' + spec.aba + ', linha ' + alvo.linha + '.';
+  if (!revalidacao.ok) {
+    // O campo FOI gravado; o que falhou foi refazer a lista. Dizer isso com todas
+    // as letras, senao o operador acha que a correção não pegou e corrige de novo.
+    return {
+      ok: true, revalidou: false, pendentes: null,
+      mensagem: gravou + ' MAS a lista de pendências não pôde ser refeita, então ' +
+        'este item continua aparecendo na tela. Motivo: ' + revalidacao.erro +
+        ' — normalmente é a planilha estar numa versão anterior: rode ' +
+        '"🚚 Sistema de Frota → Instalar / atualizar sistema" e clique em Revalidar.',
+    };
+  }
   return {
-    ok: true,
-    mensagem: spec.rotulo + ' gravado em ' + spec.aba + ', linha ' + alvo.linha + '. ' +
-      (restantes === null ? 'Conferência não pôde ser refeita agora.'
-        : restantes + ' pendência(s) em aberto.'),
-    pendentes: restantes,
+    ok: true, revalidou: true,
+    mensagem: gravou + ' ' + revalidacao.pendentes + ' pendência(s) em aberto.',
+    pendentes: revalidacao.pendentes,
   };
 }
 
@@ -11256,15 +11270,30 @@ function invalidarCachesDaAba_(aba) {
 }
 
 /** Refaz a conferencia sem deixar um erro dela derrubar a correcao ja gravada. */
+/**
+ * Refaz a conferencia. Devolve { ok, pendentes, erro }.
+ *
+ * ATENCAO ao motivo deste formato. Antes devolvia um numero ou `null`, e quem
+ * chamava transformava o null numa frase mansa no FIM de uma mensagem de
+ * SUCESSO: "...gravado. Conferência não pôde ser refeita agora." O operador lia
+ * o verde, corrigia o campo de verdade, e a pendencia continuava na tela — sem
+ * nenhuma pista do porque.
+ *
+ * E a falha nao e hipotetica: coletarProblemas_ chama garantirResumoAtualizado_,
+ * que LANCA quando a aba Resumo esta com a largura de uma versao anterior. Quem
+ * colou o codigo novo sem rodar "Instalar / atualizar" cai exatamente nisso.
+ *
+ * Agora o motivo sobe junto e a tela mostra em vermelho.
+ */
 function revalidarPendenciasSeguro_() {
   // Sem forcar CONTEXTO_SISTEMA_INTERNO_: quem chama ja passou por
   // autorizarContextoWeb_, e manter o contexto do usuario preserva a autoria.
   try {
     escreverConferencia_(coletarProblemas_());
-    return contarPendenciasConferencia_();
+    return { ok: true, pendentes: contarPendenciasConferencia_() };
   } catch (e) {
     console.error('revalidar pendências: ' + e.message);
-    return null;
+    return { ok: false, pendentes: null, erro: e.message };
   }
 }
 
