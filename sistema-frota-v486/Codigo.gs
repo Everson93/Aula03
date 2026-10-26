@@ -530,7 +530,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.10.0';
+const VERSAO_SISTEMA = '4.10.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -4466,13 +4466,18 @@ function coletarProblemas_(opcoesColeta) {
 
       const noPeriodoAtual = data >= periodo.inicio && data <= periodo.fim;
       const futuro = data > periodo.fim;
-      if (futuro) {
+      // Parcela de IPVA agendada tem data futura de propósito. Ver lancamentoAgendado_.
+      const agendado = lancamentoAgendado_(linha);
+      if (futuro && !agendado) {
         problemas.push([ABAS.LANCAMENTOS, placa, 'Lançamento em período futuro',
           'linha ' + numeroLinha + ' • ' + formatarData_(data)]);
       }
       // Registro anterior ao período aberto permanece na base para histórico, mas não é
       // uma pendência mensal. Integridade histórica é tratada separadamente pelo hash.
-      if (!noPeriodoAtual && !futuro) return;
+      // A parcela agendada segue a mesma regra: fora do mês aberto, ela existe na base
+      // e não é assunto do fechamento de agora. Quando a competência dela abrir, as
+      // checagens de centro, categoria e placa passam a valer normalmente.
+      if (!noPeriodoAtual && (!futuro || agendado)) return;
 
       if (!idLancamento) {
         problemas.push([ABAS.LANCAMENTOS, placa, 'Lançamento sem ID de auditoria', 'linha ' + numeroLinha]);
@@ -10288,6 +10293,30 @@ function somarMesesCompetencia_(mesRef, meses) {
 }
 
 /** Parcelas de IPVA ja lancadas para a placa, agrupadas pelo grupo de origem. */
+/**
+ * Lancamento com data futura POR DESENHO, nao por engano.
+ *
+ * Desde a V4.8.7 o IPVA e lancado como 12 parcelas, cada uma datada no fim da
+ * SUA competencia — inclusive as que ainda nao chegaram. Isso e o ponto delas:
+ * o encargo anual aparece diluido mes a mes no mapa, em vez de pesar tudo num
+ * mes so.
+ *
+ * O validador de "lancamento em periodo futuro" nasceu para pegar quem digitou
+ * 2027 no lugar de 2026, e nao sabia dessas. Resultado: toda parcela agendada
+ * virava pendencia, e a lista enchia de itens que ninguem consegue resolver
+ * porque nao sao problema — exatamente o tipo de ruido que faz o operador parar
+ * de olhar a tela de conferencia.
+ *
+ * O reconhecimento e pelo marcador de grupo que lancarIpvaAnual_ grava na
+ * observacao, nao so pelo tipo: um IPVA avulso digitado com data errada CONTINUA
+ * sendo acusado, que e o comportamento certo.
+ */
+function lancamentoAgendado_(linha) {
+  if (String(linha[L_.TIPO] || '').trim() !== 'IPVA') return false;
+  return new RegExp(PREFIXO_GRUPO_IPVA_ + '[A-Za-z0-9]+')
+    .test(String(linha[L_.OBSERVACAO] || ''));
+}
+
 function gruposIpvaDaPlaca_(placa) {
   const alvo = normalizaPlaca_(placa);
   const grupos = {};

@@ -853,6 +853,70 @@ pequenos** (no cenário, R$ 0,45/km do apoio contra R$ 2,08 da frota).
 
 ---
 
+# V4.10.1 — 110 pendências que não eram pendências
+
+A lista de conferência estava com **110 itens**, quase todos
+"Lançamento em período futuro" com datas de dezembro.
+
+Causa: eu mesmo, na V4.8.7. O IPVA passou a ser lançado como **12 parcelas,
+cada uma datada no fim da SUA competência** — inclusive as que ainda não
+chegaram. É o ponto delas: o encargo anual aparece diluído mês a mês no mapa,
+em vez de pesar tudo num mês só.
+
+O validador de "lançamento em período futuro" nasceu antes disso, para pegar
+quem digita 2027 no lugar de 2026. Ele não sabia das parcelas e condenava cada
+uma. Pior tipo de ruído: itens que **ninguém consegue resolver porque não são
+problema** — e que ensinam o operador a ignorar a tela inteira.
+
+Um veículo com IPVA lançado na competência aberta gera **11** parcelas futuras,
+e esse número só cai de um em um a cada mês. Com algumas dezenas de veículos, as
+110 aparecem sozinhas.
+
+## Havia um agravante
+
+```js
+if (!noPeriodoAtual && !futuro) return;
+```
+
+Registro **passado** saía antes das demais checagens; registro **futuro, não**.
+Então cada parcela agendada ainda era avaliada para centro congelado, categoria,
+placa ativa — como se fosse do mês que está fechando.
+
+Agora a parcela agendada segue a mesma regra do registro histórico: existe na
+base, não é assunto do fechamento de agora. **Quando a competência dela abrir**,
+todas as checagens voltam a valer normalmente.
+
+## A linha que não podia ser cruzada
+
+A isenção é pelo **marcador de grupo** que `lancarIpvaAnual_` grava na
+observação (`IPVA-A1B2C3D4`), não pelo tipo. Um **IPVA avulso** digitado com
+data errada **continua sendo acusado**.
+
+Isentar todo tipo `IPVA` seria mais simples e calaria o validador justamente
+onde o erro de digitação é mais caro. Há teste de mutação para essa linha: com a
+isenção larga, três provas falham.
+
+## Contagem no filtro de pendências
+
+"110 pendências" não diz o que fazer: pode ser um problema em 110 veículos ou
+110 vezes o mesmo problema, e a ação é bem diferente. O filtro por tipo agora
+mostra a contagem de cada um, ordenado do mais frequente — que é por onde se
+tira mais de uma vez.
+
+## Suíte
+
+`conferir_agendado.js` — 16 provas.
+
+Uma delas eu escrevi errado, pela terceira vez com a mesma raiz: afirmava
+"com 55 veículos isso passa de 100 pendências". Era um **palpite sobre dados
+que o teste não enxerga**, disfarçado de prova — e reprovou, porque o total
+depende de quando cada IPVA foi lançado. Foi trocada pela propriedade
+verificável: lançar na competência aberta gera `PARCELAS_IPVA_ - 1` parcelas
+futuras, e o número cai de um em um a cada mês.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de

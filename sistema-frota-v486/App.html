@@ -2406,19 +2406,33 @@
     return 'ok-caixa';
   }
 
+  /**
+   * Opcoes do filtro COM A CONTAGEM de cada valor.
+   *
+   * Sem o numero, "110 pendencias" nao diz nada sobre o que fazer: pode ser um
+   * problema em 110 veiculos ou 110 vezes o mesmo problema — e a acao e bem
+   * diferente nos dois casos.
+   */
   function opcoesFiltroPendencias(lista, atual, rotuloTodos) {
-    var unicos = {};
-    (lista || []).forEach(function(v){
+    var contagem = {};
+    (lista || []).forEach(function (v) {
       v = String(v || '').trim();
-      if (v) unicos[v] = true;
+      if (v) contagem[v] = (contagem[v] || 0) + 1;
     });
-    var valores = Object.keys(unicos).sort(function(a,b){ return a.localeCompare(b, 'pt-BR'); });
-    var html = '<option value="TODOS"'+(atual==='TODOS'?' selected':'')+'>'+esc(rotuloTodos)+'</option>';
-    valores.forEach(function(v){
-      html += '<option value="'+esc(v)+'"'+(v===atual?' selected':'')+'>'+esc(v)+'</option>';
+    var valores = Object.keys(contagem).sort(function (a, b) {
+      // Mais frequente primeiro: e por onde se tira mais pendencia de uma vez.
+      if (contagem[b] !== contagem[a]) return contagem[b] - contagem[a];
+      return a.localeCompare(b, 'pt-BR');
     });
-    return html;
+    var total = (lista || []).length;
+    return '<option value="TODOS"' + (atual === 'TODOS' ? ' selected' : '') + '>' +
+        esc(rotuloTodos) + ' (' + total + ')</option>' +
+      valores.map(function (v) {
+        return '<option value="' + esc(v) + '"' + (v === atual ? ' selected' : '') + '>' +
+          esc(v) + ' (' + contagem[v] + ')</option>';
+      }).join('');
   }
+
 
   function aplicarFiltrosPendencias() {
     if (!PENDENCIAS_CLIENTE) return;
