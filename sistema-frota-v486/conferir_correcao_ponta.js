@@ -318,6 +318,49 @@ ok('e a pendência sai da lista',
   nomesDasPendencias().indexOf('Preço por quilo fora da curva') === -1,
   JSON.stringify(nomesDasPendencias()));
 
+console.log('\n3d. Duas ocorrências do mesmo tipo não se confundem');
+// Caso real: o mesmo veículo com DUAS leituras de KM retrocedidas, uma na
+// linha 133 e outra na 178. Corrigir a 133 acusava "o problema CONTINUA"
+// mostrando a 178 — culpando uma correção que tinha dado certo.
+montar();
+(function () {
+  function lanc(dia, oficina) {
+    const l = new Array(ctx.TOTAL_COL_LANC).fill('');
+    l[ctx.L_.DATA] = dataVm(2026, 11, dia);
+    l[ctx.L_.PLACA] = 'AAA1A11';
+    l[ctx.L_.TIPO] = 'Oficina Despesa';
+    l[ctx.L_.VALOR] = 100;
+    l[ctx.L_.DOCUMENTO] = 'OS-' + dia;
+    l[ctx.L_.CENTRO] = 'Loja 08';
+    l[ctx.L_.CATEGORIA] = 'Pesado';
+    l[ctx.L_.ID] = 'LAN-' + dia;
+    l[ctx.L_.NATUREZA_OFICINA] = 'Peça';
+    l[ctx.L_.DETALHE_OFICINA] = oficina ? '' : 'ok';
+    return l;
+  }
+  // duas linhas do MESMO veículo com o MESMO problema
+  ABAS_FAKE[ctx.ABAS.LANCAMENTOS] = [new Array(ctx.TOTAL_COL_LANC).fill('cab'),
+    lanc(5, true), lanc(9, true)];
+})();
+ctx.escreverConferencia_(ctx.coletarProblemas_());
+const duas = nomesDasPendencias().filter(function (n) {
+  return n === 'Oficina sem detalhe da peça/serviço';
+});
+ok('as duas ocorrências aparecem', duas.length === 2, JSON.stringify(nomesDasPendencias()));
+
+const primeira = (ABAS_FAKE[ctx.ABAS.CONFERENCIA] || [])
+  .findIndex(function (l) { return l && l[2] === 'Oficina sem detalhe da peça/serviço'; }) + 1;
+const rd = ctx.webCorrigirPendencia('t', primeira, 'Troca do alternador');
+ok('a correção é dada como RESOLVIDA', rd.resolvida === true, JSON.stringify(rd));
+ok('e NÃO culpa o campo corrigido',
+  !/não é o que está errado/.test(rd.mensagem || ''), rd.mensagem);
+ok('mas avisa que sobrou outra do mesmo tipo',
+  /1 outra\(s\) pendência\(s\) do mesmo tipo/.test(rd.mensagem || ''), rd.mensagem);
+ok('e de fato sobrou uma só',
+  nomesDasPendencias().filter(function (n) {
+    return n === 'Oficina sem detalhe da peça/serviço';
+  }).length === 1, JSON.stringify(nomesDasPendencias()));
+
 console.log('\n4. Quando a revalidação falha, o operador tem de saber');
 // É o caso real de quem colou o código novo sem rodar "Instalar / atualizar":
 // coletarProblemas_ chama garantirResumoAtualizado_, que lança com a aba Resumo

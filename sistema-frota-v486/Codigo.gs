@@ -557,7 +557,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.14.0';
+const VERSAO_SISTEMA = '4.14.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11482,19 +11482,26 @@ function webCorrigirPendencia(token, linhaPendencia, valorNovo) {
   // O campo foi gravado e a lista foi refeita — mas a condicao pode continuar
   // valendo. Dizer isso agora evita o operador corrigir a mesma coisa de novo
   // achando que o sistema nao gravou.
-  const aindaLa = pendenciaAindaPresente_(revalidacao.problemas, origem, placa, problema);
-  if (aindaLa) {
+  const situacao = pendenciaAindaPresente_(revalidacao.problemas, origem, placa, problema,
+    linhaAlvoPendencia_(detalhe));
+  if (situacao.aindaLa) {
     return {
       ok: true, revalidou: true, resolvida: false, pendentes: revalidacao.pendentes,
-      mensagem: gravou + ' Mas o problema CONTINUA, agora assim: "' + aindaLa + '". ' +
-        'O campo que você corrigiu não é o que está errado neste caso — ' +
-        'ajuste o lançamento em "Corrigir / excluir lançamento".',
+      mensagem: gravou + ' Mas o problema CONTINUA nesta mesma linha: "' +
+        situacao.aindaLa + '". O campo que você corrigiu não é o que está errado ' +
+        'neste caso — ajuste o lançamento em "Corrigir / excluir lançamento".',
     };
   }
+  // Outras ocorrencias do mesmo tipo no mesmo veiculo nao sao culpa desta
+  // correcao: sao itens proprios, cada um com o seu botao na lista.
+  const sobram = situacao.outrasDoTipo
+    ? ' Este veículo ainda tem ' + situacao.outrasDoTipo + ' outra(s) pendência(s) ' +
+      'do mesmo tipo, em linhas diferentes — cada uma com o seu botão na lista.'
+    : '';
   return {
     ok: true, revalidou: true, resolvida: true,
-    mensagem: gravou + ' Pendência resolvida. ' + revalidacao.pendentes +
-      ' em aberto no total.',
+    mensagem: gravou + ' Pendência resolvida.' + sobram + ' ' +
+      revalidacao.pendentes + ' em aberto no total.',
     pendentes: revalidacao.pendentes,
   };
 }
@@ -11551,13 +11558,34 @@ function revalidarPendenciasSeguro_() {
  *
  * Devolve o detalhe NOVO, que ja traz o numero recalculado.
  */
-function pendenciaAindaPresente_(problemas, origem, placa, problema) {
+function pendenciaAindaPresente_(problemas, origem, placa, problema, linhaAlvo) {
   const alvoPlaca = normalizaPlaca_(placa);
-  const achada = (problemas || []).filter(function (p) {
+  const mesmoTipo = (problemas || []).filter(function (p) {
     return String(p[0]) === origem && String(p[2]) === problema &&
       normalizaPlaca_(p[1]) === alvoPlaca;
-  })[0];
-  return achada ? String(achada[3] || '') : null;
+  });
+
+  // A MESMA ocorrencia, nao so o mesmo tipo.
+  //
+  // A primeira versao casava por aba+placa+problema e ignorava a linha. Um
+  // veiculo com DUAS leituras de KM retrocedidas, uma na linha 133 e outra na
+  // 178: o operador corrigia a 133, a 133 sumia, e o sistema anunciava "o
+  // problema CONTINUA" mostrando a 178 — culpando uma correcao que tinha dado
+  // certo e mandando consertar o que ja estava consertado.
+  //
+  // Dentro da mesma requisicao as linhas nao se deslocam (correcao nunca apaga
+  // linha), entao comparar o numero e seguro aqui — diferente da chave da
+  // pendencia, que atravessa exclusoes e por isso nao pode usa-lo.
+  const mesma = linhaAlvo
+    ? mesmoTipo.filter(function (p) { return linhaAlvoPendencia_(p[3]) === linhaAlvo; })[0]
+    : mesmoTipo[0];
+
+  return {
+    aindaLa: mesma ? String(mesma[3] || '') : null,
+    outrasDoTipo: mesmoTipo.filter(function (p) {
+      return !linhaAlvo || linhaAlvoPendencia_(p[3]) !== linhaAlvo;
+    }).length,
+  };
 }
 
 /**

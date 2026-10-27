@@ -1644,6 +1644,47 @@ R$/kg por exatamente 6.
 
 ---
 
+# V4.14.1 — a correção certa sendo acusada de errada
+
+A mensagem que entregou o defeito:
+
+> KM / horímetro gravado em Odômetro, **linha 133**. Mas o problema CONTINUA,
+> agora assim: "**linha 178** • 2026-10 • 13/10/2026: 681547 < 698573".
+
+Duas linhas diferentes. O operador corrigiu a 133, a 133 foi resolvida, e o
+sistema anunciou fracasso mostrando a **178** — outra ocorrência, do mesmo
+veículo, que nunca foi tocada.
+
+## A causa
+
+`pendenciaAindaPresente_` casava por **aba + placa + problema**, ignorando a
+linha. Um veículo com duas leituras retrocedidas tem **duas** pendências do
+mesmo tipo; corrigir uma encontrava a outra e culpava a correção que tinha dado
+certo — mandando consertar o que já estava consertado.
+
+A checagem passou a comparar também **a linha alvo**. Dentro da mesma
+requisição as linhas não se deslocam, porque correção nunca apaga linha — então
+comparar o número é seguro aqui, diferente da chave da pendência, que atravessa
+exclusões e por isso não pode usá-lo (ver V4.11.2).
+
+## E quando sobram outras
+
+Em vez de calar, a mensagem conta:
+
+> Pendência resolvida. **Este veículo ainda tem 1 outra(s) pendência(s) do mesmo
+> tipo, em linhas diferentes** — cada uma com o seu botão na lista.
+
+São itens próprios, cada um com a sua correção. Não são culpa desta.
+
+## Suíte
+
+`conferir_correcao_ponta.js` — 28 provas, com o cenário de duas ocorrências do
+mesmo tipo no mesmo veículo. Por mutação, voltando a ignorar a linha, 3 falham
+com a mensagem na forma exata que o usuário viu.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
