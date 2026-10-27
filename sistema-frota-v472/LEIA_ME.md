@@ -1387,6 +1387,64 @@ Três mutações:
 
 ---
 
+# V4.12.1 — o laço do RESOLVIDO
+
+Terceiro relato de *"resolvo a pendência e ela permanece ali"*. Três relatos do
+mesmo sintoma não são três defeitos: são um **desenho confuso**, e o culpado era
+meu.
+
+## O laço
+
+A tela tem **duas** ações que parecem resolver:
+
+| Ação | O que faz |
+|---|---|
+| **Corrigir** | grava o campo na base; a pendência some de verdade |
+| **Status RESOLVIDO + Salvar** | só anota um julgamento; o dado não muda |
+
+E o dropdown oferecia RESOLVIDO para **toda** pendência, inclusive as que têm
+conserto por campo. Aí a V4.12 fechava o ciclo:
+
+1. O operador marca RESOLVIDO em "Oficina sem detalhe".
+2. O item some da lista — o filtro de situação esconde resolvidas.
+3. Na revalidação seguinte, a V4.11.2 **reverte para PENDENTE**, porque o
+   coletor ainda encontra o problema.
+4. O item reaparece, agora com o `↩ marcado como resolvido, mas o problema
+   continua na base`.
+
+Da cadeira do operador: resolveu, sumiu, voltou. Três vezes.
+
+A reversão da V4.11.2 está certa — o dado **continua** errado. O erro foi
+**aceitar** a marcação para depois desfazer pelas costas.
+
+## O conserto: recusar na hora, e dizer por quê
+
+`webAtualizarPendencia` agora **recusa** RESOLVIDO quando o problema tem
+conserto por campo:
+
+> Esta pendência tem conserto: use o botão **"Corrigir"** acima, que grava o
+> campo na base. Marcar como resolvida não muda o dado — o sistema encontra o
+> problema de novo na próxima verificação e traz o item de volta. Se não for
+> para corrigir agora, deixe em **"EM ANÁLISE"**.
+
+E o dropdown **não oferece mais** RESOLVIDO nesses casos: só PENDENTE e EM
+ANÁLISE. Oferecer o que vai ser desfeito era a origem do laço.
+
+Onde RESOLVIDO é julgamento legítimo — "Sem nenhum custo no período" num
+veículo encostado — **nada muda**.
+
+A regra é a mesma dos dois lados, `resolvidoSobrevive_`. Se o servidor recusasse
+por um critério e a revalidação revertesse por outro, um dos dois estaria
+mentindo.
+
+## Suíte
+
+`conferir_pendencias_estado.js` passou para **28 provas**. Por mutação,
+aceitando RESOLVIDO sempre, 5 falham.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de

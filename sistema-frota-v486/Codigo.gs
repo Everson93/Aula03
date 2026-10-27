@@ -548,7 +548,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.12.0';
+const VERSAO_SISTEMA = '4.12.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11502,6 +11502,19 @@ function webAtualizarPendencia(token, linha, status, observacao, esperado) {
       mensagem: 'A lista mudou desde que você abriu a tela: a linha ' + linha +
         ' agora é "' + atual + '", não "' + visto + '". Nada foi gravado. ' +
         'A tela vai recarregar.' };
+  }
+
+  // RESOLVIDO em problema que tem conserto por campo e um beco sem saida: a
+  // V4.11.2 passou a reverter isso na revalidacao seguinte, porque o coletor
+  // ainda encontra o problema. O operador marcava, o item sumia pelo filtro, e
+  // voltava depois como PENDENTE — "eu resolvo e ela permanece ali". Em vez de
+  // aceitar e desfazer pelas costas, recusa na hora e diz o que fazer.
+  if (status === 'RESOLVIDO' && !resolvidoSobrevive_(atual)) {
+    return { ok: false, mensagem: 'Esta pendência tem conserto: use o botão ' +
+      '"Corrigir" acima, que grava o campo na base. Marcar como resolvida não ' +
+      'muda o dado — o sistema encontra o problema de novo na próxima ' +
+      'verificação e traz o item de volta. Se não for para corrigir agora, ' +
+      'deixe em "EM ANÁLISE".' };
   }
 
   sheet.getRange(linha, 5).setValue(status);

@@ -247,5 +247,41 @@ r = ctx.webAtualizarPendencia('t', 4, 'EM ANÁLISE', 'x', '');
 ok('sem o esperado, continua funcionando (compatível com tela antiga)', r.ok === true,
   JSON.stringify(r));
 
+console.log('\n8. O laço do RESOLVIDO, fechado na origem');
+// O operador marcava RESOLVIDO numa pendência com conserto, o item sumia pelo
+// filtro, e voltava como PENDENTE na revalidação seguinte — porque o problema
+// continua na base. Resolver e desfazer pelas costas é pior que recusar na hora.
+PEND.length = 0;
+ctx.escreverConferencia_([
+  problema(L, 'AAA1A11', 'Oficina sem detalhe da peça/serviço', 'linha 5 • descreva'),
+  [ctx.ABAS.RESUMO, 'CCC3C33', 'Sem nenhum custo no período', 'parado'],
+]);
+let rr = ctx.webAtualizarPendencia('t', 3, 'RESOLVIDO', 'feito',
+  'Oficina sem detalhe da peça/serviço');
+ok('RECUSA resolver o que tem conserto por campo', rr.ok === false, JSON.stringify(rr));
+ok('e manda usar o botão Corrigir', /bot[ãa]o "Corrigir"/.test(rr.mensagem || ''), rr.mensagem);
+ok('explica por que não adianta marcar',
+  /traz o item de volta/.test(rr.mensagem || ''), rr.mensagem);
+ok('sugere EM ANÁLISE como alternativa honesta',
+  /EM AN[ÁA]LISE/.test(rr.mensagem || ''), rr.mensagem);
+ok('e o status na base não mudou', PEND[0][4] !== 'RESOLVIDO', JSON.stringify(PEND[0]));
+
+rr = ctx.webAtualizarPendencia('t', 3, 'EM ANÁLISE', 'cobrando a oficina',
+  'Oficina sem detalhe da peça/serviço');
+ok('EM ANÁLISE continua aceito', rr.ok === true && PEND[0][4] === 'EM ANÁLISE',
+  JSON.stringify(rr));
+
+rr = ctx.webAtualizarPendencia('t', 4, 'RESOLVIDO', 'veículo encostado',
+  'Sem nenhum custo no período');
+ok('mas RESOLVIDO segue valendo no que é julgamento', rr.ok === true,
+  JSON.stringify(rr));
+ok('e grava', PEND[1][4] === 'RESOLVIDO', JSON.stringify(PEND[1]));
+
+// A mesma regra dos dois lados: o que o servidor recusa, a revalidação também
+// reverteria. Se divergissem, um deles estaria mentindo.
+ok('a regra é a mesma de resolvidoSobrevive_',
+  ctx.resolvidoSobrevive_('Oficina sem detalhe da peça/serviço') === false &&
+  ctx.resolvidoSobrevive_('Sem nenhum custo no período') === true);
+
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

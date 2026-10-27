@@ -2831,8 +2831,16 @@
         '<div class="sub" style="margin:10px 0">'+esc(p.detalhe||'Sem detalhe adicional')+'</div>'+
         blocoCorrecao(p)+blocoAcao(p)+
         '<div class="linha"><div><label>Status</label><select id="pst_'+p.linha+'">'+
-          ['PENDENTE','EM ANÁLISE','RESOLVIDO'].map(function(st){ return '<option'+(st===p.status?' selected':'')+'>'+st+'</option>'; }).join('')+
+          // Pendência com conserto por campo NÃO oferece RESOLVIDO: o sistema
+          // reverteria na próxima verificação, porque o problema continua na
+          // base. Oferecer o que vai ser desfeito é o que criava o laço de
+          // "eu resolvo e ela permanece ali".
+          (p.correcao ? ['PENDENTE','EM ANÁLISE'] : ['PENDENTE','EM ANÁLISE','RESOLVIDO'])
+            .map(function(st){ return '<option'+(st===p.status?' selected':'')+'>'+st+'</option>'; }).join('')+
         '</select></div><div style="flex:2"><label>Observação</label><input id="pobs_'+p.linha+'" value="'+esc(p.observacao||'')+'" placeholder="ação tomada / responsável"></div></div>'+
+        (p.correcao ? '<div class="sub2" style="margin-top:6px">Para esta pendência, ' +
+          'resolver é <b>corrigir</b> no campo acima. Marcar como resolvida não mudaria ' +
+          'o dado, e ela voltaria na próxima verificação.</div>' : '')+
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px">'+
           '<span class="sub2">Validado em '+esc(p.validadoEm||'—')+'</span>'+
           '<button class="acao secundaria" onclick="salvarPendencia('+p.linha+')">Salvar</button></div></div>';
