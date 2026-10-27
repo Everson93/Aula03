@@ -1251,7 +1251,7 @@
       '<div class="dash-card"><div class="dash-card-head"><div><h3>Composição do custo</h3><div class="hint">Participação das principais rubricas</div></div></div>'+graficoDonut(d)+'</div></div>'+
       '<div class="dash-grid meio"><div class="dash-card"><div class="dash-card-head"><div><h3>Maiores custos por veículo</h3><div class="hint">Top 8 da competência</div></div></div>'+rankingBarras(d.top,'veiculo')+'</div>'+
       '<div class="dash-card"><div class="dash-card-head"><div><h3>Custo por centro</h3><div class="hint">Centros com maior participação</div></div></div>'+rankingBarras(d.centros,'centro')+'</div></div>'+
-      '<div class="dash-rodape">Indicadores calculados em '+esc(d.geradoEm||'')+' • servidor '+num(d.tempoServidorMs||0)+' ms'+(d.cacheHit?' • cache':'')+diagnosticoRodape(d)+'</div>';
+      '<div class="dash-rodape">V'+esc(d.versao||'?')+' • Indicadores calculados em '+esc(d.geradoEm||'')+' • servidor '+num(d.tempoServidorMs||0)+' ms'+(d.cacheHit?' • cache':'')+diagnosticoRodape(d)+'</div>';
   }
 
   function telaInicio(forcarAtualizacao) {

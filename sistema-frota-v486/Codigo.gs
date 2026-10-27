@@ -557,7 +557,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.15.0';
+const VERSAO_SISTEMA = '4.15.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -4707,11 +4707,17 @@ function carimbarIds_(problemas, idPorLinha) {
   problemas.forEach(function (p) {
     if (String(p[0]) !== ABAS.LANCAMENTOS) return;
     const linha = linhaAlvoPendencia_(p[3]);
-    const id = linha ? idPorLinha[linha] : null;
-    if (!id) return;
+    if (!linha) return;
+    const id = idPorLinha[linha];
+    // Lancamento SEM ID e dito com todas as letras, nao pulado em silencio.
+    // Pular escondia duas coisas de uma vez: que aquela linha nao tem ID (que e
+    // pendencia por si so, com rotina propria para gerar) e que a correcao dela
+    // vai mirar pelo numero da linha, que e o alvo fragil. Sem o aviso, o
+    // operador so veria o ID faltando em alguns itens e nao saberia por que.
+    const carimbo = id || 'sem ID — gere em "Lançamento sem ID de auditoria"';
     // Entra logo depois de "linha N", antes do resto: o detalhe passa a ser
     // "linha 39 • LAN-... • classifique como peça...".
-    p[3] = String(p[3]).replace(/^(linha\s+\d+)/, '$1 • ' + id);
+    p[3] = String(p[3]).replace(/^(linha\s+\d+)/, '$1 • ' + carimbo);
   });
 }
 
@@ -8739,6 +8745,9 @@ function construirDadosInicio_(mesRef) {
     centros: centrosRanking,
     composicao: composicao,
     evolucao: historicoCompleto.slice(-12),
+    // Versao no rodape do painel: sem isto nao ha como o usuario — nem eu —
+    // saber qual codigo esta rodando, e metade do diagnostico vira adivinhacao.
+    versao: VERSAO_SISTEMA,
     geradoEm: Utilities.formatDate(new Date(), timezone_(), 'dd/MM/yyyy HH:mm:ss'),
   };
 }

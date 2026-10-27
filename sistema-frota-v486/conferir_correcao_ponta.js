@@ -375,6 +375,20 @@ ok('o parser da linha continua funcionando com o ID no meio',
 ok('e o parser do ID encontra o ID', /^LAN-/.test(ctx.idAlvoPendencia_(detalhe)),
   ctx.idAlvoPendencia_(detalhe));
 
+// Lançamento SEM ID: o carimbo diz, em vez de pular calado. Pular escondia que
+// aquela linha não tem ID e que a correção dela mira pelo número da linha.
+montar();
+oficinaIncompleta();
+ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.ID] = '';
+ctx.escreverConferencia_(ctx.coletarProblemas_());
+const semId = (ABAS_FAKE[ctx.ABAS.CONFERENCIA] || [])
+  .filter(function (l) { return l && l[2] === 'Oficina sem detalhe da peça/serviço'; })[0][3];
+ok('lançamento sem ID é dito, não pulado', /sem ID/.test(semId), semId);
+ok('e aponta a rotina que gera os IDs',
+  /Lançamento sem ID de auditoria/.test(semId), semId);
+ok('o parser não confunde esse texto com um ID',
+  ctx.idAlvoPendencia_(semId) === '', JSON.stringify(ctx.idAlvoPendencia_(semId)));
+
 // O caso que o número da linha não aguenta: alguém exclui um lançamento e tudo
 // abaixo sobe uma casa. A "linha 2" da pendência passa a ser outra despesa.
 montar();
