@@ -1445,6 +1445,49 @@ aceitando RESOLVIDO sempre, 5 falham.
 
 ---
 
+# V4.12.2 — a conta inteira, não só o resultado
+
+O aviso da V4.11.4 funcionou e trouxe a informação que faltava:
+
+> *Quantidade (kg) gravado em Lançamentos, linha 41. Mas o problema CONTINUA,
+> agora assim: "linha 41 • **R$ 63.90/kg** em Gás..."*
+
+**R$ 63,90/kg antes e depois.** Se a quantidade tivesse mudado, a razão mudaria
+— então a quantidade digitada era a que já estava lá, e o errado é o **valor**.
+
+O sistema chegou ao diagnóstico certo, mas obrigou o operador a deduzi-lo. E
+pior: ofereceu corrigir a quantidade, o que o levou a digitar o mesmo número e
+concluir que nada funciona.
+
+## O conserto
+
+O detalhe passou a mostrar **os dois números**:
+
+```
+antes:  linha 41 • R$ 63.90/kg em Gás
+agora:  linha 41 • R$ 1278,00 / 20 kg = R$ 63,90/kg em Gás
+```
+
+Os dois casos ficam distinguíveis de relance:
+
+| Detalhe | O que está errado |
+|---|---|
+| `R$ 1.278,00 / 20 kg` | o **valor** — botijão de 20 kg não custa mil e duzentos |
+| `R$ 63,90 / 1 kg` | a **quantidade** — lançaram o botijão como 1 unidade |
+
+A ajuda do campo também parou de sugerir que a quantidade é sempre a culpada:
+*"só preencha se a QUANTIDADE for a errada… se o errado for o valor, use
+Corrigir / excluir lançamento"*.
+
+## Efeito colateral conhecido
+
+O texto do detalhe entra na chave da pendência, então as de preço fora da curva
+voltam a **PENDENTE** na primeira revalidação, perdendo status e observação.
+São poucas, e o texto novo é o que torna cada uma resolvível.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de

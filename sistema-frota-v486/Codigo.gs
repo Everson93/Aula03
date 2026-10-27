@@ -190,14 +190,23 @@ function pendenciaPrecoUnitario_(tipo, valor, quantidade, numeroLinha, placa) {
   const unidade = unidadeQuantidade_(nome);
   // Gás quase sempre cai aqui pelo mesmo motivo: o operador registra UM botijão
   // em vez dos quilos dele. A dica diz isso, em vez de deixar o número solto.
+  // A CONTA INTEIRA, nao so o resultado.
+  //
+  // Mostrando apenas "R$ 63,90/kg", o operador nao tem como saber se o errado e
+  // o valor ou a quantidade — e o sistema oferece corrigir a quantidade, o que
+  // o leva a digitar a mesma que ja estava la e concluir que nada funciona.
+  // Com os dois numeros a vista, "R$ 1.278,00 / 20 kg" denuncia sozinho qual
+  // dos dois esta fora: botijao de 20 kg nao custa mil e duzentos reais.
+  const conta = 'R$ ' + v.toFixed(2).replace('.', ',') + ' / ' +
+    Number(q.toFixed(3)) + ' ' + unidade + ' = R$ ' +
+    unitario.toFixed(2).replace('.', ',') + '/' + unidade;
   const dica = unidade === 'kg'
-    ? ' • se lançou o botijão inteiro, informe os quilos (P13 = 13 kg, ' +
-      'P20 = 20 kg, P45 = 45 kg)'
-    : '';
+    ? ' • confira qual dos dois está errado: botijão P13 = 13 kg, P20 = 20 kg, ' +
+      'P45 = 45 kg'
+    : ' • confira qual dos dois está errado';
   return [ABAS.LANCAMENTOS, placa,
     unidade === 'kg' ? 'Preço por quilo fora da curva' : 'Preço por litro fora da curva',
-    'linha ' + numeroLinha + ' • R$ ' + unitario.toFixed(2) + '/' + unidade +
-    ' em ' + nome + dica];
+    'linha ' + numeroLinha + ' • ' + conta + ' em ' + nome + dica];
 }
 
 /**
@@ -548,7 +557,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.12.1';
+const VERSAO_SISTEMA = '4.12.2';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11055,8 +11064,8 @@ function specDaPendencia_(problema) {
   registrarCorrecaoPendencia_('Preço por quilo fora da curva', {
     aba: L, coluna: COL_LANC.LITROS, tipo: 'numero', rotulo: 'Quantidade (kg)',
     minimoNumero: 0,
-    ajuda: 'quilos do botijão: P13 = 13, P20 = 20, P45 = 45. Se o errado for o ' +
-      'valor, corrija o lançamento na planilha' });
+    ajuda: 'só preencha se a QUANTIDADE for a errada (P13 = 13, P20 = 20, ' +
+      'P45 = 45). Se o errado for o valor, use "Corrigir / excluir lançamento"' });
 
   registrarCorrecaoPendencia_('KM/horímetro inválido', {
     aba: O, coluna: 3, tipo: 'numero', rotulo: 'KM / horímetro', minimoNumero: 0 });

@@ -280,7 +280,11 @@ const rg = ctx.webCorrigirPendencia('t', lg, '45');   // o maior botijão que ex
 ok('a quantidade é gravada', ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.LITROS] === 45,
   String(ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.LITROS]));
 ok('o sistema avisa que NÃO resolveu', rg.resolvida === false, JSON.stringify(rg));
-ok('e mostra o número recalculado', /66\.67\/kg/.test(rg.mensagem || ''), rg.mensagem);
+// O detalhe passou a mostrar a CONTA inteira, com vírgula decimal: sem os dois
+// números, não dá para saber se o errado é o valor ou a quantidade.
+ok('e mostra o número recalculado', /66,67\/kg/.test(rg.mensagem || ''), rg.mensagem);
+ok('com a conta à vista, denunciando o valor',
+  /R\$ 3000,00 \/ 45 kg/.test(rg.mensagem || ''), rg.mensagem);
 ok('e diz onde consertar de verdade',
   /Corrigir \/ excluir lançamento/.test(rg.mensagem || ''), rg.mensagem);
 
