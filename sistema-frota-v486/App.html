@@ -1296,7 +1296,8 @@
           '<div class="sub2" id="dicaBomba" style="margin-top:6px"></div>' +
         '</div>' +
         '<div class="linha">' +
-          '<div><label for="litros" id="rotuloLitros">Litros</label><input type="number" id="litros" step="0.001" min="0" inputmode="decimal"></div>' +
+          '<div><label for="litros" id="rotuloLitros">Litros</label><input type="number" id="litros" step="0.001" min="0" inputmode="decimal">' +
+            blocoBotijao('') + '</div>' +
           '<div><label for="valor">Valor R$</label><input type="number" id="valor" step="0.01" min="0" inputmode="decimal"></div>' +
         '</div>' +
         '<div id="blocoKm">' +
@@ -1440,10 +1441,52 @@
     el('valor').value = litros > 0 ? (litros * CUSTO_BOMBA).toFixed(2) : '';
   }
 
+  /**
+   * Calculadora de botijões.
+   *
+   * A NF de GLP vem em UNIDADES — "Qtde 6 • botijão de 20 KG • R$ 213,00 cada" —
+   * e o sistema guarda QUILOS. O operador lê "20 KG" na descrição e digita 20,
+   * perdendo o 6: 120 kg viram 20, e o preço por quilo sai seis vezes maior.
+   * Foi exatamente o que aconteceu com a EMP YALE N 02.
+   *
+   * A multiplicação é do sistema, não de quem digita.
+   */
+  function blocoBotijao(sufixo) {
+    return '<div id="blocoBotijao' + sufixo + '" style="display:none;margin-top:6px;' +
+      'background:#FFF7F0;border:1px solid #F0B88E;border-radius:6px;padding:8px">' +
+      '<div class="sub2" style="margin-bottom:6px">A nota vem em unidades? Converta:</div>' +
+      '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+        '<input type="number" id="botijaoQtd' + sufixo + '" min="0" step="1" ' +
+          'placeholder="botijões" style="width:92px" oninput="calcularBotijao(\'' + sufixo + '\')">' +
+        '<span class="sub2">×</span>' +
+        '<select id="botijaoKg' + sufixo + '" style="width:110px" ' +
+          'onchange="calcularBotijao(\'' + sufixo + '\')">' +
+          '<option value="20">20 kg (P20)</option>' +
+          '<option value="13">13 kg (P13)</option>' +
+          '<option value="45">45 kg (P45)</option>' +
+        '</select>' +
+        '<span class="sub2" id="botijaoTotal' + sufixo + '"></span>' +
+      '</div></div>';
+  }
+
+  function calcularBotijao(sufixo) {
+    var qtd = Number(el('botijaoQtd' + sufixo) ? el('botijaoQtd' + sufixo).value : 0) || 0;
+    var kg = Number(el('botijaoKg' + sufixo) ? el('botijaoKg' + sufixo).value : 0) || 0;
+    var total = qtd * kg;
+    var rotulo = el('botijaoTotal' + sufixo);
+    if (rotulo) rotulo.textContent = total > 0 ? '= ' + num(total, 0) + ' kg' : '';
+    // Escreve direto no campo que vale: deixar o operador copiar o resultado
+    // seria recriar o mesmo erro um passo adiante.
+    var destino = sufixo === '' ? el('litros') : el(sufixo);
+    if (destino && total > 0) destino.value = total;
+  }
+
   function ajustarLitros() {
     // V4.8: gás é medido em quilos.
+    var ehKg = (CONFIG.tiposKg || []).indexOf(el('tipo').value) !== -1;
     if (el('rotuloLitros')) el('rotuloLitros').textContent =
-      (CONFIG.tiposKg || []).indexOf(el('tipo').value) !== -1 ? 'Quantidade (kg)' : 'Litros';
+      ehKg ? 'Quantidade (kg)' : 'Litros';
+    if (el('blocoBotijao')) el('blocoBotijao').style.display = ehKg ? '' : 'none';
     var aceita = CONFIG.tiposComLitros.indexOf(el('tipo').value) !== -1;
     el('litros').disabled = !aceita;
     if (!aceita) el('litros').value = '';
@@ -2676,12 +2719,19 @@
             return '<option value="' + esc(o) + '">' + esc(o) + '</option>';
           }).join('') + '</select>';
       } else if (campo.tipo === 'numero') {
-        entrada = '<input type="number" step="0.01" inputmode="decimal" id="' + id + '">';
+        entrada = '<input type="number" step="0.01" inputmode="decimal" id="' + id + '">' +
+          (campo.botijao ? blocoBotijao(id) : '');
       } else if (campo.tipo === 'data') {
         entrada = '<input type="date" id="' + id + '">';
       } else {
         entrada = '<input type="text" id="' + id + '" maxlength="300" placeholder="' +
           esc(campo.ajuda || '') + '">';
+      }
+      if (campo.botijao) {
+        // Na correção o bloco já nasce visível: a pendência é justamente de
+        // quantidade em kg, não há outro tipo para alternar.
+        entrada = entrada.replace('id="blocoBotijao' + id + '" style="display:none;',
+          'id="blocoBotijao' + id + '" style="');
       }
       return '<div style="flex:1;min-width:180px">' +
         '<label for="' + id + '">' + esc(campo.rotulo) + '</label>' + entrada +

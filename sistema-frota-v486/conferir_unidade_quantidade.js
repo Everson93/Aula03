@@ -131,8 +131,11 @@ ok('o outro é o valor', rotulos.some(function (r) { return /Valor/.test(r); }),
 ok('as chaves distinguem os dois',
   JSON.stringify(c.campos.map(function (x) { return x.chave; })) ===
   JSON.stringify(['valor', 'quantidade']), JSON.stringify(c.campos));
-ok('a ajuda diz os tamanhos de botijão',
-  c.campos.some(function (x) { return /P13|P20|P45/.test(x.ajuda || ''); }),
+// A ajuda deixou de listar tamanhos e passou a ensinar a MULTIPLICAÇÃO: os
+// tamanhos foram para o seletor da calculadora, onde não dá para digitar errado.
+// Listar "P20 = 20" era o que levava a digitar 20 em vez de 120.
+ok('a ajuda ensina o total, não o tamanho do botijão',
+  c.campos.some(function (x) { return /TOTAL em quilos/.test(x.ajuda || ''); }),
   JSON.stringify(c.campos.map(function (x) { return x.ajuda; })));
 ok('e cada campo aponta para a sua coluna',
   ctx.CORRECOES_PENDENCIA_['Preço por quilo fora da curva'].campos[0].coluna === ctx.COL_LANC.VALOR &&
@@ -147,6 +150,36 @@ ok('a versão em litro também oferece os dois campos', cl && cl.campos.length =
 ok('com o rótulo em litros, não em quilos',
   cl && cl.campos.some(function (x) { return x.rotulo === 'Litros'; }),
   JSON.stringify(cl && cl.campos.map(function (x) { return x.rotulo; })));
+
+console.log('\n7. A nota de GLP vem em UNIDADES, não em quilos');
+// Nota real: "GLP ENVASADO EM BOTIJAO DE 20 KG • Qtde 6 • unit. 213,00 •
+// total 1.278,00". São 6 × 20 = 120 kg. Quem lê "20 KG" na descrição digita 20
+// e perde o 6 — foi o caso da EMP YALE N 02.
+const comoNaNota = { unidades: 6, kgPorBotijao: 20, valorTotal: 1278.00 };
+const kgReal = comoNaNota.unidades * comoNaNota.kgPorBotijao;
+ok('6 botijões de 20 kg são 120 kg', kgReal === 120, String(kgReal));
+ok('com 120 kg o preço é normal e NÃO acusa',
+  ctx.pendenciaPrecoUnitario_('Gás', comoNaNota.valorTotal, kgReal, 41, 'EMP') === null,
+  'R$ ' + (comoNaNota.valorTotal / kgReal).toFixed(2) + '/kg');
+const errado = ctx.pendenciaPrecoUnitario_('Gás', comoNaNota.valorTotal,
+  comoNaNota.kgPorBotijao, 41, 'EMP');
+ok('com 20 kg acusa, e é o que a frota tinha', errado !== null);
+ok('e o detalhe mostra a conta que denuncia',
+  /R\$ 1278,00 \/ 20 kg/.test(errado[3]), errado[3]);
+ok('o preço por quilo errado é 6x o certo',
+  Math.abs((comoNaNota.valorTotal / comoNaNota.kgPorBotijao) /
+    (comoNaNota.valorTotal / kgReal) - 6) < 0.001,
+  'perder o "Qtde 6" multiplica o R$/kg por exatamente 6');
+
+ok('o campo de quantidade liga a calculadora de botijões',
+  ctx.CORRECOES_PENDENCIA_['Preço por quilo fora da curva'].campos[1].botijao === true);
+ok('e a ajuda ensina a conta, não só os tamanhos',
+  /6 botijões de 20 kg = 120 kg/.test(
+    ctx.CORRECOES_PENDENCIA_['Preço por quilo fora da curva'].campos[1].ajuda),
+  ctx.CORRECOES_PENDENCIA_['Preço por quilo fora da curva'].campos[1].ajuda);
+ok('o campo em litros NÃO liga a calculadora',
+  !ctx.CORRECOES_PENDENCIA_['Preço por litro fora da curva'].campos[1].botijao,
+  'posto não vende litro em botijão');
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

@@ -1589,6 +1589,61 @@ não é lida por ninguém.
 
 ---
 
+# V4.14 — a nota de GLP vem em unidades, não em quilos
+
+A nota que o usuário mandou fechou o caso:
+
+```
+GLP ENVASADO EM BOTIJAO DE 20 KG   UN   Qtde 6   unit. 213,00   total 1.278,00
+```
+
+**6 botijões × 20 kg = 120 kg.** R$ 1.278 ÷ 120 = **R$ 10,65/kg** — preço normal.
+
+O lançamento tinha **20 kg**. Nem o valor nem o preço estavam errados: quem lê
+*"BOTIJAO DE 20 KG"* na descrição digita 20 e **perde o "Qtde 6"**. O erro
+multiplica o preço por quilo por exatamente 6.
+
+Esse não é descuido de operador. É o sistema pedindo uma unidade que a nota não
+traz, e deixando a multiplicação por conta de quem digita.
+
+## A multiplicação passou a ser do sistema
+
+Quando o tipo é medido em quilos, aparece uma calculadora embaixo do campo:
+
+```
+Quantidade (kg) [ 120 ]
+  A nota vem em unidades? Converta:
+  [ 6 ] × [ 20 kg (P20) ▾ ]  = 120 kg
+```
+
+Ela escreve **direto** no campo que vale. Mostrar o resultado para o operador
+copiar seria recriar o mesmo erro um passo adiante.
+
+Está nos três lugares onde se informa quantidade: o formulário do app, o
+formulário lateral da planilha, e o campo de correção da pendência.
+
+## A ajuda mudou de conselho
+
+Antes: *"quilos do botijão: P13 = 13, P20 = 20, P45 = 45"* — que é
+**exatamente** o que leva a digitar 20.
+
+Agora: *"o TOTAL em quilos: 6 botijões de 20 kg = 120 kg"*. Os tamanhos foram
+para o seletor da calculadora, onde não dá para errar.
+
+## Para a linha 41
+
+Com a calculadora: `6 × 20 kg` → 120. A pendência some, porque R$ 10,65/kg está
+dentro da curva.
+
+## Suíte
+
+`conferir_unidade_quantidade.js` — 41 provas, agora com a nota real como
+cenário. Uma delas prova a aritmética do engano: perder o "Qtde 6" multiplica o
+R$/kg por exatamente 6.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de

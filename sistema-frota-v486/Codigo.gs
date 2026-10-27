@@ -557,7 +557,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.13.1';
+const VERSAO_SISTEMA = '4.14.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11086,9 +11086,12 @@ function specDaPendencia_(problema) {
     aba: L, campos: [
       { chave: 'valor', coluna: COL_LANC.VALOR, tipo: 'numero', rotulo: 'Valor R$',
         minimoNumero: 0, ajuda: 'o que a nota realmente cobrou' },
+      // botijao: liga a calculadora de unidades na tela. A NF de GLP vem em
+      // UNIDADES ("Qtde 6 • botijão de 20 KG"), e quem lê "20 KG" na descrição
+      // digita 20 em vez de 120 — perdendo o 6 e sextuplicando o preço por quilo.
       { chave: 'quantidade', coluna: COL_LANC.LITROS, tipo: 'numero',
-        rotulo: 'Quantidade (kg)', minimoNumero: 0,
-        ajuda: 'quilos do botijão: P13 = 13, P20 = 20, P45 = 45' },
+        rotulo: 'Quantidade (kg)', minimoNumero: 0, botijao: true,
+        ajuda: 'o TOTAL em quilos: 6 botijões de 20 kg = 120 kg' },
     ] });
 
   registrarCorrecaoPendencia_('Preço por litro fora da curva', {
@@ -11245,7 +11248,7 @@ function correcaoDaPendencia_(origem, problema, detalhe, placa) {
     aba: spec.aba, linha: linha, somenteAdmin: spec.perfil === 'ADMIN',
     campos: camposDaSpec_(spec).map(function (c) {
       return { chave: c.chave, tipo: c.tipo, rotulo: c.rotulo,
-        ajuda: c.ajuda || '', lista: c.lista || null };
+        ajuda: c.ajuda || '', lista: c.lista || null, botijao: c.botijao === true };
     }),
   };
 }

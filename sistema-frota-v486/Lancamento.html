@@ -59,6 +59,19 @@
     <div>
       <label for="litros" id="rotuloLitros">Litros</label>
       <input type="number" id="litros" step="0.001" min="0" placeholder="0,000">
+      <div id="blocoBotijao" style="display:none;margin-top:6px;background:#FFF7F0;border:1px solid #F0B88E;border-radius:6px;padding:8px">
+        <div style="font-size:11px;color:#6b6b6b;margin-bottom:6px">A nota vem em unidades? Converta:</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input type="number" id="botijaoQtd" min="0" step="1" placeholder="botijões" style="width:92px" oninput="calcularBotijao()">
+          <span style="font-size:11px;color:#6b6b6b">×</span>
+          <select id="botijaoKg" style="width:110px" onchange="calcularBotijao()">
+            <option value="20">20 kg (P20)</option>
+            <option value="13">13 kg (P13)</option>
+            <option value="45">45 kg (P45)</option>
+          </select>
+          <span style="font-size:11px;color:#6b6b6b" id="botijaoTotal"></span>
+        </div>
+      </div>
     </div>
     <div>
       <label for="valor">Valor R$</label>
@@ -169,11 +182,26 @@
     });
   }
 
+  /**
+   * A NF de GLP vem em UNIDADES ("Qtde 6 • botijão de 20 KG") e o sistema guarda
+   * QUILOS. Quem lê "20 KG" na descrição digita 20 e perde o 6. A multiplicação
+   * é do sistema, não de quem digita.
+   */
+  function calcularBotijao() {
+    var qtd = Number(document.getElementById('botijaoQtd').value) || 0;
+    var kg = Number(document.getElementById('botijaoKg').value) || 0;
+    var total = qtd * kg;
+    document.getElementById('botijaoTotal').textContent = total > 0 ? '= ' + total + ' kg' : '';
+    if (total > 0) document.getElementById('litros').value = total;
+  }
+
   function ajustarLitros() {
     var tipo = document.getElementById('tipo').value;
     // V4.8: gás é medido em quilos.
-    document.getElementById('rotuloLitros').textContent =
-      CONFIG && (CONFIG.tiposKg || []).indexOf(tipo) !== -1 ? 'Quantidade (kg)' : 'Litros';
+    var ehKg = CONFIG && (CONFIG.tiposKg || []).indexOf(tipo) !== -1;
+    document.getElementById('rotuloLitros').textContent = ehKg ? 'Quantidade (kg)' : 'Litros';
+    var bloco = document.getElementById('blocoBotijao');
+    if (bloco) bloco.style.display = ehKg ? '' : 'none';
     var aceita = CONFIG && CONFIG.tiposComLitros.indexOf(tipo) !== -1;
     var campo = document.getElementById('litros');
     campo.disabled = !aceita;
