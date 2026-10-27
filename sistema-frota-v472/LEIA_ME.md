@@ -1685,6 +1685,71 @@ com a mensagem na forma exata que o usuário viu.
 
 ---
 
+# V4.15 — o ID do lançamento na pendência
+
+Sugestão do usuário: mostrar o ID para poder identificar o registro e ir
+corrigi-lo. O ID já existia — `LAN-20261013-A1B2C3D4` — e só não aparecia.
+
+Implementando, ficou claro que ele resolve algo maior.
+
+## O número da linha é uma coordenada que envelhece
+
+Excluir um lançamento não apaga a linha: **sobe as de baixo uma casa**
+(`removerLinhaLancamento_`). A partir daí, "linha 39" aponta para outra
+despesa — e a correção gravaria no vizinho.
+
+Até aqui a defesa era conferir se a linha ainda pertencia ao mesmo veículo
+(V4.9.1). Funciona contra o pior caso, mas **recusa** quando dava para acertar,
+e não protege quando o vizinho é do mesmo veículo.
+
+O ID identifica o **registro**. `alvoCorrecaoPendencia_` agora procura por ele e
+encontra o alvo certo mesmo depois do deslocamento. Quando o ID não está mais na
+base, recusa dizendo que o lançamento pode ter sido excluído — em vez de gravar
+em qualquer um.
+
+## Carimbado num lugar só
+
+`carimbarIds_` roda no fim de `coletarProblemas_` e acrescenta o ID ao detalhe
+de toda pendência de Lançamentos:
+
+```
+antes:  linha 39 • classifique como peça, serviço ou outra natureza
+agora:  linha 39 • LAN-20261013-A1B2C3D4 • classifique como peça, serviço...
+```
+
+Num lugar só, e não nos ~25 `problemas.push`: cada um teria de lembrar do ID, e
+bastaria um esquecer para aquela pendência virar a única sem alvo estável —
+sem erro nenhum.
+
+A tela mostra embaixo do campo: *"ID do lançamento: LAN-… — é por ele que você
+acha a despesa em Corrigir / excluir lançamento."*
+
+## Reconhecimento tolerante, de propósito
+
+O regex aceita `LAN-` seguido de qualquer coisa, não só o formato atual
+`LAN-AAAAMMDD-XXXXXXXXXX`.
+
+Um regex preso ao formato faria qualquer ID diferente — base antiga, migração,
+ID digitado à mão — **cair em silêncio** de volta para o número da linha, que é
+justamente o alvo frágil que o carimbo veio substituir. E falhar assim não dá
+erro: só volta a gravar no vizinho depois de uma exclusão. O teste pegou isso
+com um ID de fixture fora do padrão.
+
+## Efeito colateral
+
+O detalhe mudou, e ele entra na chave da pendência: **todas voltam a PENDENTE
+na primeira revalidação**, perdendo status e observação. Acontece uma vez.
+
+## Suíte
+
+`conferir_correcao_ponta.js` — 37 provas. A central: exclui-se o lançamento de
+cima, o de problema sobe uma linha, e a correção **ainda acerta o registro
+certo**. Por mutação, voltando a mirar pelo número da linha, 5 falham — uma
+delas gravando no vizinho.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de

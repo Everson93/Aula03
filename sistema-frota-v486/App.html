@@ -2749,7 +2749,11 @@
           p.linha + ')">Corrigir</button></div></div>' +
       '<div class="sub2" style="margin-top:6px">' +
         esc(c.aba + (c.linha ? ', linha ' + c.linha : ', pelo cadastro do veículo')) +
-      '</div><div id="pfixm_' + p.linha + '"></div></div>';
+      '</div>' +
+      (c.id ? '<div class="sub2" style="margin-top:2px">ID do lançamento: <b>' +
+        esc(c.id) + '</b> — é por ele que você acha a despesa em ' +
+        '“Corrigir / excluir lançamento”.</div>' : '') +
+      '<div id="pfixm_' + p.linha + '"></div></div>';
   }
 
   /**

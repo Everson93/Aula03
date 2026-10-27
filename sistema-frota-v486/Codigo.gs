@@ -557,7 +557,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.14.1';
+const VERSAO_SISTEMA = '4.15.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -4407,6 +4407,9 @@ function validarDados() {
 /** Roda todas as checagens e devolve a lista de problemas. */
 function coletarProblemas_(opcoesColeta) {
   const problemas = [];
+  // Numero da linha -> ID do lancamento, preenchido na varredura de Lançamentos.
+  // Usado no fim para carimbar o ID em cada pendencia; ver carimbarIds_.
+  const idPorLinha = {};
   const periodo = periodoAtual_();
   const placas = {};
   const placasAtivas = {};
@@ -4478,9 +4481,12 @@ function coletarProblemas_(opcoesColeta) {
   if (qtdLancamentosValidacao >= 1) {
     const dados = lancamentos.getRange(2, 1, qtdLancamentosValidacao, TOTAL_COL_LANC).getValues();
     const contagemIds = {};
-    dados.forEach(function(linha) {
+    dados.forEach(function(linha, i) {
       const id = String(linha[COL_LANC.ID - 1] || '').trim();
-      if (id) contagemIds[id] = (contagemIds[id] || 0) + 1;
+      if (id) {
+        contagemIds[id] = (contagemIds[id] || 0) + 1;
+        idPorLinha[i + 2] = id;
+      }
     });
 
     dados.forEach(function (linha, i) {
@@ -4674,7 +4680,53 @@ function coletarProblemas_(opcoesColeta) {
     });
   }
 
+  carimbarIds_(problemas, idPorLinha);
   return problemas;
+}
+
+/**
+ * Acrescenta o ID do lancamento ao detalhe de cada pendencia de Lançamentos.
+ *
+ * Duas razoes, e a segunda e a que importa.
+ *
+ * 1. O operador le "linha 39" e precisa abrir a planilha para saber de que
+ *    despesa se trata. Com "LAN-20261013-A1B2C3D4" ele identifica o registro,
+ *    e o mesmo ID aparece em "Corrigir / excluir lançamento".
+ *
+ * 2. O ID e um alvo ESTAVEL. O numero da linha nao e: excluir um lancamento
+ *    sobe as de baixo uma casa (removerLinhaLancamento_), e dai em diante a
+ *    "linha 39" aponta para outra despesa. Com o ID, alvoCorrecaoPendencia_
+ *    reencontra o registro certo mesmo depois do deslocamento, em vez de
+ *    recusar ou — pior — gravar no vizinho.
+ *
+ * Carimbado aqui, num lugar so, em vez de nos ~25 `problemas.push`: cada um
+ * deles teria de lembrar do ID, e bastaria um esquecer para a pendencia dele
+ * virar a unica sem alvo estavel, sem erro nenhum.
+ */
+function carimbarIds_(problemas, idPorLinha) {
+  problemas.forEach(function (p) {
+    if (String(p[0]) !== ABAS.LANCAMENTOS) return;
+    const linha = linhaAlvoPendencia_(p[3]);
+    const id = linha ? idPorLinha[linha] : null;
+    if (!id) return;
+    // Entra logo depois de "linha N", antes do resto: o detalhe passa a ser
+    // "linha 39 • LAN-... • classifique como peça...".
+    p[3] = String(p[3]).replace(/^(linha\s+\d+)/, '$1 • ' + id);
+  });
+}
+
+/**
+ * ID do lancamento carimbado no detalhe, ou vazio.
+ *
+ * O padrao atual e LAN-AAAAMMDD-XXXXXXXXXX, mas o reconhecimento e TOLERANTE de
+ * proposito. Um regex preso ao formato faria qualquer ID fora do padrao — base
+ * antiga, migracao, ID digitado a mao — cair em silencio de volta para o numero
+ * da linha, que e o alvo fragil que este carimbo veio substituir. Falhar assim
+ * nao daria erro nenhum: so voltaria a gravar no vizinho depois de uma exclusao.
+ */
+function idAlvoPendencia_(detalhe) {
+  const m = /\bLAN-[A-Za-z0-9][A-Za-z0-9-]*/.exec(String(detalhe || ''));
+  return m ? m[0] : '';
 }
 
 function ehPendenciaDepreciacao_(problema) {
@@ -11245,7 +11297,8 @@ function correcaoDaPendencia_(origem, problema, detalhe, placa) {
   if (!porPlaca && linha < 2) return null;
   if (porPlaca && !String(placa || '').trim()) return null;
   return {
-    aba: spec.aba, linha: linha, somenteAdmin: spec.perfil === 'ADMIN',
+    aba: spec.aba, linha: linha, id: idAlvoPendencia_(detalhe),
+    somenteAdmin: spec.perfil === 'ADMIN',
     campos: camposDaSpec_(spec).map(function (c) {
       return { chave: c.chave, tipo: c.tipo, rotulo: c.rotulo,
         ajuda: c.ajuda || '', lista: c.lista || null, botijao: c.botijao === true };
@@ -11262,10 +11315,28 @@ function correcaoDaPendencia_(origem, problema, detalhe, placa) {
  * registro que estava certo, em silencio. Conferir a placa antes de escrever e
  * o que impede isso.
  */
-function alvoCorrecaoPendencia_(spec, linhaAlvo, placaEsperada) {
+function alvoCorrecaoPendencia_(spec, linhaAlvo, placaEsperada, idEsperado) {
   const sheet = aba_(spec.aba);
   const colPlaca = colunaPlacaDaAba_(spec.aba);
   const esperada = normalizaPlaca_(placaEsperada);
+
+  // O ID manda, quando existe. O numero da linha e uma coordenada que envelhece:
+  // excluir um lancamento sobe as de baixo uma casa, e a "linha 39" passa a ser
+  // outra despesa. O ID identifica o REGISTRO, entao reencontra o alvo certo
+  // mesmo depois do deslocamento — em vez de recusar, ou de gravar no vizinho.
+  if (idEsperado && spec.aba === ABAS.LANCAMENTOS) {
+    const ultimaLanc = sheet.getLastRow();
+    if (ultimaLanc >= 2) {
+      const ids = sheet.getRange(2, COL_LANC.ID, ultimaLanc - 1, 1).getDisplayValues();
+      for (let i = 0; i < ids.length; i++) {
+        if (String(ids[i][0] || '').trim() === idEsperado) {
+          return { ok: true, sheet: sheet, linha: i + 2, porId: true };
+        }
+      }
+    }
+    return { ok: false, mensagem: 'O lançamento ' + idEsperado + ' não está mais na base ' +
+      '— pode ter sido excluído. Clique em “Revalidar” para a lista ser refeita.' };
+  }
 
   if (spec.localizar === 'placa') {
     if (!esperada) return { ok: false, mensagem: 'A pendência não tem placa para localizar o cadastro.' };
@@ -11437,7 +11508,8 @@ function webCorrigirPendencia(token, linhaPendencia, valorNovo) {
       : campos[0].rotulo + ': informe o valor correto.' };
   }
 
-  const alvo = alvoCorrecaoPendencia_(spec, linhaAlvoPendencia_(detalhe), placa);
+  const alvo = alvoCorrecaoPendencia_(spec, linhaAlvoPendencia_(detalhe), placa,
+    idAlvoPendencia_(detalhe));
   if (!alvo.ok) return { ok: false, mensagem: alvo.mensagem };
 
   // Confere a trava de competencia ANTES de gravar qualquer campo: metade
@@ -11483,7 +11555,7 @@ function webCorrigirPendencia(token, linhaPendencia, valorNovo) {
   // valendo. Dizer isso agora evita o operador corrigir a mesma coisa de novo
   // achando que o sistema nao gravou.
   const situacao = pendenciaAindaPresente_(revalidacao.problemas, origem, placa, problema,
-    linhaAlvoPendencia_(detalhe));
+    linhaAlvoPendencia_(detalhe), idAlvoPendencia_(detalhe));
   if (situacao.aindaLa) {
     return {
       ok: true, revalidou: true, resolvida: false, pendentes: revalidacao.pendentes,
@@ -11558,7 +11630,7 @@ function revalidarPendenciasSeguro_() {
  *
  * Devolve o detalhe NOVO, que ja traz o numero recalculado.
  */
-function pendenciaAindaPresente_(problemas, origem, placa, problema, linhaAlvo) {
+function pendenciaAindaPresente_(problemas, origem, placa, problema, linhaAlvo, idAlvo) {
   const alvoPlaca = normalizaPlaca_(placa);
   const mesmoTipo = (problemas || []).filter(function (p) {
     return String(p[0]) === origem && String(p[2]) === problema &&
@@ -11576,15 +11648,18 @@ function pendenciaAindaPresente_(problemas, origem, placa, problema, linhaAlvo) 
   // Dentro da mesma requisicao as linhas nao se deslocam (correcao nunca apaga
   // linha), entao comparar o numero e seguro aqui — diferente da chave da
   // pendencia, que atravessa exclusoes e por isso nao pode usa-lo.
-  const mesma = linhaAlvo
-    ? mesmoTipo.filter(function (p) { return linhaAlvoPendencia_(p[3]) === linhaAlvo; })[0]
-    : mesmoTipo[0];
+  // Compara pelo ID quando existe: e o unico identificador que sobrevive a um
+  // deslocamento de linha no meio do caminho.
+  function mesmaOcorrencia(p) {
+    if (idAlvo) return idAlvoPendencia_(p[3]) === idAlvo;
+    if (linhaAlvo) return linhaAlvoPendencia_(p[3]) === linhaAlvo;
+    return true;
+  }
+  const mesma = mesmoTipo.filter(mesmaOcorrencia)[0];
 
   return {
     aindaLa: mesma ? String(mesma[3] || '') : null,
-    outrasDoTipo: mesmoTipo.filter(function (p) {
-      return !linhaAlvo || linhaAlvoPendencia_(p[3]) !== linhaAlvo;
-    }).length,
+    outrasDoTipo: mesmoTipo.filter(function (p) { return !mesmaOcorrencia(p); }).length,
   };
 }
 

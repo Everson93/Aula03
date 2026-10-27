@@ -109,6 +109,7 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     coletarProblemas_, escreverConferencia_, webCorrigirPendencia, webPendencias,
+    linhaAlvoPendencia_, idAlvoPendencia_, carimbarIds_,
     contarPendenciasConferencia_, ABAS, COL_LANC, COL_VEIC, TOTAL_COL_LANC,
     TOTAL_COL_VEIC, L_, NATUREZAS_OFICINA, TIPOS_DESPESA,
   });
@@ -195,7 +196,7 @@ function oficinaIncompleta() {
   l[ctx.L_.DOCUMENTO] = 'OS-1';
   l[ctx.L_.CENTRO] = 'Loja 08';
   l[ctx.L_.CATEGORIA] = 'Pesado';
-  l[ctx.L_.ID] = 'LAN-1';
+  l[ctx.L_.ID] = 'LAN-20261110-C3D4E5F6A7';   // formato real do novoIdLancamento_
   l[ctx.L_.NATUREZA_OFICINA] = 'Peça';
   l[ctx.L_.DETALHE_OFICINA] = '';     // <- o problema
   ABAS_FAKE[ctx.ABAS.LANCAMENTOS] = [new Array(ctx.TOTAL_COL_LANC).fill('cab'), l];
@@ -360,6 +361,66 @@ ok('e de fato sobrou uma só',
   nomesDasPendencias().filter(function (n) {
     return n === 'Oficina sem detalhe da peça/serviço';
   }).length === 1, JSON.stringify(nomesDasPendencias()));
+
+console.log('\n3e. O ID do lançamento é o alvo, não o número da linha');
+montar();
+oficinaIncompleta();
+ctx.escreverConferencia_(ctx.coletarProblemas_());
+const detalhe = (ABAS_FAKE[ctx.ABAS.CONFERENCIA] || [])
+  .filter(function (l) { return l && l[2] === 'Oficina sem detalhe da peça/serviço'; })[0][3];
+ok('o detalhe carimba o ID', /LAN-/.test(detalhe), detalhe);
+ok('e o ID vem logo depois da linha', /^linha 2 • LAN-/.test(detalhe), detalhe);
+ok('o parser da linha continua funcionando com o ID no meio',
+  ctx.linhaAlvoPendencia_(detalhe) === 2, String(ctx.linhaAlvoPendencia_(detalhe)));
+ok('e o parser do ID encontra o ID', /^LAN-/.test(ctx.idAlvoPendencia_(detalhe)),
+  ctx.idAlvoPendencia_(detalhe));
+
+// O caso que o número da linha não aguenta: alguém exclui um lançamento e tudo
+// abaixo sobe uma casa. A "linha 2" da pendência passa a ser outra despesa.
+montar();
+(function () {
+  function lanc(id, detalheOficina) {
+    const l = new Array(ctx.TOTAL_COL_LANC).fill('');
+    l[ctx.L_.DATA] = dataVm(2026, 11, 10);
+    l[ctx.L_.PLACA] = 'AAA1A11';
+    l[ctx.L_.TIPO] = 'Oficina Despesa';
+    l[ctx.L_.VALOR] = 100;
+    l[ctx.L_.DOCUMENTO] = 'OS';
+    l[ctx.L_.CENTRO] = 'Loja 08';
+    l[ctx.L_.CATEGORIA] = 'Pesado';
+    l[ctx.L_.ID] = id;
+    l[ctx.L_.NATUREZA_OFICINA] = 'Peça';
+    l[ctx.L_.DETALHE_OFICINA] = detalheOficina;
+    return l;
+  }
+  ABAS_FAKE[ctx.ABAS.LANCAMENTOS] = [new Array(ctx.TOTAL_COL_LANC).fill('cab'),
+    lanc('LAN-20261110-AAAA1111', 'descrito'),      // linha 2, está OK
+    lanc('LAN-20261110-BBBB2222', '')];             // linha 3, é a com problema
+})();
+ctx.escreverConferencia_(ctx.coletarProblemas_());
+const lpId = linhaDaPendencia('Oficina sem detalhe da peça/serviço');
+// agora o primeiro lançamento é excluído: o de problema sobe da linha 3 para a 2
+ABAS_FAKE[ctx.ABAS.LANCAMENTOS].splice(1, 1);
+const r3e = ctx.webCorrigirPendencia('t', lpId, 'Troca do alternador');
+ok('a correção ainda encontra o lançamento certo pelo ID', r3e.ok === true,
+  JSON.stringify(r3e));
+ok('e gravou no registro certo, que agora está noutra linha',
+  ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.DETALHE_OFICINA] === 'Troca do alternador' &&
+  ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.ID] === 'LAN-20261110-BBBB2222',
+  JSON.stringify(ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1].slice(0, 3)) +
+  ' — pelo número da linha teria gravado no vizinho');
+
+console.log('\n3f. Lançamento excluído: recusa em vez de gravar em outro');
+montar();
+oficinaIncompleta();
+ctx.escreverConferencia_(ctx.coletarProblemas_());
+const lpx = linhaDaPendencia('Oficina sem detalhe da peça/serviço');
+ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.ID] = 'LAN-20261110-OUTRO999';
+const rx = ctx.webCorrigirPendencia('t', lpx, 'Troca do alternador');
+ok('recusa quando o ID sumiu da base', rx.ok === false, JSON.stringify(rx));
+ok('e diz que pode ter sido excluído', /exclu/.test(rx.mensagem || ''), rx.mensagem);
+ok('sem tocar em lançamento nenhum',
+  ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.DETALHE_OFICINA] === '');
 
 console.log('\n4. Quando a revalidação falha, o operador tem de saber');
 // É o caso real de quem colou o código novo sem rodar "Instalar / atualizar":
