@@ -1488,6 +1488,56 @@ São poucas, e o texto novo é o que torna cada uma resolvível.
 
 ---
 
+# V4.13 — corrigir onde o problema aparece
+
+Com os dois números à vista, o caso ficou claro:
+
+```
+linha 41 • R$ 1278,00 / 20 kg = R$ 63,90/kg em Gás
+```
+
+20 kg está certo — é um P20. **R$ 1.278 é que está errado.** E o sistema
+mandava o operador para outra tela, achar a mesma linha de novo.
+
+> *"ao corrigir aqui ele já deve corrigir o lançamento"*
+
+Tem razão. A pendência de preço fora da curva passou a oferecer **os dois
+campos**: Valor e Quantidade.
+
+## Correção com mais de um campo
+
+O mecanismo era de um campo só, porque a maioria das pendências tem um culpado
+óbvio: falta o detalhe, falta a NF, falta o centro. **Preço fora da curva não
+tem** — a razão pode estar errada pelos dois lados, e só quem olha o lançamento
+sabe qual.
+
+As specs de um campo continuam escritas do jeito curto; `camposDaSpec_` as
+embrulha numa lista de um. Um formato só, dois casos.
+
+**Preenche-se só o campo errado.** Exigir os dois obrigaria a redigitar um
+número que já está certo — que é como se erra um número certo.
+
+A versão **em litro** também ganhou os dois campos. Antes ela não oferecia nada,
+justamente porque não havia como escolher um culpado.
+
+## Uma armadilha que o teste pegou
+
+O endpoint aceitava o valor como escalar. Com dois campos, um escalar vindo de
+uma **aba antiga do navegador** iria para o primeiro campo — gravando no
+**Valor** o número que o operador digitou como **Quantidade**, e estragando um
+dado que estava certo.
+
+Agora escalar só vale quando a spec tem um campo. Nas de dois, é recusado com
+pedido de recarregar a página. Por mutação, aceitando o escalar, a prova falha.
+
+## Suítes
+
+`conferir_unidade_quantidade.js` 33 provas, `conferir_correcao_ponta.js` 23,
+`conferir_corrigir_pendencia.js` 61.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de

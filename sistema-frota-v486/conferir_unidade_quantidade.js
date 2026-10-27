@@ -119,16 +119,34 @@ console.log('\n6. Correção na tela');
 const c = ctx.correcaoDaPendencia_(ctx.ABAS.LANCAMENTOS, 'Preço por quilo fora da curva',
   'linha 86 • R$ 213.00/kg em Gás', 'EMP YALE N 02');
 ok('oferece correção', c !== null, JSON.stringify(c));
-ok('o campo é a QUANTIDADE, não o valor',
-  c && c.rotulo.indexOf('kg') !== -1, c && c.rotulo);
+// A pendência passou a oferecer DOIS campos: o errado pode ser o valor ou a
+// quantidade, e só quem olha o lançamento sabe qual. Mandar para outra tela
+// metade das vezes era empurrar o trabalho para longe de onde ele já está.
+const rotulos = (c.campos || []).map(function (x) { return x.rotulo; });
+ok('oferece valor E quantidade', c.campos.length === 2, JSON.stringify(rotulos));
+ok('um deles é a quantidade em kg',
+  rotulos.some(function (r) { return r.indexOf('kg') !== -1; }), JSON.stringify(rotulos));
+ok('o outro é o valor', rotulos.some(function (r) { return /Valor/.test(r); }),
+  JSON.stringify(rotulos));
+ok('as chaves distinguem os dois',
+  JSON.stringify(c.campos.map(function (x) { return x.chave; })) ===
+  JSON.stringify(['valor', 'quantidade']), JSON.stringify(c.campos));
 ok('a ajuda diz os tamanhos de botijão',
-  c && /P13|P20|P45/.test(c.ajuda), c && c.ajuda);
-ok('e aponta para a coluna de quantidade do lançamento',
-  ctx.CORRECOES_PENDENCIA_['Preço por quilo fora da curva'].coluna === ctx.COL_LANC.LITROS);
-ok('a versão em litro continua existindo como problema próprio',
-  ctx.correcaoDaPendencia_(ctx.ABAS.LANCAMENTOS, 'Preço por litro fora da curva',
-    'linha 86 • R$ 62.00/L em Combustivel Proprio', 'AAA1A11') === null,
-  'em litro o errado tanto pode ser o valor quanto a quantidade — não se oferece palpite');
+  c.campos.some(function (x) { return /P13|P20|P45/.test(x.ajuda || ''); }),
+  JSON.stringify(c.campos.map(function (x) { return x.ajuda; })));
+ok('e cada campo aponta para a sua coluna',
+  ctx.CORRECOES_PENDENCIA_['Preço por quilo fora da curva'].campos[0].coluna === ctx.COL_LANC.VALOR &&
+  ctx.CORRECOES_PENDENCIA_['Preço por quilo fora da curva'].campos[1].coluna === ctx.COL_LANC.LITROS);
+
+// A versão em litro ganhou os mesmos dois campos: antes não oferecia nada,
+// justamente porque não havia como escolher UM culpado.
+const cl = ctx.correcaoDaPendencia_(ctx.ABAS.LANCAMENTOS, 'Preço por litro fora da curva',
+  'linha 86 • R$ 62.00/L em Combustivel Proprio', 'AAA1A11');
+ok('a versão em litro também oferece os dois campos', cl && cl.campos.length === 2,
+  JSON.stringify(cl));
+ok('com o rótulo em litros, não em quilos',
+  cl && cl.campos.some(function (x) { return x.rotulo === 'Litros'; }),
+  JSON.stringify(cl && cl.campos.map(function (x) { return x.rotulo; })));
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

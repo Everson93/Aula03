@@ -276,8 +276,12 @@ ctx.escreverConferencia_(ctx.coletarProblemas_());
 ok('o problema aparece', nomesDasPendencias().indexOf('Preço por quilo fora da curva') !== -1,
   JSON.stringify(nomesDasPendencias()));
 const lg = linhaDaPendencia('Preço por quilo fora da curva');
-const rg = ctx.webCorrigirPendencia('t', lg, '45');   // o maior botijão que existe
-ok('a quantidade é gravada', ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.LITROS] === 45,
+// Agora a pendência de preço oferece DOIS campos; o teste corrige a
+// quantidade, que é o que não resolve quando o errado é o valor.
+const rg = ctx.webCorrigirPendencia('t', lg, { quantidade: '45' });
+ok('a quantidade é gravada e o valor NÃO foi tocado',
+  ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.LITROS] === 45 &&
+  ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.VALOR] === 3000,
   String(ABAS_FAKE[ctx.ABAS.LANCAMENTOS][1][ctx.L_.LITROS]));
 ok('o sistema avisa que NÃO resolveu', rg.resolvida === false, JSON.stringify(rg));
 // O detalhe passou a mostrar a CONTA inteira, com vírgula decimal: sem os dois
@@ -287,6 +291,10 @@ ok('com a conta à vista, denunciando o valor',
   /R\$ 3000,00 \/ 45 kg/.test(rg.mensagem || ''), rg.mensagem);
 ok('e diz onde consertar de verdade',
   /Corrigir \/ excluir lançamento/.test(rg.mensagem || ''), rg.mensagem);
+
+ok('escalar numa pendência de dois campos é RECUSADO',
+  ctx.webCorrigirPendencia('t', lg, '45').ok === false,
+  'aba antiga mandaria o número para o primeiro campo e estragaria o valor');
 
 console.log('\n3c. Corrigindo o campo certo, ele confirma que resolveu');
 montar();
@@ -304,7 +312,7 @@ montar();
   ABAS_FAKE[ctx.ABAS.LANCAMENTOS] = [new Array(ctx.TOTAL_COL_LANC).fill('cab'), l];
 })();
 ctx.escreverConferencia_(ctx.coletarProblemas_());
-const rh = ctx.webCorrigirPendencia('t', linhaDaPendencia('Preço por quilo fora da curva'), '20');
+const rh = ctx.webCorrigirPendencia('t', linhaDaPendencia('Preço por quilo fora da curva'), { quantidade: '20' });
 ok('informa que resolveu', rh.resolvida === true, JSON.stringify(rh));
 ok('e a pendência sai da lista',
   nomesDasPendencias().indexOf('Preço por quilo fora da curva') === -1,

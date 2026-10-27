@@ -2663,95 +2663,55 @@
       return '<div class="sub2" style="margin:0 0 10px">Esta correção mexe no cadastro do ' +
         'veículo — só ADMIN.</div>';
     }
-    var campo;
-    if (c.tipo === 'lista') {
-      // As listas vêm UMA vez na resposta, não repetidas em cada pendência:
-      // com 110 itens e 170 veículos eram 117 KB de cópias idênticas.
-      var opcoes = (PENDENCIAS_CLIENTE && PENDENCIAS_CLIENTE.listas &&
-        PENDENCIAS_CLIENTE.listas[c.lista]) || [];
-      campo = '<select id="pfix_' + p.linha + '">' +
-        '<option value="">— escolha —</option>' +
-        opcoes.map(function (o) {
-          return '<option value="' + esc(o) + '">' + esc(o) + '</option>';
-        }).join('') + '</select>';
-    } else if (c.tipo === 'numero') {
-      campo = '<input type="number" step="0.01" inputmode="decimal" id="pfix_' + p.linha + '">';
-    } else if (c.tipo === 'data') {
-      campo = '<input type="date" id="pfix_' + p.linha + '">';
-    } else {
-      campo = '<input type="text" id="pfix_' + p.linha + '" maxlength="300" placeholder="' +
-        esc(c.ajuda || '') + '">';
-    }
+    // Uma pendência pode ter mais de um campo (preço fora da curva: valor OU
+    // quantidade). Preenche-se só o que está errado.
+    var campos = (c.campos || []).map(function (campo, i) {
+      var id = 'pfix_' + p.linha + '_' + i;
+      var entrada;
+      if (campo.tipo === 'lista') {
+        var opcoes = (PENDENCIAS_CLIENTE && PENDENCIAS_CLIENTE.listas &&
+          PENDENCIAS_CLIENTE.listas[campo.lista]) || [];
+        entrada = '<select id="' + id + '"><option value="">— escolha —</option>' +
+          opcoes.map(function (o) {
+            return '<option value="' + esc(o) + '">' + esc(o) + '</option>';
+          }).join('') + '</select>';
+      } else if (campo.tipo === 'numero') {
+        entrada = '<input type="number" step="0.01" inputmode="decimal" id="' + id + '">';
+      } else if (campo.tipo === 'data') {
+        entrada = '<input type="date" id="' + id + '">';
+      } else {
+        entrada = '<input type="text" id="' + id + '" maxlength="300" placeholder="' +
+          esc(campo.ajuda || '') + '">';
+      }
+      return '<div style="flex:1;min-width:180px">' +
+        '<label for="' + id + '">' + esc(campo.rotulo) + '</label>' + entrada +
+        (campo.ajuda ? '<div class="sub2" style="margin-top:4px">' + esc(campo.ajuda) +
+          '</div>' : '') + '</div>';
+    }).join('');
+
+    var varios = (c.campos || []).length > 1;
     return '<div class="cartao" style="background:#FFF7F0;margin:0 0 12px">' +
-      '<div class="linha"><div style="flex:2">' +
-        '<label for="pfix_' + p.linha + '">' + esc(c.rotulo) + '</label>' + campo +
-        '<div class="sub2" style="margin-top:4px">' +
-          esc(c.aba + (c.linha ? ', linha ' + c.linha : ', pelo cadastro do veículo')) +
-          (c.ajuda ? ' • ' + esc(c.ajuda) : '') + '</div>' +
-      '</div><div style="flex:0 0 auto;align-self:flex-start;margin-top:22px">' +
-        '<button class="acao" id="pfixb_' + p.linha + '" onclick="corrigirPendencia(' + p.linha + ')">' +
-        'Corrigir</button></div></div>' +
-      '<div id="pfixm_' + p.linha + '"></div></div>';
-  }
-
-  /**
-   * Caminho certo para a pendencia que NAO se resolve por um campo.
-   *
-   * Antes a tela nao dizia nada e sobrava Status/Observacao — que e o mesmo que
-   * nada. Agora mostra ou o botao da rotina, ou o atalho para a tela onde aquilo
-   * se resolve, ou a explicacao de por que nao ha o que corrigir.
-   */
-  function blocoAcao(p) {
-    var a = p.acao;
-    if (!a || p.correcao) return '';
-    var admin = SESSAO && SESSAO.perfil === 'ADMIN';
-    var botao = '';
-    if (a.tipo === 'rotina') {
-      botao = admin
-        ? '<button class="acao" id="pacb_' + p.linha + '" onclick="rodarAcaoPendencia(' +
-          p.linha + ')">' + esc(a.rotulo) + '</button>'
-        : '<span class="sub2">Esta rotina é de ADMIN.</span>';
-    } else if (a.tipo === 'atalho') {
-      botao = '<button class="acao secundaria" onclick="abrir(\'' + esc(a.tela) +
-        '\')">' + esc(a.rotulo) + '</button>';
-    }
-    return '<div class="cartao" style="background:#F4F8FF;margin:0 0 12px">' +
-      '<div class="sub" style="margin:0 0 ' + (botao ? '10px' : '0') + '">' +
-        esc(a.explicacao) + '</div>' + botao +
-      '<div id="pacm_' + p.linha + '"></div></div>';
-  }
-
-  function rodarAcaoPendencia(linha) {
-    var botao = el('pacb_' + linha);
-    var rotulo = botao.textContent;
-    botao.disabled = true;
-    botao.textContent = 'Executando…';
-    google.script.run
-      .withSuccessHandler(function (r) {
-        if (!r.ok) {
-          botao.disabled = false;
-          botao.textContent = rotulo;
-          el('pacm_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
-            esc(r.mensagem) + '</div>';
-          return;
-        }
-        status(r.mensagem);
-        atualizarSelo(r.pendentes || 0);
-        telaPendencias();
-      })
-      .withFailureHandler(function (e) {
-        botao.disabled = false;
-        botao.textContent = rotulo;
-        el('pacm_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
-          esc(e.message) + '</div>';
-      })
-      .webAcaoPendencia(TOKEN, linha);
+      (varios ? '<div class="sub2" style="margin-bottom:8px">Preencha <b>só o campo ' +
+        'que está errado</b> — o outro fica como está.</div>' : '') +
+      '<div class="linha">' + campos +
+        '<div style="flex:0 0 auto;align-self:flex-start;margin-top:22px">' +
+          '<button class="acao" id="pfixb_' + p.linha + '" onclick="corrigirPendencia(' +
+          p.linha + ')">Corrigir</button></div></div>' +
+      '<div class="sub2" style="margin-top:6px">' +
+        esc(c.aba + (c.linha ? ', linha ' + c.linha : ', pelo cadastro do veículo')) +
+      '</div><div id="pfixm_' + p.linha + '"></div></div>';
   }
 
   function corrigirPendencia(linha) {
     var botao = el('pfixb_' + linha);
-    var campo = el('pfix_' + linha);
-    if (!campo) return;
+    var item = (PENDENCIAS_CLIENTE && PENDENCIAS_CLIENTE.linhas || [])
+      .filter(function (x) { return x.linha === linha; })[0];
+    if (!item || !item.correcao) return;
+    var valores = {};
+    (item.correcao.campos || []).forEach(function (campo, i) {
+      var el_ = el('pfix_' + linha + '_' + i);
+      if (el_) valores[campo.chave] = el_.value;
+    });
     botao.disabled = true;
     botao.textContent = 'Gravando…';
     google.script.run
@@ -2795,7 +2755,7 @@
         el('pfixm_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
           esc(e.message) + '</div>';
       })
-      .webCorrigirPendencia(TOKEN, linha, campo.value);
+      .webCorrigirPendencia(TOKEN, linha, valores);
   }
 
   function renderPendencias(d) {

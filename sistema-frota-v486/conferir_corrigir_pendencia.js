@@ -226,7 +226,7 @@ ok('e a tela não mostra campo para ela',
 ok('data agora É corrigível (a proteção virou trava, não exclusão)',
   ctx.correcaoDaPendencia_(L, 'Data inválida', 'linha 2', 'AAA1A11') !== null);
 ok('e vem marcada como campo de data',
-  ctx.correcaoDaPendencia_(L, 'Data inválida', 'linha 2', 'AAA1A11').tipo === 'data');
+  ctx.correcaoDaPendencia_(L, 'Data inválida', 'linha 2', 'AAA1A11').campos[0].tipo === 'data');
 ok('detalhe sem "linha N" não vira campo editável',
   ctx.correcaoDaPendencia_(L, 'Oficina sem detalhe da peça/serviço', 'sem número', 'AAA1A11') === null,
   'na dúvida sobre a linha, é melhor não oferecer do que gravar no lugar errado');
@@ -235,11 +235,16 @@ ok('detalhe sem "linha N" não vira campo editável',
 console.log('\n7. O que a tela recebe');
 const c = ctx.correcaoDaPendencia_(L, 'Oficina sem natureza da despesa',
   'linha 4 • classifique', 'MKZ 6729');
+// A correção passou a devolver uma LISTA de campos: preço fora da curva
+// oferece valor e quantidade, e um formato só para os dois casos evita dois
+// caminhos de código.
 ok('tipo, rótulo e linha vêm preenchidos',
-  c && c.tipo === 'lista' && c.linha === 4 && c.rotulo, JSON.stringify(c));
+  c && c.linha === 4 && c.campos.length === 1 && c.campos[0].tipo === 'lista' &&
+  c.campos[0].rotulo, JSON.stringify(c));
 // A spec passou a nomear a lista em vez de carregá-la: as opções viajam UMA vez
 // na resposta, não em cada pendência. Ver opcoesDaLista_.
-ok('a correção nomeia a lista a usar', c && c.lista === 'naturezas', JSON.stringify(c && c.lista));
+ok('a correção nomeia a lista a usar', c && c.campos[0].lista === 'naturezas',
+  JSON.stringify(c && c.campos));
 ok('e o nome resolve numa lista não vazia',
   ctx.opcoesDaLista_('naturezas').length > 0, JSON.stringify(ctx.opcoesDaLista_('naturezas')));
 ok('nome desconhecido devolve lista vazia, sem quebrar',
@@ -322,7 +327,7 @@ ok('ADMIN reativa o veículo', r.ok === true && ABAS_FAKE[V][0][ctx.COL_VEIC.ATI
 console.log('\n10. Problemas cujo nome carrega o valor');
 const cpref = ctx.correcaoDaPendencia_(V, 'Descrição do veículo com erro (#REF!)', '', 'AAA1A11');
 ok('"Descrição do veículo com erro (#REF!)" encontra a spec por prefixo',
-  cpref !== null && cpref.rotulo === 'Descrição', JSON.stringify(cpref));
+  cpref !== null && cpref.campos[0].rotulo === 'Descrição', JSON.stringify(cpref));
 ok('e a de Categoria vai para a coluna da Categoria',
   ctx.specDaPendencia_('Categoria do veículo com erro (#N/A)').coluna === ctx.COL_VEIC.CATEGORIA);
 ok('prefixo não casa com problema diferente',
@@ -368,7 +373,9 @@ ok('toda spec de lista nomeia a lista, nenhuma carrega a lista', comLista.length
 const amostra = ctx.correcaoDaPendencia_(L, 'Oficina sem natureza da despesa',
   'linha 4 • classifique', 'MKZ 6729');
 ok('e o que vai para a tela não traz array de opções',
-  amostra && amostra.opcoes === undefined && typeof amostra.lista === 'string',
+  amostra && amostra.campos.every(function (x) {
+    return x.opcoes === undefined && (x.tipo !== 'lista' || typeof x.lista === 'string');
+  }),
   JSON.stringify(amostra));
 const listas = ctx.listasDeCorrecao_();
 ok('listasDeCorrecao_ cobre todas as listas nomeadas',

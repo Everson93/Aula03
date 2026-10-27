@@ -557,7 +557,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.12.2';
+const VERSAO_SISTEMA = '4.13.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -10944,6 +10944,25 @@ function listasDeCorrecao_() {
   return saida;
 }
 
+/**
+ * Campos de uma spec, sempre como lista.
+ *
+ * A maioria das pendencias se resolve num campo so, e por isso a spec nasceu
+ * com coluna/tipo/rotulo soltos. Mas "preco fora da curva" nao tem UM culpado:
+ * a razao pode estar errada pelo valor ou pela quantidade, e so quem olha o
+ * lancamento sabe qual. Mandar o operador para outra tela para metade dos casos
+ * e empurrar o trabalho para longe de onde ele ja esta.
+ *
+ * Specs de um campo continuam escritas do jeito curto; esta funcao as embrulha.
+ */
+function camposDaSpec_(spec) {
+  if (spec.campos) return spec.campos;
+  return [{ chave: 'valor', coluna: spec.coluna, tipo: spec.tipo, rotulo: spec.rotulo,
+    ajuda: spec.ajuda || '', lista: spec.lista || null,
+    minimo: spec.minimo, minimoNumero: spec.minimoNumero,
+    travaCompetencia: spec.travaCompetencia === true }];
+}
+
 /** Spec de correcao de um problema: exata primeiro, depois por prefixo. */
 function specDaPendencia_(problema) {
   const nome = String(problema || '').trim();
@@ -11059,13 +11078,26 @@ function specDaPendencia_(problema) {
     localizar: 'placa', perfil: 'ADMIN',
     lista: 'centros' });
 
-  // O caso do gás: o valor costuma estar certo e a quantidade errada (botijão
-  // em vez de quilos). Por isso a correção oferecida é a QUANTIDADE.
+  // Preço fora da curva não tem UM culpado: a razão pode estar errada pelo
+  // valor ou pela quantidade, e só quem olha o lançamento sabe qual. Oferece os
+  // dois e grava o que for preenchido — exigir ambos obrigaria a redigitar um
+  // número que já está certo, que é como se erra um número certo.
   registrarCorrecaoPendencia_('Preço por quilo fora da curva', {
-    aba: L, coluna: COL_LANC.LITROS, tipo: 'numero', rotulo: 'Quantidade (kg)',
-    minimoNumero: 0,
-    ajuda: 'só preencha se a QUANTIDADE for a errada (P13 = 13, P20 = 20, ' +
-      'P45 = 45). Se o errado for o valor, use "Corrigir / excluir lançamento"' });
+    aba: L, campos: [
+      { chave: 'valor', coluna: COL_LANC.VALOR, tipo: 'numero', rotulo: 'Valor R$',
+        minimoNumero: 0, ajuda: 'o que a nota realmente cobrou' },
+      { chave: 'quantidade', coluna: COL_LANC.LITROS, tipo: 'numero',
+        rotulo: 'Quantidade (kg)', minimoNumero: 0,
+        ajuda: 'quilos do botijão: P13 = 13, P20 = 20, P45 = 45' },
+    ] });
+
+  registrarCorrecaoPendencia_('Preço por litro fora da curva', {
+    aba: L, campos: [
+      { chave: 'valor', coluna: COL_LANC.VALOR, tipo: 'numero', rotulo: 'Valor R$',
+        minimoNumero: 0, ajuda: 'o que a nota realmente cobrou' },
+      { chave: 'quantidade', coluna: COL_LANC.LITROS, tipo: 'numero',
+        rotulo: 'Litros', minimoNumero: 0, ajuda: 'litros abastecidos' },
+    ] });
 
   registrarCorrecaoPendencia_('KM/horímetro inválido', {
     aba: O, coluna: 3, tipo: 'numero', rotulo: 'KM / horímetro', minimoNumero: 0 });
@@ -11210,9 +11242,11 @@ function correcaoDaPendencia_(origem, problema, detalhe, placa) {
   if (!porPlaca && linha < 2) return null;
   if (porPlaca && !String(placa || '').trim()) return null;
   return {
-    aba: spec.aba, linha: linha, tipo: spec.tipo, rotulo: spec.rotulo,
-    ajuda: spec.ajuda || '', lista: spec.lista || null,
-    somenteAdmin: spec.perfil === 'ADMIN',
+    aba: spec.aba, linha: linha, somenteAdmin: spec.perfil === 'ADMIN',
+    campos: camposDaSpec_(spec).map(function (c) {
+      return { chave: c.chave, tipo: c.tipo, rotulo: c.rotulo,
+        ajuda: c.ajuda || '', lista: c.lista || null };
+    }),
   };
 }
 
@@ -11368,32 +11402,69 @@ function webCorrigirPendencia(token, linhaPendencia, valorNovo) {
     return { ok: false, mensagem: 'Esta correção mexe no cadastro do veículo — só ADMIN.' };
   }
 
-  const convertido = valorCorrecaoPendencia_(spec, valorNovo);
-  if (!convertido.ok) return { ok: false, mensagem: convertido.mensagem };
+  // O valor chega como escalar (campo unico, formato antigo) ou como objeto
+  // {chave: valor} quando a pendencia oferece mais de um campo.
+  const campos = camposDaSpec_(spec);
+  const escalar = valorNovo === null || typeof valorNovo !== 'object';
+  // Escalar so vale quando a pendencia tem UM campo. Numa de dois, um escalar
+  // vindo de aba antiga iria para o primeiro campo — gravando VALOR onde o
+  // operador quis dizer QUANTIDADE, e estragando um numero que estava certo.
+  if (escalar && campos.length > 1) {
+    return { ok: false, recarregar: true,
+      mensagem: 'Esta pendência agora tem mais de um campo. Atualize a página ' +
+        'para a tela carregar os campos novos.' };
+  }
+  const entrada = escalar ? { valor: valorNovo } : valorNovo;
+
+  // So o que foi preenchido e gravado: na pendencia de preco, o operador corrige
+  // o valor OU a quantidade, nao os dois. Exigir ambos o obrigaria a redigitar
+  // um numero certo, que e como se erra um numero certo.
+  const aplicar = [];
+  for (let i = 0; i < campos.length; i++) {
+    const c = campos[i];
+    const bruto = entrada[c.chave];
+    if (bruto === undefined || bruto === null || String(bruto).trim() === '') continue;
+    const convertido = valorCorrecaoPendencia_(c, bruto);
+    if (!convertido.ok) return { ok: false, mensagem: convertido.mensagem };
+    aplicar.push({ campo: c, valor: convertido.valor });
+  }
+  if (!aplicar.length) {
+    return { ok: false, mensagem: campos.length > 1
+      ? 'Preencha o campo que está errado — pode ser só um dos dois.'
+      : campos[0].rotulo + ': informe o valor correto.' };
+  }
 
   const alvo = alvoCorrecaoPendencia_(spec, linhaAlvoPendencia_(detalhe), placa);
   if (!alvo.ok) return { ok: false, mensagem: alvo.mensagem };
 
-  const celula = alvo.sheet.getRange(alvo.linha, spec.coluna);
-  const anterior = celula.getValue();
-
-  if (spec.travaCompetencia) {
-    const trava = travaCompetenciaFechada_(anterior, convertido.valor);
+  // Confere a trava de competencia ANTES de gravar qualquer campo: metade
+  // gravada e pior que nada gravado.
+  for (let i = 0; i < aplicar.length; i++) {
+    if (!aplicar[i].campo.travaCompetencia) continue;
+    const anteriorData = alvo.sheet.getRange(alvo.linha, aplicar[i].campo.coluna).getValue();
+    const trava = travaCompetenciaFechada_(anteriorData, aplicar[i].valor);
     if (!trava.ok) return { ok: false, mensagem: trava.mensagem };
   }
 
-  celula.setValue(convertido.valor);
-  if (spec.tipo === 'data') celula.setNumberFormat('dd/mm/yyyy');
+  const mudancas = [];
+  aplicar.forEach(function (a) {
+    const celula = alvo.sheet.getRange(alvo.linha, a.campo.coluna);
+    const anterior = celula.getValue();
+    celula.setValue(a.valor);
+    if (a.campo.tipo === 'data') celula.setNumberFormat('dd/mm/yyyy');
+    mudancas.push(a.campo.rotulo + ': "' +
+      String(anterior === '' ? '(vazio)' : anterior) + '" -> "' + a.valor + '"');
+  });
 
   invalidarCachesDaAba_(spec.aba);
   registrarLog_('Corrigir pendência',
-    problema + ' • ' + spec.aba + ' linha ' + alvo.linha + ' • ' + spec.rotulo + ': "' +
-    String(anterior === '' ? '(vazio)' : anterior) + '" -> "' + convertido.valor + '"');
+    problema + ' • ' + spec.aba + ' linha ' + alvo.linha + ' • ' + mudancas.join(' • '));
 
   // Refaz a conferencia inteira: corrigir um campo pode resolver mais de uma
   // pendencia da mesma linha, e deixar as outras na tela seria mentira.
   const revalidacao = revalidarPendenciasSeguro_();
-  const gravou = spec.rotulo + ' gravado em ' + spec.aba + ', linha ' + alvo.linha + '.';
+  const gravou = aplicar.map(function (a) { return a.campo.rotulo; }).join(' e ') +
+    ' gravado em ' + spec.aba + ', linha ' + alvo.linha + '.';
   if (!revalidacao.ok) {
     // O campo FOI gravado; o que falhou foi refazer a lista. Dizer isso com todas
     // as letras, senao o operador acha que a correção não pegou e corrige de novo.
