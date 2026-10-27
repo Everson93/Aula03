@@ -1308,12 +1308,95 @@ arquivo de 14 mil linhas. É ganho de conforto, não de desempenho.
 
 ---
 
+# V4.12 — cache da apuração de competência passada
+
+Trocar o mês no Rateio ou no Orçamento recalculava **varrendo a base inteira a
+cada clique**: `custoDiretoPorCentro_` chamava `calcularLinhasResumo_`, que lê
+toda a aba Lançamentos.
+
+O resultado é um mapa de ~30 centros. Cabe folgado no cache.
+
+## A geração da base
+
+O `CacheService` **não permite enumerar chaves**, então não dá para sair
+apagando uma a uma na hora de invalidar. A validade vem de um número —
+a **geração** — que entra no nome da chave:
+
+```
+APUR_2026-09_47
+```
+
+Quando a base muda, a geração avança para 48 e **todas** as chaves antigas
+viram inalcançáveis de uma vez, sem apagar nada.
+
+O avanço fica em `invalidarCacheInicio_`, que o próprio código já documentava
+como *"ponto único já chamado por todos os 25 caminhos que alteram dados"* — e
+que o `onEdit` também chama, então **edição manual na planilha invalida
+igual**.
+
+`avancarGeracaoBase_` é idempotente na execução: os 25 caminhos podem chamar à
+vontade, a propriedade é escrita **uma vez**.
+
+## A competência aberta não entra nisso
+
+Ela continua vindo do Resumo, que já está calculado e cacheado por outro
+caminho. Só o passado é cacheado aqui.
+
+## Falha segura
+
+Se a propriedade da geração não puder ser lida, **não se cacheia nada** — lento,
+nunca errado.
+
+> A primeira versão devolvia `'sem-propriedade-' + Date.now()`, achando que uma
+> chave única resolveria. Duas chamadas no mesmo milissegundo geram a **mesma**
+> chave, e aí o cache volta a valer sem ninguém garantir que a base não mudou.
+> Além disso enchia o cache de entradas inalcançáveis. O teste pegou.
+
+## Cache que falhava em silêncio
+
+Pendência da auditoria, resolvida junto. Todos os `cache.put` estavam em
+`try {} catch (e) {}` mudo: se o payload passasse de 100 KB, o cache
+simplesmente parava de existir, o aquecimento por gatilho virava inútil, e a
+lentidão voltava **sem nenhum sinal de por quê**.
+
+`guardarNoCache_` agora registra no log, com o tamanho:
+
+> `cache painel inicial: 112 KB passa do limite de 88 KB; esta chave deixou de
+> ser cacheada e a tela vai recalcular sempre.`
+
+## Dá para ver funcionando
+
+A mensagem do Rateio e do Orçamento passou a dizer *"Competência encerrada,
+**lida do cache**"* em vez de *"recalculada a partir dos lançamentos"*.
+
+## Suíte
+
+`conferir_cache_apuracao.js` — 26 provas. A central não é "ficou rápido": é que
+o número do cache é **idêntico** ao recalculado, centavo por centavo. Cache que
+devolve número diferente é pior que cache nenhum, porque o erro aparece só na
+divisão entre as lojas, que é onde ninguém confere.
+
+Três mutações:
+
+| Mutação | Provas que falham |
+|---|---|
+| sem avançar a geração ao gravar | 3 |
+| chave sem a competência | 2 — *agosto recebe os números de setembro* |
+| geração avança sem a trava por execução | 1 |
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
   origem na migração das 170 abas, e **nada no código atual lê ou escreve nela**.
   Pode já conter um agrupamento útil da planilha antiga; vale olhar antes de
   descartar.
+- **Suíte do fechamento** — `webFecharPeriodo`, `webExcluirLancamento`,
+  `webCorrigirLancamento`, `webGerarDepreciacao`, `webExcluirVeiculo` e
+  `webAjustarEstoqueBomba` continuam sem teste. São os seis caminhos
+  irreversíveis do sistema. Ver a auditoria.
 - **Formatação condicional do Resumo** ainda usa a regra antiga (2× a média da
   frota no R$/km) e segue pintando todo caminhão. Ver V4.9.5.
 - **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo

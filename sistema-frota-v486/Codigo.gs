@@ -548,7 +548,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.11.5';
+const VERSAO_SISTEMA = '4.12.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8524,6 +8524,10 @@ function invalidarCacheInicio_() {
   invalidarCacheSaude_();
   // Ponto único já chamado por todos os 25 caminhos que alteram dados: é aqui que
   // o cache de execução da base de lançamentos também precisa cair.
+  // E é aqui que a geração avança, invalidando de uma vez toda apuração de
+  // competência guardada — inclusive a de edições manuais, que passam por
+  // onEdit e chegam até aqui.
+  avancarGeracaoBase_();
   invalidarCacheLancamentos_();
   invalidarCacheFornecedores_();
   invalidarCacheOdometro_();
@@ -8694,7 +8698,7 @@ function dadosInicioComCache_(forcarAtualizacao) {
   const mesRef = normalizarMesReferencia_(param_('MES_REFERENCIA'));
   const dados = construirDadosInicio_(mesRef);
   dados.cacheHit = false;
-  try { cache.put(CACHE_INICIO_ATUAL_, JSON.stringify(dados), CACHE_INICIO_SEGUNDOS_); } catch (e) {}
+  guardarNoCache_(CACHE_INICIO_ATUAL_, dados, CACHE_INICIO_SEGUNDOS_, 'painel inicial');
   return dados;
 }
 
@@ -9630,6 +9634,81 @@ function espelharPercentuaisNosCentros_(percentuais) {
   return alterados;
 }
 
+// ---------------------------------------------- geração da base e cache de apuração
+
+const PROP_GERACAO_BASE_ = 'GERACAO_BASE_V4116';
+const CACHE_APURACAO_PREFIXO_ = 'APUR_';
+const CACHE_APURACAO_SEGUNDOS_ = 21600;   // 6 h; a geração é quem garante a validade
+/** O CacheService recusa acima de 100 KB. Abaixo disso para sobrar folga. */
+const LIMITE_CACHE_BYTES_ = 90000;
+
+let GERACAO_BASE_EXEC_ = null;
+let GERACAO_JA_AVANCADA_ = false;
+
+/**
+ * Numero que muda sempre que a base de lancamentos pode ter mudado.
+ *
+ * Serve de sufixo nas chaves de cache: em vez de sair apagando chave por chave
+ * — que o CacheService nem permite, porque nao da para enumerar —, basta a
+ * geracao avancar e TODAS as chaves antigas viram inalcancaveis de uma vez.
+ */
+function geracaoBase_() {
+  if (GERACAO_BASE_EXEC_ !== null) return GERACAO_BASE_EXEC_;
+  try {
+    GERACAO_BASE_EXEC_ = String(
+      PropertiesService.getDocumentProperties().getProperty(PROP_GERACAO_BASE_) || '0');
+  } catch (e) {
+    // Sem a propriedade nao da para saber se a base mudou, entao NAO SE CACHEIA.
+    // A primeira versao devolvia 'sem-propriedade-' + Date.now() achando que uma
+    // chave unica resolveria; duas chamadas no mesmo milissegundo geram a MESMA
+    // chave, e aí o cache volta a valer sem ninguem garantir que a base nao mudou.
+    // Alem disso aquilo enchia o cache de chaves inalcancaveis. Devolver nulo e
+    // o fracasso seguro: lento, nunca errado.
+    console.error('geração da base ilegível; apuração não será cacheada: ' + e.message);
+    return null;
+  }
+  return GERACAO_BASE_EXEC_;
+}
+
+/** Avanca a geracao. Idempotente na execucao: 25 invalidacoes, uma escrita so. */
+function avancarGeracaoBase_() {
+  if (GERACAO_JA_AVANCADA_) return;
+  try {
+    const props = PropertiesService.getDocumentProperties();
+    const nova = String((Number(props.getProperty(PROP_GERACAO_BASE_)) || 0) + 1);
+    props.setProperty(PROP_GERACAO_BASE_, nova);
+    GERACAO_BASE_EXEC_ = nova;
+    GERACAO_JA_AVANCADA_ = true;
+  } catch (e) {
+    // Nao conseguiu avancar: zera o cache de execucao para a proxima leitura
+    // reler a propriedade, em vez de seguir com um numero que pode estar velho.
+    GERACAO_BASE_EXEC_ = null;
+    console.error('avançar geração da base: ' + e.message);
+  }
+}
+
+/**
+ * Grava no cache dizendo ALTO quando nao consegue.
+ *
+ * Todos os `cache.put` do sistema estavam em `try {} catch (e) {}` mudo. Se o
+ * payload passasse de 100 KB, o cache simplesmente parava de existir: o
+ * aquecimento por gatilho viraria inutil e a lentidao voltaria sem nenhum
+ * sinal de por que. Um log transforma regressao invisivel em linha de log.
+ */
+function guardarNoCache_(chave, objeto, segundos, rotulo) {
+  let json;
+  try { json = JSON.stringify(objeto); }
+  catch (e) { console.error('cache ' + rotulo + ': não serializou — ' + e.message); return false; }
+  if (json.length > LIMITE_CACHE_BYTES_) {
+    console.error('cache ' + rotulo + ': ' + Math.round(json.length / 1024) +
+      ' KB passa do limite de ' + Math.round(LIMITE_CACHE_BYTES_ / 1024) +
+      ' KB; esta chave deixou de ser cacheada e a tela vai recalcular sempre.');
+    return false;
+  }
+  try { CacheService.getScriptCache().put(chave, json, segundos); return true; }
+  catch (e) { console.error('cache ' + rotulo + ': ' + e.message); return false; }
+}
+
 /**
  * Custo direto por centro numa competencia qualquer.
  *
@@ -9644,13 +9723,39 @@ function espelharPercentuaisNosCentros_(percentuais) {
 function custoDiretoPorCentro_(mesRef) {
   const alvo = normalizarMesReferencia_(mesRef);
   const corrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
-  const linhas = alvo === corrente ? lerResumo_() : calcularLinhasResumo_(periodoDoMes_(alvo));
-  const direto = {};
-  linhas.forEach(function (l) {
-    const centro = normalizarCentroCusto_(String(l[R_.CENTRO] || '').trim()) || '(sem centro)';
-    direto[centro] = (direto[centro] || 0) + (Number(l[R_.TOTAL]) || 0);
-  });
-  return { direto: direto, aproximado: alvo !== corrente, corrente: corrente };
+
+  function somar(linhas) {
+    const direto = {};
+    linhas.forEach(function (l) {
+      const centro = normalizarCentroCusto_(String(l[R_.CENTRO] || '').trim()) || '(sem centro)';
+      direto[centro] = (direto[centro] || 0) + (Number(l[R_.TOTAL]) || 0);
+    });
+    return direto;
+  }
+
+  // Competência aberta: vem do Resumo, que já está calculado e cacheado.
+  if (alvo === corrente) {
+    return { direto: somar(lerResumo_()), aproximado: false, corrente: corrente, cacheHit: false };
+  }
+
+  // Competência passada: recalcular custa uma varredura da base inteira, e o
+  // seletor de mês do Rateio e do Orçamento dispara isso a cada troca. O
+  // resultado é um mapa de ~30 centros — cabe folgado no cache. A geração no
+  // nome da chave garante que uma escrita em qualquer lugar invalida tudo.
+  const geracao = geracaoBase_();
+  const chave = geracao === null ? null : CACHE_APURACAO_PREFIXO_ + alvo + '_' + geracao;
+  if (chave) {
+    try {
+      const bruto = CacheService.getScriptCache().get(chave);
+      if (bruto) {
+        return { direto: JSON.parse(bruto), aproximado: true, corrente: corrente, cacheHit: true };
+      }
+    } catch (e) { console.error('ler apuração do cache: ' + e.message); }
+  }
+
+  const direto = somar(calcularLinhasResumo_(periodoDoMes_(alvo)));
+  if (chave) guardarNoCache_(chave, direto, CACHE_APURACAO_SEGUNDOS_, 'apuração ' + alvo);
+  return { direto: direto, aproximado: true, corrente: corrente, cacheHit: false };
 }
 
 /**
@@ -9703,7 +9808,8 @@ function apurarRateio_(mesRef) {
 
   return { competencia: alvo, linhas: linhas, orfaos: orfaos, valorBase: valorBase,
     somaPercentual: somaPercentual, origemPercentuais: vigente.origem,
-    proprio: vigente.proprio, aproximado: apuracao.aproximado };
+    proprio: vigente.proprio, aproximado: apuracao.aproximado,
+    cacheHit: apuracao.cacheHit === true };
 }
 
 function webRateio(token, mesRef) {
@@ -9719,8 +9825,9 @@ function webRateio(token, mesRef) {
         'tem os seus. Salve na tela de centros para congelá-los.');
   }
   if (a.aproximado) {
-    avisos.push('Competência encerrada, recalculada a partir dos lançamentos. Emplacamento ' +
-      'e seguro usam o cadastro atual do veículo.');
+    avisos.push('Competência encerrada, ' +
+      (a.cacheHit ? 'lida do cache' : 'recalculada a partir dos lançamentos') +
+      '. Emplacamento e seguro usam o cadastro atual do veículo.');
   }
   if (a.orfaos.length) {
     avisos.push('⚠ ' + a.orfaos.length + ' centro(s) de custo aparecem nos veículos mas ' +
@@ -10034,7 +10141,8 @@ function webOrcamento(token, mesRef) {
       'A projeção repete até o fim o ritmo de gasto até aqui.');
   }
   if (apuracao.aproximado) {
-    avisos.push('Competência encerrada, recalculada a partir dos lançamentos.');
+    avisos.push('Competência encerrada, ' +
+      (apuracao.cacheHit ? 'lida do cache' : 'recalculada a partir dos lançamentos') + '.');
   }
 
   return {
