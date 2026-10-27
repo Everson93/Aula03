@@ -2702,6 +2702,60 @@
       '</div><div id="pfixm_' + p.linha + '"></div></div>';
   }
 
+  /**
+   * Caminho certo para a pendencia que NAO se resolve por um campo.
+   *
+   * Antes a tela nao dizia nada e sobrava Status/Observacao — que e o mesmo que
+   * nada. Agora mostra ou o botao da rotina, ou o atalho para a tela onde aquilo
+   * se resolve, ou a explicacao de por que nao ha o que corrigir.
+   */
+  function blocoAcao(p) {
+    var a = p.acao;
+    if (!a || p.correcao) return '';
+    var admin = SESSAO && SESSAO.perfil === 'ADMIN';
+    var botao = '';
+    if (a.tipo === 'rotina') {
+      botao = admin
+        ? '<button class="acao" id="pacb_' + p.linha + '" onclick="rodarAcaoPendencia(' +
+          p.linha + ')">' + esc(a.rotulo) + '</button>'
+        : '<span class="sub2">Esta rotina é de ADMIN.</span>';
+    } else if (a.tipo === 'atalho') {
+      botao = '<button class="acao secundaria" onclick="abrir(\'' + esc(a.tela) +
+        '\')">' + esc(a.rotulo) + '</button>';
+    }
+    return '<div class="cartao" style="background:#F4F8FF;margin:0 0 12px">' +
+      '<div class="sub" style="margin:0 0 ' + (botao ? '10px' : '0') + '">' +
+        esc(a.explicacao) + '</div>' + botao +
+      '<div id="pacm_' + p.linha + '"></div></div>';
+  }
+
+  function rodarAcaoPendencia(linha) {
+    var botao = el('pacb_' + linha);
+    var rotulo = botao.textContent;
+    botao.disabled = true;
+    botao.textContent = 'Executando…';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (!r.ok) {
+          botao.disabled = false;
+          botao.textContent = rotulo;
+          el('pacm_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
+            esc(r.mensagem) + '</div>';
+          return;
+        }
+        status(r.mensagem);
+        atualizarSelo(r.pendentes || 0);
+        telaPendencias();
+      })
+      .withFailureHandler(function (e) {
+        botao.disabled = false;
+        botao.textContent = rotulo;
+        el('pacm_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
+          esc(e.message) + '</div>';
+      })
+      .webAcaoPendencia(TOKEN, linha);
+  }
+
   function corrigirPendencia(linha) {
     var botao = el('pfixb_' + linha);
     var item = (PENDENCIAS_CLIENTE && PENDENCIAS_CLIENTE.linhas || [])

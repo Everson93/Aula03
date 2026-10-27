@@ -1538,6 +1538,57 @@ pedido de recarregar a página. Por mutação, aceitando o escalar, a prova falh
 
 ---
 
+# V4.13.1 — a tela de pendências parou de carregar
+
+Regressão minha, da V4.13.
+
+Ao reescrever `blocoCorrecao` para aceitar vários campos, o recorte foi de
+`function blocoCorrecao` até `function corrigirPendencia` — e entre as duas
+moravam **`blocoAcao` e `rodarAcaoPendencia`**, que sumiram junto. A chamada
+`blocoCorrecao(p) + blocoAcao(p)` continuou lá.
+
+`ReferenceError: blocoAcao is not defined` derruba a renderização inteira: a
+tela não carrega, e o erro só aparece no console do navegador.
+
+## Por que nenhuma suíte pegou
+
+| Suíte | O que confere |
+|---|---|
+| `conferir_callbacks.js` | só as cadeias `google.script.run` |
+| checagem de handlers | só `onclick`/`onchange` inline |
+
+**Chamada JavaScript comum, dentro do código de renderização, não era conferida
+por ninguém** — e é a forma mais comum de chamar função que existe.
+
+Sexta ocorrência do mesmo padrão: a verificação olha um lado do contrato.
+
+## `conferir_funcoes_html.js`
+
+Confere que toda função chamada no HTML existe no HTML. Por mutação, apagando
+`blocoAcao`, ela falha nomeando a função.
+
+### Duas tentativas antes de acertar
+
+**Varrer `nome(` direto** acusou 27 funções inexistentes — todas palavras dentro
+de frases em português: `"1 pendência ("` virava uma chamada a `ncia()`.
+
+**Remover strings e comentários antes** foi pior: um literal de expressão
+regular como `/[&<>"]/g` **tem aspas dentro**, o varredor achou que abria uma
+string e engoliu o resto do arquivo. De 194 funções definidas passou a enxergar
+2.
+
+Escrever um tokenizador de JavaScript seria desproporcional. A regra final
+considera só nomes com a cara das funções deste projeto — minúscula inicial,
+maiúscula no meio, seis letras ou mais (`blocoAcao`, `rodarAcaoPendencia`).
+Palavra solta em frase não passa nesse crivo.
+
+O preço é não cobrir funções de nome curto ou todo minúsculo. Aceito: o defeito
+real tinha a cara que a regra pega, e uma regra que dispara 27 falsos positivos
+não é lida por ninguém.
+
+
+---
+
 # Pendente
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
