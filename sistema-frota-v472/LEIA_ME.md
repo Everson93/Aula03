@@ -2572,3 +2572,79 @@ Uma prova que vira falso alarme ao mudar o desenho não é ruído: é a suíte
 pedindo para alguém dizer, por escrito, que a mudança foi deliberada.
 
 Total do projeto: **652 provas**.
+
+## V4.21.0 — o Resumo parou de pintar toda carreta
+
+A regra da formatação condicional era:
+
+```
+$U4 > 2 * $U$3
+```
+
+O R$/km de cada veículo contra **o dobro do número da frota inteira**. Com
+transporte a 85% do custo, a frota inteira *é* a carreta — e toda carreta
+ficava vermelha, todo dia. Vermelho que aparece sempre deixa de significar
+alguma coisa.
+
+O alerta diário já tinha abandonado esse critério na **V4.9.5**, quando ele
+acusava 74 veículos. A planilha ficou para trás, e por doze versões a tela
+disse uma coisa e o e-mail disse outra.
+
+### Uma regra, dois consumidores
+
+`referenciaPorCategoria_` passou a ser a única dona da regra, e tanto o alerta
+quanto o Resumo a consomem. Duas regras parecidas e diferentes são piores que
+uma só: quem lê não sabe em qual acreditar.
+
+A regra é a do alerta, inteira — **mediana por categoria**, sobre o **custo de
+rodagem** (manutenção é gasto por evento), com **mínimo de 4 veículos** e
+**piso de rodagem de 20%** da mediana de km da categoria.
+
+### Duas colunas novas, no fim
+
+| | |
+|---|---|
+| **Y** — `R$/KM Rodagem` | o número que é julgado |
+| **Z** — `Limite da Categoria (2× mediana)` | o limite, escrito pelo script |
+
+Vão no fim pelo mesmo motivo do Gás: as letras A..V são referenciadas por
+fórmula em Relatórios, Dashboard e Rateio.
+
+O limite é **gravado**, não calculado em fórmula: mediana por categoria não se
+escreve em formatação condicional sem array, e array ali não é confiável.
+Calculado no script, é exatamente o mesmo número do e-mail.
+
+Categoria sem referência recebe limite **vazio**, não zero — zero seria lido
+como "limite zero" e pintaria tudo.
+
+A coluna pintada é a **Y**, não a `R$ por KM` (U). U continua sendo total ÷ km,
+o número gerencial. Pintar U com a régua de Y seria colorir um número com a
+régua de outro.
+
+### Quatro fixtures minhas que não exercitavam nada
+
+A mutação achou todas:
+
+1. **Limite 1× em vez de 2×** sobreviveu: minhas fixtures eram uniformes, e
+   com uma carreta a 3× da mediana as duas réguas dão o mesmo resultado.
+   Acrescentei alguém a **1,5×**, que só o 2× deixa passar.
+2. **Coluna usando custo variável em vez de rodagem** sobreviveu: sem oficina
+   nas fixtures, as duas contas são iguais. Acrescentei a Saveiro com R$ 20.000
+   de oficina.
+3. **Segunda guarda removida** sobreviveu: faltava o caso de categoria com 5
+   veículos e só 3 acima do piso de rodagem.
+4. **Primeira guarda removida** sobreviveu, e por um motivo interessante: a
+   segunda pega todos os casos da primeira. Ela não é redundante, porém —
+   muda o **motivo informado**. Numa categoria de dois veículos com um parado,
+   a causa é a categoria ser pequena, não a rodagem da moto. Motivo errado
+   manda o operador consertar a coisa errada.
+
+### Instalar
+
+**Precisa**, por causa das duas colunas novas. O cabeçalho é reescrito sozinho
+na primeira atualização do Resumo, mas a formatação condicional só troca no
+Instalar.
+
+### Provas
+
+`conferir_alerta_diario.js`: 72 → **105**. Total do projeto: **685**.

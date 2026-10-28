@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.20.1';
+const VERSAO_SISTEMA = '4.21.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -2645,7 +2645,11 @@ const RESUMO_COLUNAS = ['Placa / ID', 'Descrição', 'Categoria', 'Centro de Cus
   'KM/Litro', 'R$ por KM', 'TOTAL R$',
   // V4.8: gás entra DEPOIS do total, para nenhuma coluna existente mudar de letra
   // (relatórios, Dashboard e Rateio referenciam as letras A..V).
-  'Gás (kg)', 'Gás R$'];
+  'Gás (kg)', 'Gás R$',
+  // V4.21: as duas colunas que a formatação condicional passa a usar. Vão no
+  // FIM pelo mesmo motivo do Gás: as letras A..V são referenciadas por
+  // fórmula em Relatórios, Dashboard e Rateio.
+  'R$/KM Rodagem', 'Limite da Categoria (2× mediana)'];
 
 /**
  * RESUMO CALCULADO PELO SCRIPT (V4.8)
@@ -2828,7 +2832,9 @@ function atualizarResumoSemLock_() {
   const sheet = ss_().getSheetByName(ABAS.RESUMO);
   if (!sheet) return 0;
   garantirColunas_(sheet, TOTAL_COL_RESUMO);
-  const linhas = calcularLinhasResumo_(periodoAtual_());
+  // As duas colunas de referência só podem ser calculadas depois que TODAS as
+  // linhas existem: a mediana da categoria depende do grupo inteiro.
+  const linhas = preencherReferenciaRodagem_(calcularLinhasResumo_(periodoAtual_()));
   const largura = TOTAL_COL_RESUMO;
   const inicio = PRIMEIRA_LINHA_RESUMO_;
   garantirLinhas_(sheet, Math.max(inicio + linhas.length + 5, LIMITE_VEICULOS + 100));
@@ -3031,11 +3037,25 @@ function montarResumo_() {
       .setBackground('#f5f5f5').setFontColor('#999999')
       .setRanges([sheet.getRange(4, 1, ultima - 3, RESUMO_COLUNAS.length)])
       .build(),
-    // consumo fora da curva: acima de 2x a media da frota
+    // V4.21: fora da curva passa a ser o CUSTO DE RODAGEM contra o limite da
+    // PRÓPRIA CATEGORIA, escrito na coluna ao lado por
+    // preencherReferenciaRodagem_ — a mesma conta que o alerta diário faz.
+    //
+    // A regra antiga era `$U4 > 2*$U$3`: o R$/km do veículo contra o dobro do
+    // número da frota inteira. Com transporte a 85% do custo, pintava toda
+    // carreta de vermelho todo dia, e vermelho que aparece sempre deixa de
+    // significar alguma coisa.
+    //
+    // Pinta a coluna que é JULGADA (rodagem), não a R$/km total: manutenção é
+    // gasto por evento e não entra no critério, então pintar o total seria
+    // colorir um número com a régua de outro.
     SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied(fx_('=AND($U4>0,$U$3>0,$U4>2*$U$3)'))
+      .whenFormulaSatisfied(fx_('=AND($' + letraColuna_(R_.RS_KM_RODAGEM + 1) + '4>0,' +
+        'N($' + letraColuna_(R_.LIMITE_CATEGORIA + 1) + '4)>0,' +
+        '$' + letraColuna_(R_.RS_KM_RODAGEM + 1) + '4>$' +
+        letraColuna_(R_.LIMITE_CATEGORIA + 1) + '4)'))
       .setBackground(CORES.VERMELHO).setBold(true)
-      .setRanges([sheet.getRange(4, R_.RS_KM + 1, ultima - 3, 1)])
+      .setRanges([sheet.getRange(4, R_.RS_KM_RODAGEM + 1, ultima - 3, 1)])
       .build(),
   ]);
 
@@ -8493,6 +8513,10 @@ const R_ = {
   LUBRIFICANTE: 6, ARLA: 7, LAVACAO: 8, OFICINA: 9, OFICINA_ATIVO: 10, PNEUS: 11,
   MULTA: 12, EMPLACAMENTO: 13, IPVA: 14, SEGURO: 15, PEDAGIO: 16, DEPRECIACAO: 17,
   KM: 18, KM_LITRO: 19, RS_KM: 20, TOTAL: 21, GAS_KG: 22, GAS: 23,
+  // V4.21: custo de rodagem por km e o limite da categoria. RS_KM (coluna U)
+  // continua sendo TOTAL / km; e o numero gerencial. Quem e julgado como
+  // "fora da curva" e a RODAGEM, porque manutencao e gasto por evento.
+  RS_KM_RODAGEM: 24, LIMITE_CATEGORIA: 25,
 };
 
 /** Largura do Resumo, derivada do cabecalho — nao mais o literal 20 espalhado. */
@@ -13590,30 +13614,46 @@ function alertasManutencao_() {
   return itens;
 }
 
-function alertasConsumo_() {
-  const linhas = lerResumo_().filter(function (l) { return Number(l[R_.KM]) > 0; });
-  if (!linhas.length) return [];
-
+/**
+ * A referencia de "fora da curva", por categoria.
+ *
+ * Existe para a planilha e o alerta NAO poderem divergir. Ate a V4.20 a
+ * formatacao condicional do Resumo usava `$U4 > 2*$U$3` — o R$/km de cada
+ * veiculo contra o dobro do numero da FROTA INTEIRA. Com transporte a 85% do
+ * custo, isso pinta toda carreta de vermelho, todo dia. Vermelho que aparece
+ * sempre deixa de significar alguma coisa.
+ *
+ * O alerta ja tinha abandonado esse criterio na V4.9.5. Esta funcao e a
+ * unica dona da regra, e os dois a consomem. Ver conferir_telas.js... na
+ * verdade conferir_alerta_diario.js, que confere no fonte que ninguem
+ * recalculou a regra por fora.
+ *
+ * Devolve, por categoria: o limite (2x a mediana do custo de rodagem por km),
+ * a mediana do km/l, e o piso de rodagem. Categoria sem referencia suficiente
+ * fica de fora do mapa — e nao ter referencia nao e o mesmo que estar dentro
+ * da curva: e nao poder afirmar nada.
+ */
+function referenciaPorCategoria_(linhas) {
   const grupos = {};
   linhas.forEach(function (l) {
+    if ((Number(l[R_.KM]) || 0) <= 0) return;
     const cat = String(l[R_.CATEGORIA] || '').trim() || '(sem categoria)';
     (grupos[cat] || (grupos[cat] = [])).push(l);
   });
 
-  const achados = [];
+  const mapa = {};
   let semReferencia = 0, poucaRodagem = 0;
 
-  Object.keys(grupos).sort().forEach(function (cat) {
+  Object.keys(grupos).forEach(function (cat) {
     const grupo = grupos[cat];
     if (grupo.length < MINIMO_VEICULOS_REFERENCIA_) {
-      // Com dois ou tres veiculos nao da para separar sinal de ruido: qualquer um
-      // deles move a propria referencia. Melhor nao afirmar nada do que errar.
+      // Com dois ou tres veiculos nao da para separar sinal de ruido: qualquer
+      // um deles move a propria referencia.
       semReferencia += grupo.length;
       return;
     }
     const rodagemMinima = mediana_(grupo.map(function (l) { return Number(l[R_.KM]) || 0; })) *
       FRACAO_RODAGEM_MINIMA_;
-
     const avaliados = grupo.filter(function (l) {
       if ((Number(l[R_.KM]) || 0) >= rodagemMinima) return true;
       poucaRodagem++;
@@ -13623,54 +13663,113 @@ function alertasConsumo_() {
       semReferencia += avaliados.length;
       return;
     }
+    const custos = avaliados.map(function (l) {
+      return custoRodagemResumo_(l) / (Number(l[R_.KM]) || 1);
+    });
+    const kmLitros = avaliados
+      .map(function (l) {
+        const litros = Number(l[R_.LITROS]) || 0;
+        return litros > 0 ? (Number(l[R_.KM]) || 0) / litros : 0;
+      })
+      .filter(function (x) { return x > 0; });
 
-    const medida = avaliados.map(function (l) {
+    mapa['#' + cat] = {
+      categoria: cat,
+      rodagemMinima: rodagemMinima,
+      refCustoKm: mediana_(custos),
+      refKmLitro: mediana_(kmLitros),
+      avaliados: avaliados.length,
+    };
+  });
+
+  return { mapa: mapa, semReferencia: semReferencia, poucaRodagem: poucaRodagem };
+}
+
+/** A referencia que vale para esta linha, ou null quando nao ha. */
+function referenciaDaLinha_(linha, ref) {
+  const cat = String(linha[R_.CATEGORIA] || '').trim() || '(sem categoria)';
+  const r = ref.mapa['#' + cat];
+  if (!r) return null;
+  if ((Number(linha[R_.KM]) || 0) < r.rodagemMinima) return null;
+  return r;
+}
+
+/**
+ * Preenche as duas colunas que a formatacao condicional le.
+ *
+ * Grava o limite em vez de deixar a planilha calcular: mediana por categoria
+ * nao se escreve em formula de formatacao condicional sem array, e array ali
+ * nao e confiavel. Calculado aqui, e exatamente o mesmo numero do alerta.
+ */
+function preencherReferenciaRodagem_(linhas) {
+  const ref = referenciaPorCategoria_(linhas);
+  linhas.forEach(function (l) {
+    const km = Number(l[R_.KM]) || 0;
+    l[R_.RS_KM_RODAGEM] = km > 0 ? Math.round((custoRodagemResumo_(l) / km) * 1000) / 1000 : 0;
+    const r = referenciaDaLinha_(l, ref);
+    // Vazio, nao zero: zero seria lido como "limite zero" e pintaria tudo.
+    l[R_.LIMITE_CATEGORIA] = (r && r.refCustoKm > 0)
+      ? Math.round(2 * r.refCustoKm * 1000) / 1000 : '';
+  });
+  return linhas;
+}
+
+function alertasConsumo_() {
+  const linhas = lerResumo_().filter(function (l) { return Number(l[R_.KM]) > 0; });
+  if (!linhas.length) return [];
+
+  // A regra vem de referenciaPorCategoria_, a mesma que a formatação
+  // condicional do Resumo usa. Recalcular aqui faria a planilha e o e-mail
+  // discordarem — foi o que aconteceu entre a V4.9.5 e a V4.21.
+  const ref = referenciaPorCategoria_(linhas);
+  const achados = [];
+
+  Object.keys(ref.mapa).sort(function (a, b) {
+    return ref.mapa[a].categoria.localeCompare(ref.mapa[b].categoria);
+  }).forEach(function (chave) {
+    const r = ref.mapa[chave];
+    linhas.forEach(function (l) {
+      if (referenciaDaLinha_(l, ref) !== r) return;
       const km = Number(l[R_.KM]) || 0;
       const litros = Number(l[R_.LITROS]) || 0;
-      return { placa: String(l[R_.PLACA] || ''), km: km,
-        custoKm: km > 0 ? custoRodagemResumo_(l) / km : 0,
-        kmLitro: litros > 0 ? km / litros : 0,
-        dominante: rubricaDominante_(l, R_CUSTO_RODAGEM_) };
-    });
-    const refCustoKm = mediana_(medida.map(function (m) { return m.custoKm; }));
-    const comLitros = medida.filter(function (m) { return m.kmLitro > 0; });
-    const refKmLitro = mediana_(comLitros.map(function (m) { return m.kmLitro; }));
-
-    medida.forEach(function (m) {
+      const custoKm = custoRodagemResumo_(l) / (km || 1);
+      const kmLitro = litros > 0 ? km / litros : 0;
+      const placa = String(l[R_.PLACA] || '');
       const desvios = [];
-      if (refCustoKm > 0 && m.custoKm > 2 * refCustoKm) {
+
+      if (r.refCustoKm > 0 && custoKm > 2 * r.refCustoKm) {
         // A composição vem junto: sem ela, descobrir que foi uma oficina pontual
         // exige abrir a consulta de um veículo por vez.
-        const comp = m.dominante
-          ? ' — ' + Math.round(m.dominante.fracao * 100) + '% é ' + m.dominante.rotulo +
-            ' (R$ ' + numBR_(m.dominante.valor, 2) + ' em ' + numBR_(m.km, 0) + ' km)'
+        const dominante = rubricaDominante_(l, R_CUSTO_RODAGEM_);
+        const comp = dominante
+          ? ' — ' + Math.round(dominante.fracao * 100) + '% é ' + dominante.rotulo +
+            ' (R$ ' + numBR_(dominante.valor, 2) + ' em ' + numBR_(km, 0) + ' km)'
           : '';
-        desvios.push('custo de rodagem R$ ' + numBR_(m.custoKm, 3) + '/km, mais que o dobro ' +
-          'da mediana da categoria (R$ ' + numBR_(refCustoKm, 3) + ')' + comp);
+        desvios.push('custo de rodagem R$ ' + numBR_(custoKm, 3) + '/km, mais que o dobro ' +
+          'da mediana da categoria (R$ ' + numBR_(r.refCustoKm, 3) + ')' + comp);
       }
-      if (refKmLitro > 0 && m.kmLitro > 0 && m.kmLitro < refKmLitro / 2) {
-        desvios.push('rendimento ' + numBR_(m.kmLitro, 2) + ' km/l, menos da metade ' +
-          'da mediana da categoria (' + numBR_(refKmLitro, 2) + ')');
+      if (r.refKmLitro > 0 && kmLitro > 0 && kmLitro < r.refKmLitro / 2) {
+        desvios.push('rendimento ' + numBR_(kmLitro, 2) + ' km/l, menos da metade ' +
+          'da mediana da categoria (' + numBR_(r.refKmLitro, 2) + ')');
       }
       // Um achado por veiculo: os dois desvios sao o mesmo fato visto de dois
       // angulos, e duas linhas so inflam a contagem.
-      if (desvios.length) achados.push(m.placa + ' (' + cat + ') — ' + desvios.join('; '));
+      if (desvios.length) achados.push(placa + ' (' + r.categoria + ') — ' + desvios.join('; '));
     });
   });
 
-  if (semReferencia) {
-    achados.push('— ' + semReferencia + ' veículo(s) não avaliados: a categoria deles tem ' +
+  if (ref.semReferencia) {
+    achados.push('— ' + ref.semReferencia + ' veículo(s) não avaliados: a categoria deles tem ' +
       'menos de ' + MINIMO_VEICULOS_REFERENCIA_ + ' veículos rodando, e não dá para ' +
       'dizer o que é fora da curva com tão pouca referência.');
   }
-  if (poucaRodagem) {
-    achados.push('— ' + poucaRodagem + ' veículo(s) não avaliados por rodagem baixa no ' +
+  if (ref.poucaRodagem) {
+    achados.push('— ' + ref.poucaRodagem + ' veículo(s) não avaliados por rodagem baixa no ' +
       'período: com poucos quilômetros, o custo por km não significa nada.');
   }
   return achados;
 }
 
-/** Saldo baixo, saida sem lastro e pendencias de conferencia em aberto. */
 function alertasTanqueEPendencias_() {
   const achados = [];
   const minimo = Number(param_('ESTOQUE_MINIMO_L')) || ESTOQUE_MINIMO_PADRAO_;

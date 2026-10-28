@@ -39,6 +39,8 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     custoVariavelResumo_, R_CUSTO_VARIAVEL_, MINIMO_VEICULOS_REFERENCIA_, mediana_,
     numBR_, alertasConsumo_, rubricaDominante_, ROTULO_CUSTO_VARIAVEL_,
     alertasManutencao_, custoRodagemResumo_, custoManutencaoResumo_,
+    referenciaPorCategoria_, referenciaDaLinha_, preencherReferenciaRodagem_,
+    TOTAL_COL_RESUMO, letraColuna_,
     R_CUSTO_RODAGEM_, R_CUSTO_MANUTENCAO_, paramOuPadrao_,
     MAXIMO_ITENS_POR_BLOCO_,
   });
@@ -491,6 +493,216 @@ ok('e a fração do empate é metade', Math.abs(ctx.rubricaDominante_(empate).fr
 ok('toda coluna de custo variável tem rótulo em português',
   ctx.R_CUSTO_VARIAVEL_.every(function (n) { return !!ctx.ROTULO_CUSTO_VARIAVEL_[n]; }),
   'uma coluna sem rótulo cairia no nome interno da constante');
+
+
+console.log('\n12. A planilha e o alerta usam a MESMA regra');
+// Até a V4.20 a formatação condicional do Resumo era `$U4 > 2*$U$3`: o R$/km
+// de cada veículo contra o dobro do número da FROTA INTEIRA. Com transporte a
+// 85% do custo, pintava toda carreta de vermelho, todo dia — enquanto o
+// alerta, desde a V4.9.5, já julgava por mediana da categoria.
+//
+// Duas regras parecidas e diferentes são piores que uma só: a tela diz uma
+// coisa e o e-mail diz outra, e quem lê não sabe em qual acreditar.
+limpar();
+// A fixture que originou o problema: carros a ~10 km/l e carretas a ~2,5.
+ctx.__resumo = [
+  linhaResumo('CAR1', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR2', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR3', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR4', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CARRETA1', 8000, 3200, 22000, 'Carreta Normal'),
+  linhaResumo('CARRETA2', 8000, 3200, 22000, 'Carreta Normal'),
+  linhaResumo('CARRETA3', 8000, 3200, 22000, 'Carreta Normal'),
+  linhaResumo('CARRETA4', 8000, 3200, 22000, 'Carreta Normal'),
+];
+const comRef = ctx.preencherReferenciaRodagem_(ctx.__resumo.map(function (l) { return l.slice(); }));
+function pintada(l) {
+  const r = Number(l[ctx.R_.RS_KM_RODAGEM]) || 0;
+  const lim = Number(l[ctx.R_.LIMITE_CATEGORIA]) || 0;
+  return r > 0 && lim > 0 && r > lim;
+}
+ok('NENHUMA carreta é pintada por ser carreta',
+  !comRef.some(function (l) { return /CARRETA/.test(String(l[ctx.R_.PLACA])) && pintada(l); }),
+  JSON.stringify(comRef.filter(pintada).map(function (l) { return l[ctx.R_.PLACA]; })));
+ok('nem os carros', !comRef.some(pintada), 'frota uniforme não tem fora da curva');
+ok('e o alerta concorda: fica calado',
+  ctx.alertasConsumo_().length === 0, JSON.stringify(ctx.alertasConsumo_()));
+
+// A regra ANTIGA pintaria as carretas. Esta prova mostra o que foi consertado.
+const mediaFrota = comRef.reduce(function (t, l) { return t + (Number(l[ctx.R_.RS_KM_RODAGEM]) || 0); }, 0) / comRef.length;
+const carreta = comRef.filter(function (l) { return String(l[ctx.R_.PLACA]) === 'CARRETA1'; })[0];
+ok('a régua da frota inteira é o que estava errado',
+  Number(carreta[ctx.R_.RS_KM_RODAGEM]) > mediaFrota,
+  'a carreta está acima da média da frota — e isso é NORMAL para uma carreta');
+
+console.log('\n13. Uma carreta realmente cara é pintada');
+limpar();
+ctx.__resumo = [
+  linhaResumo('CAR1', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR2', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR3', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR4', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CARRETA1', 8000, 3200, 22000, 'Carreta Normal'),
+  linhaResumo('CARRETA2', 8000, 3200, 22000, 'Carreta Normal'),
+  linhaResumo('CARRETA3', 8000, 3200, 22000, 'Carreta Normal'),
+  linhaResumo('CARRETA4', 8000, 3200, 22000, 'Carreta Normal'),
+  linhaResumo('BEBONA', 8000, 3200, 70000, 'Carreta Normal'),
+];
+const comRef2 = ctx.preencherReferenciaRodagem_(ctx.__resumo.map(function (l) { return l.slice(); }));
+const pintadas = comRef2.filter(pintada).map(function (l) { return String(l[ctx.R_.PLACA]); });
+ok('a carreta que bebe o triplo das outras carretas É pintada',
+  pintadas.join() === 'BEBONA', JSON.stringify(pintadas));
+ok('e o alerta aponta a mesma placa',
+  ctx.alertasConsumo_().filter(function (a) { return a.indexOf('BEBONA') === 0; }).length === 1,
+  JSON.stringify(ctx.alertasConsumo_()));
+ok('e NÃO aponta mais ninguém',
+  ctx.alertasConsumo_().filter(function (a) { return a.indexOf('—') !== 0; }).length === 1,
+  JSON.stringify(ctx.alertasConsumo_()));
+
+console.log('\n13b. O limite é 2× a mediana, não 1×');
+// A fixture anterior era uniforme demais: com uma carreta a 3× da mediana,
+// trocar o limite de 2× para 1× não muda quem é pintado. Precisa de alguém
+// ENTRE as duas réguas, que só o 2× deixa passar.
+limpar();
+ctx.__resumo = [
+  linhaResumo('REF1', 4000, 500, 4000, 'Carro'),
+  linhaResumo('REF2', 4000, 500, 4000, 'Carro'),
+  linhaResumo('REF3', 4000, 500, 4000, 'Carro'),
+  linhaResumo('REF4', 4000, 500, 4000, 'Carro'),
+  linhaResumo('MEIO', 4000, 500, 6000, 'Carro'),   // 1,5× a mediana
+  linhaResumo('ACIMA', 4000, 500, 10000, 'Carro'), // 2,5× a mediana
+];
+const r13 = ctx.preencherReferenciaRodagem_(ctx.__resumo.map(function (l) { return l.slice(); }));
+function porPlaca13(p) { return r13.filter(function (l) { return String(l[ctx.R_.PLACA]) === p; })[0]; }
+ok('quem está a 1,5× da mediana NÃO é pintado', !pintada(porPlaca13('MEIO')),
+  'rodagem ' + porPlaca13('MEIO')[ctx.R_.RS_KM_RODAGEM] + ' vs limite ' + porPlaca13('MEIO')[ctx.R_.LIMITE_CATEGORIA]);
+ok('quem está a 2,5× É pintado', pintada(porPlaca13('ACIMA')),
+  'rodagem ' + porPlaca13('ACIMA')[ctx.R_.RS_KM_RODAGEM] + ' vs limite ' + porPlaca13('ACIMA')[ctx.R_.LIMITE_CATEGORIA]);
+ok('o limite é exatamente o dobro da mediana',
+  Math.abs(Number(porPlaca13('REF1')[ctx.R_.LIMITE_CATEGORIA]) - 2 * (4000 / 4000)) < 0.002,
+  String(porPlaca13('REF1')[ctx.R_.LIMITE_CATEGORIA]));
+ok('e o alerta aponta só o de 2,5×',
+  ctx.alertasConsumo_().filter(function (a) { return a.indexOf('—') !== 0; }).join() .indexOf('ACIMA') === 0,
+  JSON.stringify(ctx.alertasConsumo_()));
+
+console.log('\n13c. A coluna mostra RODAGEM, não o custo variável');
+// Sem oficina nas fixtures, rodagem e custo variável dão o mesmo número e a
+// prova não distinguia os dois. O caso real é a Saveiro: oficina enorme,
+// rodagem normal.
+limpar();
+const saveiro = linhaResumo('SAVEIRO', 2000, 250, 1600, 'Carro');
+saveiro[ctx.R_.OFICINA] = 20000;
+saveiro[ctx.R_.TOTAL] = 21600;
+ctx.__resumo = [
+  linhaResumo('REF1', 2000, 250, 1600, 'Carro'),
+  linhaResumo('REF2', 2000, 250, 1600, 'Carro'),
+  linhaResumo('REF3', 2000, 250, 1600, 'Carro'),
+  linhaResumo('REF4', 2000, 250, 1600, 'Carro'),
+  saveiro,
+];
+const r13c = ctx.preencherReferenciaRodagem_(ctx.__resumo.map(function (l) { return l.slice(); }));
+const sv = r13c.filter(function (l) { return String(l[ctx.R_.PLACA]) === 'SAVEIRO'; })[0];
+ok('a coluna ignora os R$ 20.000 de oficina',
+  Math.abs(Number(sv[ctx.R_.RS_KM_RODAGEM]) - 0.8) < 0.002,
+  'deu ' + sv[ctx.R_.RS_KM_RODAGEM] + ' — com oficina daria 10,8');
+ok('e por isso a Saveiro NÃO é pintada', !pintada(sv),
+  'manutenção é gasto por evento; julgá-la por km pinta todo mês de preventiva');
+
+console.log('\n14. Sem referência não é "dentro da curva"');
+limpar();
+ctx.__resumo = [
+  linhaResumo('SOZINHA', 1000, 400, 9000, 'Maquina'),
+  linhaResumo('CAR1', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR2', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR3', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR4', 3000, 300, 2400, 'Carro'),
+];
+const comRef3 = ctx.preencherReferenciaRodagem_(ctx.__resumo.map(function (l) { return l.slice(); }));
+const sozinha = comRef3.filter(function (l) { return String(l[ctx.R_.PLACA]) === 'SOZINHA'; })[0];
+ok('categoria com menos de 4 veículos fica com limite VAZIO',
+  sozinha[ctx.R_.LIMITE_CATEGORIA] === '', JSON.stringify(sozinha[ctx.R_.LIMITE_CATEGORIA]));
+ok('vazio, NÃO zero: zero seria lido como limite zero e pintaria tudo',
+  sozinha[ctx.R_.LIMITE_CATEGORIA] !== 0);
+ok('mas o custo de rodagem dela é calculado assim mesmo',
+  Number(sozinha[ctx.R_.RS_KM_RODAGEM]) > 0, String(sozinha[ctx.R_.RS_KM_RODAGEM]));
+ok('e ela não é pintada', !pintada(sozinha));
+
+// Rodagem baixa também fica sem limite.
+limpar();
+ctx.__resumo = [
+  linhaResumo('CAR1', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR2', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR3', 3000, 300, 2400, 'Carro'),
+  linhaResumo('CAR4', 3000, 300, 2400, 'Carro'),
+  linhaResumo('PARADO', 50, 5, 5000, 'Carro'),
+];
+const comRef4 = ctx.preencherReferenciaRodagem_(ctx.__resumo.map(function (l) { return l.slice(); }));
+const parado4 = comRef4.filter(function (l) { return String(l[ctx.R_.PLACA]) === 'PARADO'; })[0];
+ok('veículo abaixo do piso de rodagem fica sem limite',
+  parado4[ctx.R_.LIMITE_CATEGORIA] === '', JSON.stringify(parado4[ctx.R_.LIMITE_CATEGORIA]));
+ok('e não é pintado, apesar do R$/km altíssimo',
+  !pintada(parado4), String(parado4[ctx.R_.RS_KM_RODAGEM]));
+
+// Duas guardas, não uma: a categoria pode ter 4+ veículos e mesmo assim
+// sobrar pouca gente DEPOIS do piso de rodagem. A fixture acima só exercitava
+// a primeira (categoria pequena); esta exercita a segunda.
+limpar();
+ctx.__resumo = [
+  linhaResumo('RODA1', 10000, 1000, 8000, 'Truck Normal'),
+  linhaResumo('RODA2', 10000, 1000, 8000, 'Truck Normal'),
+  linhaResumo('RODA3', 10000, 1000, 24000, 'Truck Normal'),  // caro, mas são só 3
+  linhaResumo('PARADO1', 100, 10, 500, 'Truck Normal'),
+  linhaResumo('PARADO2', 100, 10, 500, 'Truck Normal'),
+];
+const r14b = ctx.preencherReferenciaRodagem_(ctx.__resumo.map(function (l) { return l.slice(); }));
+ok('5 veículos na categoria, mas só 3 acima do piso: NINGUÉM tem limite',
+  r14b.every(function (l) { return l[ctx.R_.LIMITE_CATEGORIA] === ''; }),
+  JSON.stringify(r14b.map(function (l) { return [String(l[ctx.R_.PLACA]), l[ctx.R_.LIMITE_CATEGORIA]]; })));
+ok('e ninguém é pintado, nem o caro', !r14b.some(pintada),
+  'com três veículos a referência é o próprio ruído');
+ok('o alerta também fica calado sobre eles',
+  ctx.alertasConsumo_().every(function (a) { return a.indexOf('—') === 0; }),
+  JSON.stringify(ctx.alertasConsumo_()));
+
+// A primeira guarda (categoria pequena) parece redundante com a segunda
+// (poucos avaliados) — a segunda pega todos os casos da primeira. Mas ela
+// muda o MOTIVO informado, e motivo errado manda o operador consertar a coisa
+// errada. Numa categoria de dois veículos, um deles parado, a causa é a
+// categoria ser pequena; não é a rodagem de ninguém.
+limpar();
+ctx.__resumo = [
+  linhaResumo('DUPLA1', 10000, 1000, 8000, 'Moto'),
+  linhaResumo('DUPLA2', 100, 10, 500, 'Moto'),
+];
+const msgs = ctx.alertasConsumo_().join(' | ');
+ok('os dois são atribuídos à categoria pequena',
+  /2 veículo\(s\) não avaliados: a categoria deles tem/.test(msgs), msgs);
+ok('e NENHUM é culpado de rodagem baixa',
+  !/não avaliados por rodagem baixa/.test(msgs),
+  msgs + ' — a causa é a categoria ter dois veículos, não a moto estar parada');
+
+console.log('\n15. As duas pontas, lidas do fonte');
+const fonteR = fs.readFileSync('Codigo.gs', 'utf8');
+ok('a regra mora numa função só', /function referenciaPorCategoria_\(linhas\)/.test(fonteR));
+ok('o alerta a consome', /function alertasConsumo_[\s\S]{0,400}referenciaPorCategoria_\(linhas\)/.test(fonteR));
+ok('e o Resumo também, pela preencherReferenciaRodagem_',
+  /preencherReferenciaRodagem_\(calcularLinhasResumo_/.test(fonteR));
+ok('a regra ANTIGA da frota inteira não existe mais',
+  !/\$U4>2\*\$U\$3/.test(fonteR),
+  'era ela que pintava toda carreta');
+ok('a formatação condicional usa as colunas novas',
+  /R_\.RS_KM_RODAGEM \+ 1[\s\S]{0,400}R_\.LIMITE_CATEGORIA \+ 1/.test(fonteR));
+ok('pinta a coluna que é julgada, não a R$/km total',
+  /setRanges\(\[sheet\.getRange\(4, R_\.RS_KM_RODAGEM \+ 1/.test(fonteR),
+  'pintar o total com a régua da rodagem seria colorir um número com a régua de outro');
+ok('as duas colunas novas estão no fim, depois do Gás',
+  ctx.R_.RS_KM_RODAGEM > ctx.R_.GAS && ctx.R_.LIMITE_CATEGORIA > ctx.R_.RS_KM_RODAGEM,
+  'as letras A..V são referenciadas por fórmula em Relatórios, Dashboard e Rateio');
+ok('e o total de colunas acompanha', ctx.TOTAL_COL_RESUMO === ctx.R_.LIMITE_CATEGORIA + 1,
+  String(ctx.TOTAL_COL_RESUMO));
+ok('são as colunas Y e Z', ctx.letraColuna_(ctx.R_.RS_KM_RODAGEM + 1) === 'Y' &&
+  ctx.letraColuna_(ctx.R_.LIMITE_CATEGORIA + 1) === 'Z',
+  ctx.letraColuna_(ctx.R_.RS_KM_RODAGEM + 1) + '/' + ctx.letraColuna_(ctx.R_.LIMITE_CATEGORIA + 1));
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);
