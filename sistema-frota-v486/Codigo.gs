@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.19.2';
+const VERSAO_SISTEMA = '4.20.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11280,8 +11280,10 @@ function lancamentosDepreciacaoDoPeriodo_(periodo) {
  * Juntar os dois num unico "DIVERGENTE" faz o operador aprovar no automatico
  * — e um dia aprovar junto uma diferenca que importava.
  */
-function divergenciasDepreciacao_() {
-  const status = statusDepreciacaoMensal_();
+function divergenciasDepreciacao_(statusPronto) {
+  // Recebe o status quando quem chama ja o calculou: webDepreciacao precisa
+  // dos dois, e apurar duas vezes e uma varredura inteira do Resumo a toa.
+  const status = statusPronto || statusDepreciacaoMensal_();
   const periodo = periodoDoMes_(status.mes);
   const porPlaca = lancamentosDepreciacaoDoPeriodo_(periodo);
 
@@ -11510,6 +11512,9 @@ function webDepreciacao(token, mesRef) {
     bens: bensDaCompetencia_(alvo),
     totalBens: bensDaCompetencia_(alvo).reduce(function (t, b) { return t + b.valor; }, 0),
     vinculo: conferirVinculoBemPlaca_(),
+    // Vem junto com a tela: descobrir que ha divergencia nao pode depender de
+    // o operador clicar num botao no meio da pagina.
+    divergencias: alvo === status.mes ? divergenciasDepreciacao_(status) : null,
   };
 }
 

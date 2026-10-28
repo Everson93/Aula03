@@ -57,6 +57,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
 // em formato de data passaria pelo ramo de texto e não provaria nada.
 const D = vm.runInContext('(function (a, m, d) { return new Date(a, m, d); })', ctx);
 
+function io_fonte() { return fs.readFileSync('Codigo.gs', 'utf8'); }
 let provas = 0, falhas = 0;
 function ok(nome, cond, detalhe) {
   provas++;
@@ -547,9 +548,68 @@ ok('recusa competência fechada',
 ok('revalida as pendências depois',
   /webDepreciacaoAjustarDivergencias[\s\S]{0,3000}escreverConferencia_\(coletarProblemas_\(\)\)/.test(fonteD));
 const appD = fs.readFileSync('App.html', 'utf8');
-ok('a tela lista antes de deixar acertar',
-  appD.indexOf('webDepreciacaoDivergencias') < appD.indexOf('webDepreciacaoAjustarDivergencias'));
+// A versão anterior conferia a ORDEM das duas chamadas no arquivo, como
+// atalho para "lista antes de acertar". Virou falso alarme quando o botão foi
+// para o cabeçalho — e a ordem no arquivo nunca foi a propriedade que importa.
+// O que importa: nada é ajustado sem o operador ter visto os números.
+ok('a divergência carrega junto com a tela',
+  /divergencias: alvo === status\.mes \? divergenciasDepreciacao_/.test(fonteD),
+  'não pode depender de o operador achar um botão');
+ok('e o acerto em massa confirma mostrando quantas e quanto',
+  /confirm\(texto\)/.test(appD) && /Diferença somada/.test(appD) && /d\.ajustaveis \+/.test(appD),
+  'um acerto em massa sem os números na frente é um acerto no escuro');
 ok('e manda só as marcadas', /dvChk:checked/.test(appD));
+
+console.log('\n10h. Acertar tudo pelo cabeçalho');
+const fonteH = io_fonte();
+const appH = fs.readFileSync('App.html', 'utf8');
+
+ok('a divergência vem junto com a tela, sem precisar clicar',
+  /divergencias: alvo === status\.mes \? divergenciasDepreciacao_\(status\) : null/.test(fonteH),
+  'descobrir que há divergência não pode depender de achar um botão no meio da página');
+ok('e reaproveita o status já apurado',
+  /function divergenciasDepreciacao_\(statusPronto\)[\s\S]{0,300}statusPronto \|\| statusDepreciacaoMensal_\(\)/.test(fonteH),
+  'apurar duas vezes é uma varredura inteira do Resumo à toa');
+ok('competência passada não calcula divergência',
+  /alvo === status\.mes \?/.test(fonteH),
+  'só a competência aberta gera lançamento, então só nela faz sentido');
+
+ok('o cabeçalho tem o botão', /botaoDivergencias \+ . . \+ botaoGerar/.test(appH) ||
+  /botaoDivergencias/.test(appH), 'o botão tem de estar nas ações do cabeçalho');
+ok('o botão mostra a contagem',
+  /⚖️ Acertar . \+ num\(DEP_DIVERG\.ajustaveis\)/.test(appH), 'saber quantas são antes de clicar');
+ok('quando nada é ajustável o botão fica desabilitado',
+  /disabled title="Nenhuma é ajustável automaticamente"/.test(appH));
+ok('acertar tudo manda lista vazia, que o servidor lê como "todas as ajustáveis"',
+  /webDepreciacaoAjustarDivergencias\(TOKEN, \[\]\)/.test(appH));
+ok('a confirmação diz quantas, quanto, e quantas ficam de fora',
+  /Diferença somada/.test(appH) && /NÃO entra\(m\)/.test(appH),
+  '"de uma vez" não pode virar "no escuro"');
+ok('a lista detalhada continua, para escolher uma a uma',
+  /depMarcarTodas/.test(appH) && /dvChk:checked/.test(appH));
+ok('a recusa devolve uma tela utilizável',
+  /else \{ telaDepreciacao\(DEP_COMPETENCIA\); return; \}/.test(appH),
+  'sem isto o botão fica preso em "Acertando…"');
+
+// Lista vazia continua significando "todas as ajustáveis", nunca "nenhuma".
+ctx.__trocarNormalizador(ctx.__normalizarReal);
+ctx.__lanc = [lanc('MLY 3499', 705.01), lanc('MBP 3776', 6036.05)];
+ctx.__dep = [depLinha('B1', 704.99), depLinha('B2', 5195.98)];
+ctx.__veic = [
+  veic('B1', 'MLY 3499', 'FIAT/DOBLO', 'ADM Central', 0),
+  veic('B2', 'MBP 3776', 'Baú Frig.', 'CONSTRUÇÃO', 0),
+];
+const dvT = ctx.divergenciasDepreciacao_();
+ok('as duas são ajustáveis', dvT.ajustaveis === 2, String(dvT.ajustaveis));
+ok('e o servidor sabe somar a diferença das ajustáveis',
+  Math.abs(dvT.somaAjustavel - (0.02 + 840.07)) < 0.01, String(dvT.somaAjustavel));
+
+// O status passado por fora tem de ser respeitado, não ignorado.
+const stFalso = { mes: '2026-08', mesExtenso: 'agosto', itens: [] };
+ok('status recebido por fora é usado em vez de reapurar',
+  ctx.divergenciasDepreciacao_(stFalso).total === 0,
+  'se ignorasse o argumento, reapuraria e acharia as duas');
+ctx.__trocarNormalizador(function (m) { return String(m); });
 
 console.log('\n11. Aba nova registrada em TODAS as listas');
 // Toda aba de dados tem de aparecer em sete lugares: criação, proteção, ordem,

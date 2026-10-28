@@ -2971,6 +2971,7 @@
 
   var DEP_COMPETENCIA = '';
   var DEP_ANALISE = null;
+  var DEP_DIVERG = null;
 
   function telaDepreciacao(mes) {
     carregando('conferindo depreciação…');
@@ -3013,6 +3014,18 @@
           '<td><span class="chip">' + esc(i.situacao) + '</span></td></tr>';
       }).join('');
 
+    // A divergência vem com a tela: o botão já nasce dizendo quantas são, em
+    // vez de obrigar a clicar para descobrir.
+    DEP_DIVERG = d.divergencias || null;
+    var botaoDivergencias = '';
+    if (DEP_DIVERG && DEP_DIVERG.total) {
+      botaoDivergencias = DEP_DIVERG.ajustaveis
+        ? '<button class="dash-refresh" onclick="depAjustarTodas(this)">' +
+          '⚖️ Acertar ' + num(DEP_DIVERG.ajustaveis) + ' divergência(s)</button>'
+        : '<button class="dash-refresh" disabled title="Nenhuma é ajustável automaticamente">' +
+          '⚖️ ' + num(DEP_DIVERG.total) + ' divergência(s) manual(is)</button>';
+    }
+
     var botaoGerar = !naAberta
       ? '<button class="dash-refresh" disabled title="Só a competência aberta gera lançamento">Gerar pendentes</button>'
       : (liberada
@@ -3024,7 +3037,7 @@
         '<h2>Depreciação mensal</h2><p>' + esc(st.mesExtenso || '') + ' • ' + esc(st.periodo || '') + '</p></div>' +
         '<div class="dash-acoes">' +
           '<select id="depMes" onchange="telaDepreciacao(this.value)" style="max-width:200px">' + opcoes + '</select> ' +
-          botaoGerar + '</div></div>' +
+          botaoDivergencias + ' ' + botaoGerar + '</div></div>' +
 
       (!liberada && naAberta
         ? '<div class="ok-caixa"><b>Regra da competência:</b> a depreciação só vira lançamento no último dia do período, em ' +
@@ -3080,7 +3093,7 @@
       '<div class="cartao"><b>Divergências entre o lançado e a competência</b>' +
         '<p class="sub" style="margin:6px 0 10px">Compara o que já virou lançamento com o valor ' +
           'desta competência. Acertar reescreve o lançamento com trilha em <b>Lançamentos Excluídos</b>.</p>' +
-        '<button class="acao secundaria" onclick="depDivergencias()">⚖️ Validar divergências</button>' +
+        '<button class="acao secundaria" onclick="depDivergencias()">🔄 Reconferir</button>' +
         '<div id="depDiverg" style="margin-top:12px"></div></div>' +
 
       '<div class="cartao" style="padding:0;overflow:hidden">' +
@@ -3089,11 +3102,60 @@
         '<div class="rolagem"><table><thead><tr><th>Veículo</th><th>Centro</th>' +
           '<th class="num">Previsto</th><th class="num">Lançado</th><th>Situação</th></tr></thead><tbody>' +
           linhasVeic + '</tbody></table></div></div>';
+
+    if (DEP_DIVERG) renderDivergencias(DEP_DIVERG);
+  }
+
+  /**
+   * Acerta todas as ajustáveis de uma vez, a partir do cabeçalho.
+   *
+   * "De uma vez" não é "no escuro": a confirmação traz quantas são, a soma da
+   * diferença e quantas são só de centavos. Quem quiser escolher uma a uma
+   * continua tendo a lista logo abaixo.
+   */
+  function depAjustarTodas(botao) {
+    var d = DEP_DIVERG;
+    if (!d || !d.ajustaveis) { status('Nenhuma divergência ajustável.'); return; }
+    var texto = 'Acertar ' + d.ajustaveis + ' lançamento(s) pelo valor da competência ' +
+      d.mes + '?' +
+      '\n\nDiferença somada: ' + brl(d.somaAjustavel) +
+      (d.deCentavos ? '\n' + d.deCentavos + ' é/são só de centavos.' : '') +
+      (d.bloqueadas ? '\n' + d.bloqueadas + ' NÃO entra(m): precisa(m) de decisão sua.' : '') +
+      '\n\nCada lançamento atual vai para Lançamentos Excluídos e outro é gravado no lugar.';
+    if (!confirm(texto)) return;
+    botao.disabled = true;
+    botao.textContent = 'Acertando…';
+    google.script.run.withSuccessHandler(aplicouAjuste).withFailureHandler(function (e) {
+      botao.disabled = false;
+      botao.textContent = '⚖️ Acertar divergências';
+      falha(e);
+    }).webDepreciacaoAjustarDivergencias(TOKEN, []);
+  }
+
+  function aplicouAjuste(r) {
+    status(r.mensagem || '');
+    INICIO_CLIENTE = null;
+    // Sempre volta a uma tela utilizável. Na recusa o servidor não manda
+    // `dados`, e sem isto o botão ficaria preso em "Acertando…" para sempre.
+    if (r.dados) renderDepreciacao(r.dados);
+    else { telaDepreciacao(DEP_COMPETENCIA); return; }
+    if ((r.falhados || []).length) {
+      el('depDiverg').innerHTML += '<div class="erro-caixa"><b>Não deu certo em:</b><ul style="margin:6px 0 0 18px">' +
+        r.falhados.map(function (f) { return '<li>' + esc(f.placa) + ' — ' + esc(f.motivo) + '</li>'; }).join('') +
+        '</ul></div>';
+    }
+  }
+
+  function depMarcarTodas(marcar) {
+    [].slice.call(document.querySelectorAll('.dvChk')).forEach(function (c) { c.checked = marcar; });
   }
 
   function depDivergencias() {
     el('depDiverg').innerHTML = '<div class="carregando">comparando…</div>';
-    google.script.run.withSuccessHandler(renderDivergencias).withFailureHandler(function (e) {
+    google.script.run.withSuccessHandler(function (d) {
+      DEP_DIVERG = d;
+      renderDivergencias(d);
+    }).withFailureHandler(function (e) {
       el('depDiverg').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
     }).webDepreciacaoDivergencias(TOKEN);
   }
@@ -3129,8 +3191,13 @@
         '<th class="num">Competência</th><th class="num">Diferença</th><th>Situação</th>' +
         '</tr></thead><tbody>' + linhas + '</tbody></table></div>' +
       (d.ajustaveis
-        ? '<div style="margin-top:12px"><button class="acao" onclick="depAjustar(this)">' +
-          '✅ Acertar os marcados pelo valor da competência</button>' +
+        ? '<div style="margin-top:12px">' +
+          '<button class="acao secundaria" style="padding:4px 10px;font-size:12px" ' +
+            'onclick="depMarcarTodas(true)">marcar todas</button> ' +
+          '<button class="acao secundaria" style="padding:4px 10px;font-size:12px" ' +
+            'onclick="depMarcarTodas(false)">desmarcar</button>' +
+          '<div style="margin-top:10px"><button class="acao" onclick="depAjustar(this)">' +
+          '✅ Acertar os marcados pelo valor da competência</button></div>' +
           '<div class="sub2" style="margin-top:6px">Cada acerto exclui e regrava o lançamento, ' +
           'deixando o original em Lançamentos Excluídos com o motivo.</div></div>'
         : '<div class="sub2" style="margin-top:10px">Nenhuma é ajustável automaticamente.</div>');
@@ -3144,17 +3211,7 @@
       '\n\nO lançamento atual vai para Lançamentos Excluídos e outro é gravado no lugar.')) return;
     botao.disabled = true;
     botao.textContent = 'Acertando…';
-    google.script.run.withSuccessHandler(function (r) {
-      status(r.mensagem || '');
-      INICIO_CLIENTE = null;
-      if (r.dados) renderDepreciacao(r.dados);
-      if (r.divergencias) renderDivergencias(r.divergencias);
-      if ((r.falhados || []).length) {
-        el('depDiverg').innerHTML += '<div class="erro-caixa"><b>Não deu certo em:</b><ul style="margin:6px 0 0 18px">' +
-          r.falhados.map(function (f) { return '<li>' + esc(f.placa) + ' — ' + esc(f.motivo) + '</li>'; }).join('') +
-          '</ul></div>';
-      }
-    }).withFailureHandler(function (e) {
+    google.script.run.withSuccessHandler(aplicouAjuste).withFailureHandler(function (e) {
       botao.disabled = false;
       botao.textContent = 'Acertar os marcados pelo valor da competência';
       falha(e);

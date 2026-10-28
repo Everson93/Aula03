@@ -2448,3 +2448,59 @@ No CLAUDE.md: ao editar HTML com script Python, usar `r'''...'''` ou montar a
 barra com `chr(92)`.
 
 Total do projeto: **611 provas**.
+
+## V4.20.0 — acertar as divergências pelo cabeçalho
+
+O botão estava no meio da página, e exigia dois passos: clicar em *Validar*
+para descobrir se havia divergência, e depois marcar e acertar. Todo mês, a
+mesma caçada.
+
+Agora:
+
+- **A divergência carrega junto com a tela.** Descobrir que existe não depende
+  mais de achar um botão.
+- **O cabeçalho mostra `⚖️ Acertar 12 divergência(s)`** — a contagem já no
+  rótulo. Quando nenhuma é ajustável automaticamente, o botão aparece
+  desabilitado dizendo quantas são manuais, em vez de sumir.
+- **Um clique acerta todas as ajustáveis.**
+
+### "De uma vez" não é "no escuro"
+
+A confirmação traz os números antes de aplicar:
+
+> Acertar 12 lançamento(s) pelo valor da competência 2026-08?
+>
+> Diferença somada: R$ 1.505,91
+> 1 é só de centavos.
+> 2 NÃO entram: precisam de decisão sua.
+
+As bloqueadas continuam de fora — mais de um lançamento para a mesma placa, ou
+lançado sem valor na competência. E a lista detalhada continua logo abaixo,
+agora com *marcar todas* / *desmarcar*, para quem quiser escolher uma a uma.
+
+### Sem custo a mais
+
+`divergenciasDepreciacao_` passou a aceitar o status já apurado.
+`webDepreciacao` precisa dos dois, e apurar duas vezes seria uma varredura
+inteira do Resumo à toa. Competência passada não calcula divergência: só a
+aberta gera lançamento.
+
+### Uma prova minha que virou falso alarme
+
+`conferir_depreciacao_import.js` tinha:
+
+```js
+ok('a tela lista antes de deixar acertar',
+  appD.indexOf('webDepreciacaoDivergencias') < appD.indexOf('webDepreciacaoAjustarDivergencias'));
+```
+
+Conferia a **ordem das chamadas no arquivo**, como atalho para "lista antes de
+acertar". Com o botão no cabeçalho a ordem inverteu, e a prova reprovou — mas
+a propriedade real tinha **melhorado**, porque a lista passou a carregar
+sozinha.
+
+Atalho posicional não é a propriedade. Trocada por duas que afirmam o que
+importa: a divergência carrega com a tela, e o acerto em massa confirma
+mostrando quantas e quanto. Tirar o `confirm` derruba a segunda.
+
+Total do projeto: **625 provas**.
