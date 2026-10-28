@@ -1906,3 +1906,87 @@ provas que pareciam boas eram fracas: uma rebentava com `TypeError` em vez de
 reprovar, e a de `paramOuPadrao_` passava pelo ramo do `undefined` sem nunca
 entrar no `catch` que dizia testar — `param_` não lança no ambiente de prova.
 Agora o teste força o lançamento.
+
+## V4.16.1 — por que só a depreciação estava lenta
+
+A pergunta certa não era "por que o sistema está lento". Era **por que só este
+botão**. Lançar uma despesa é instantâneo; gerar a depreciação do mês demorava.
+A diferença entre os dois: lançar insere **uma** linha, a depreciação insere
+**uma por veículo** — 167 de uma vez.
+
+Então o custo tinha de ser algo que roda por linha inserida. Era:
+
+```js
+const classDep = faltantes.map(function (i) {
+  const c = classificacaoVeiculoAtual_(i.placa);   // ← uma vez por veículo
+  return [c.centro, c.categoria];
+});
+```
+
+`classificacaoVeiculoAtual_` chama `resolverVeiculo_`, que **varre a lista
+inteira de veículos** — várias passagens, com `normalizaPlaca_` e
+`chavePatrimonio_` em cada linha. Com 167 veículos: 167 varreduras de 167
+linhas, ~100 mil operações de string, só para descobrir o centro de custo de
+veículos cuja linha **já estava em mãos** no laço anterior.
+
+### Conserto 1: não procurar o que já se tem
+
+`statusDepreciacaoMensal_` já percorre os veículos para montar os itens. Ele
+passou a colher ali mesmo o centro e a categoria prontos para o lançamento
+(`centroLancamento`, `categoriaLancamento`), e a geração só os copia. De
+167 varreduras para zero.
+
+De quebra, CENTRO e CATEGORIA são as colunas logo após OBSERVAÇÃO, então o
+bloco inteiro vai numa escrita só em vez de duas.
+
+### Conserto 2: memo amarrado à identidade do cache
+
+O mesmo padrão existe em mais quatro laços — importação, reparo de colagem
+deslocada, reclassificação e `onEdit` em bloco. Em todos, placas se repetem,
+então um memo por execução resolve.
+
+O risco é óbvio: **memo velho grava centro errado dentro do lançamento, em
+silêncio.** E onze pontos do código zeram `VEICULOS_EXEC_CACHE_`. Um memo com
+invalidação própria teria de ser limpo nos onze, e o décimo-segundo ponto
+escrito no futuro quebraria sem avisar — a família de defeito que este projeto
+já pegou seis vezes.
+
+Por isso o memo é amarrado à **identidade do array** de veículos:
+
+```js
+if (!CLASSIF_MEMO_EXEC_ || CLASSIF_MEMO_EXEC_.fonte !== fonte) {
+  CLASSIF_MEMO_EXEC_ = { fonte: fonte, mapa: {} };
+}
+```
+
+Quando o cache cai, a releitura devolve um array **novo**, a identidade muda e
+o memo se descarta sozinho. **Não existe segundo lugar para lembrar.**
+
+A chave leva prefixo `#` para uma placa chamada `__proto__` não alcançar o
+protótipo, e o retorno é sempre cópia — quem mexer no objeto devolvido não
+envenena o memo.
+
+### O que NÃO foi tocado
+
+`atualizarResumoSeguro_()` e `escreverConferencia_(coletarProblemas_())`
+continuam rodando depois da escrita, e são caros. Mas são **custo
+compartilhado**: os mesmos dez caminhos de mutação os chamam, e lançar uma
+despesa avulsa é rápido mesmo passando por eles. Não eram a causa de só a
+depreciação estar lenta. Se ainda demorar depois desta versão, é aí que está o
+próximo corte — e aí vale medir antes.
+
+### Provas
+
+`conferir_classificacao_memo.js`, **24 provas**. Oito mutações, oito pegas.
+A que mais importa é a terceira seção: trocar o centro do veículo no cadastro,
+zerar o cache, e exigir que a consulta devolva o **novo** centro. Fazer o memo
+sobreviver à troca derruba 4 provas.
+
+Duas correções no próprio método de teste, ambas na mesma direção — **um duplê
+mais permissivo que a coisa real aprova código que quebra em produção**:
+
+1. O `getRange` falso ignorava as dimensões pedidas. Gravar 9 colunas numa
+   faixa de 7 lança no Apps Script, e passava aqui. Agora o duplê confere.
+2. A prova de que o retorno é cópia mutava o resultado da **primeira**
+   chamada — que é cópia nos dois casos, com memo ou sem. O envenenamento só
+   é possível a partir da segunda. A prova passava sem provar nada.

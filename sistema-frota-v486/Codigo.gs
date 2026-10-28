@@ -578,7 +578,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.16.0';
+const VERSAO_SISTEMA = '4.16.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -2139,7 +2139,39 @@ function localizarDuplicidadeLancamento_(data, placa, tipo, valor, documento) {
   return null;
 }
 
+/**
+ * Memo da classificacao, por execucao.
+ *
+ * `classificacaoVeiculoAtual_` varre a lista inteira de veiculos a cada
+ * chamada, e e chamada DENTRO DE LACOS em cinco lugares (importacao, reparo de
+ * colagem deslocada, reclassificacao, onEdit em bloco). Com 167 veiculos isso
+ * vira varredura sobre varredura.
+ *
+ * O memo e amarrado a IDENTIDADE do array de veiculos, nao a uma flag paralela.
+ * Onze pontos do codigo zeram VEICULOS_EXEC_CACHE_, e um memo com invalidacao
+ * propria teria de ser limpo nos onze — o decimo-segundo ponto escrito no
+ * futuro gravaria centro errado no lancamento, em silencio. Quando o cache cai,
+ * a releitura devolve um array NOVO, a identidade muda, e o memo se descarta
+ * sozinho. Nao ha segundo lugar para lembrar.
+ */
+let CLASSIF_MEMO_EXEC_ = null;
+
 function classificacaoVeiculoAtual_(placaOuPatrimonio) {
+  const fonte = dadosVeiculosExecucao_();
+  if (!CLASSIF_MEMO_EXEC_ || CLASSIF_MEMO_EXEC_.fonte !== fonte) {
+    CLASSIF_MEMO_EXEC_ = { fonte: fonte, mapa: {} };
+  }
+  // Prefixo: uma placa chamada "__proto__" nao pode alcancar o prototipo.
+  const chave = '#' + String(placaOuPatrimonio == null ? '' : placaOuPatrimonio);
+  const guardado = CLASSIF_MEMO_EXEC_.mapa[chave];
+  if (guardado) return { centro: guardado.centro, categoria: guardado.categoria };
+
+  const calculado = classificacaoVeiculoAtualSemMemo_(placaOuPatrimonio);
+  CLASSIF_MEMO_EXEC_.mapa[chave] = calculado;
+  return { centro: calculado.centro, categoria: calculado.categoria };
+}
+
+function classificacaoVeiculoAtualSemMemo_(placaOuPatrimonio) {
   const resolvido = resolverVeiculo_(placaOuPatrimonio, false);
   if (!resolvido.ok) return { centro: '⚠ sem cadastro', categoria: '⚠ sem cadastro' };
   return {
@@ -10837,6 +10869,11 @@ function statusDepreciacaoMensal_() {
       placa: placa,
       descricao: String(v[COL_VEIC.DESCRICAO - 1] || ''),
       centro: String(v[COL_VEIC.CENTRO - 1] || ''),
+      // Centro e categoria prontos para o lancamento, colhidos aqui porque a
+      // linha do veiculo ja esta em maos. Buscar isto depois, placa por placa,
+      // varre a lista inteira de veiculos uma vez por placa.
+      centroLancamento: normalizarCentroCusto_(v[COL_VEIC.CENTRO - 1]) || '⚠ sem cadastro',
+      categoriaLancamento: String(v[COL_VEIC.CATEGORIA - 1] || '').trim() || '⚠ sem cadastro',
       valorMensal: valorMensal,
       lancado: lancado,
       lancadoForaData: lancadoForaData,
@@ -10883,9 +10920,12 @@ function gerarDepreciacaoMensal_() {
     });
     const sheet = aba_(ABAS.LANCAMENTOS);
     const primeira = proximaLinhaLancamento_();
-    sheet.getRange(primeira, 1, linhas.length, BLOCO_ENTRADA_LANC).setValues(linhas);
-    const classDep = faltantes.map(function(i){ const c=classificacaoVeiculoAtual_(i.placa); return [c.centro,c.categoria]; });
-    sheet.getRange(primeira, COL_LANC.CENTRO, classDep.length, 2).setValues(classDep);
+    // CENTRO e CATEGORIA sao as duas colunas seguintes a OBSERVACAO, entao o
+    // bloco inteiro vai numa escrita so em vez de duas.
+    const comClasse = linhas.map(function (l, k) {
+      return l.concat([faltantes[k].centroLancamento, faltantes[k].categoriaLancamento]);
+    });
+    sheet.getRange(primeira, 1, comClasse.length, COL_LANC.CATEGORIA).setValues(comClasse);
     const idsDep = linhas.map(function(){ return [novoIdLancamento_()]; });
     sheet.getRange(primeira, COL_LANC.ID, idsDep.length, 1).setValues(idsDep).setNumberFormat('@');
     sheet.getRange(primeira, COL_LANC.DATA, linhas.length, 1).setNumberFormat('dd/mm/yyyy');
