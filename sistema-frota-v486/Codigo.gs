@@ -578,7 +578,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.16.1';
+const VERSAO_SISTEMA = '4.17.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -10636,21 +10636,50 @@ function lancamentoAgendado_(linha) {
     .test(String(linha[L_.OBSERVACAO] || ''));
 }
 
-function gruposIpvaDaPlaca_(placa) {
-  const alvo = normalizaPlaca_(placa);
-  const grupos = {};
-  lerLancamentos_().forEach(function (l) {
+/**
+ * Indice de IPVA por placa, construido numa passagem so.
+ *
+ * Antes isto varria TODOS os lancamentos uma vez POR PLACA. A tela de IPVA e o
+ * alerta diario percorrem a frota inteira chamando esta funcao, entao com 167
+ * veiculos e 20 mil lancamentos davam 3,3 milhoes de iteracoes, com regex de
+ * normalizacao de placa em cada uma. Medido: 1,07 s so nisto, em Node — no
+ * Apps Script, varias vezes mais.
+ *
+ * O indice e amarrado a IDENTIDADE do array de lancamentos, como o memo da
+ * classificacao: quando LANCAMENTOS_EXEC_CACHE_ cai, a releitura devolve um
+ * array novo e o indice se descarta sozinho. Sem segundo lugar para lembrar.
+ */
+let IPVA_INDICE_EXEC_ = null;
+
+function indiceIpvaPorPlaca_() {
+  const fonte = lerLancamentos_();
+  if (IPVA_INDICE_EXEC_ && IPVA_INDICE_EXEC_.fonte === fonte) return IPVA_INDICE_EXEC_.mapa;
+  const mapa = {};
+  fonte.forEach(function (l) {
     if (String(l[L_.TIPO] || '').trim() !== 'IPVA') return;
-    if (normalizaPlaca_(l[L_.PLACA]) !== alvo) return;
-    const obs = String(l[L_.OBSERVACAO] || '');
-    const achado = obs.match(/IPVA-[A-Za-z0-9]+/);
+    const chave = '#' + normalizaPlaca_(l[L_.PLACA]);
+    const grupos = mapa[chave] || (mapa[chave] = {});
+    const achado = String(l[L_.OBSERVACAO] || '').match(/IPVA-[A-Za-z0-9]+/);
     const grupo = achado ? achado[0] : '(sem grupo)';
     if (!grupos[grupo]) grupos[grupo] = { parcelas: 0, total: 0, competencias: [] };
     grupos[grupo].parcelas++;
     grupos[grupo].total += Number(l[L_.VALOR]) || 0;
     grupos[grupo].competencias.push(String(l[L_.PERIODO] || ''));
   });
-  return grupos;
+  IPVA_INDICE_EXEC_ = { fonte: fonte, mapa: mapa };
+  return mapa;
+}
+
+function gruposIpvaDaPlaca_(placa) {
+  const guardado = indiceIpvaPorPlaca_()['#' + normalizaPlaca_(placa)];
+  if (!guardado) return {};
+  // Copia: quem mexer no resultado nao pode corromper o indice da execucao.
+  const copia = {};
+  Object.keys(guardado).forEach(function (g) {
+    copia[g] = { parcelas: guardado[g].parcelas, total: guardado[g].total,
+      competencias: guardado[g].competencias.slice() };
+  });
+  return copia;
 }
 
 /**
@@ -14208,11 +14237,42 @@ function webCorrigirLancamento(token, id, ref, dados, justificativa) {
 }
 
 /** Leitura de KM do veículo naquele dia, quando houver exatamente uma (para pré-preencher a correção). */
+/**
+ * Indice de odometro por placa+dia, construido numa passagem so.
+ *
+ * Mesmo motivo do IPVA: a tela de correcao chama isto para ate 300 lancamentos,
+ * e cada chamada varria os 8 mil registros de odometro. Medido: 1,15 s.
+ *
+ * A regra de negocio e preservada exatamente — o KM so vale quando ha UMA
+ * leitura daquela placa naquele dia. Duas leituras sao ambiguas e devolvem ''
+ * como antes, entao o indice guarda a contagem, nao so o valor.
+ */
+let ODOMETRO_INDICE_EXEC_ = null;
+
+function indiceOdometroPorPlacaDia_() {
+  const fonte = lerOdometro_();
+  if (ODOMETRO_INDICE_EXEC_ && ODOMETRO_INDICE_EXEC_.fonte === fonte) return ODOMETRO_INDICE_EXEC_.mapa;
+  const mapa = {};
+  fonte.forEach(function (o) {
+    const d = o[0];
+    if (!(d instanceof Date)) return;
+    const chave = '#' + normalizaPlaca_(o[1]) + '|' +
+      d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+    const atual = mapa[chave];
+    if (atual) { atual.quantas++; return; }
+    mapa[chave] = { quantas: 1, km: o[2] };
+  });
+  ODOMETRO_INDICE_EXEC_ = { fonte: fonte, mapa: mapa };
+  return mapa;
+}
+
 function kmDoDia_(placa, data) {
   if (!(data instanceof Date)) return '';
-  const alvo = normalizaPlaca_(placa);
-  const doDia = lerOdometro_().filter(function (o) { return normalizaPlaca_(o[1]) === alvo && mesmoDia_(o[0], data); });
-  return doDia.length === 1 ? Number(doDia[0][2]) || '' : '';
+  const chave = '#' + normalizaPlaca_(placa) + '|' +
+    data.getFullYear() + '-' + data.getMonth() + '-' + data.getDate();
+  const achado = indiceOdometroPorPlacaDia_()[chave];
+  if (!achado || achado.quantas !== 1) return '';
+  return Number(achado.km) || '';
 }
 
 /** Lançamentos do período aberto (e futuros), para a tela de correção/exclusão. */

@@ -1990,3 +1990,95 @@ mais permissivo que a coisa real aprova código que quebra em produção**:
 2. A prova de que o retorno é cópia mutava o resultado da **primeira**
    chamada — que é cópia nos dois casos, com memo ou sem. O envenenamento só
    é possível a partir da segunda. A prova passava sem provar nada.
+
+## V4.17.0 — medir os módulos, e não achar
+
+Depois da depreciação, a pergunta óbvia: **onde mais isso acontece?** Achar
+por leitura não escala em 529 funções. Então duas ferramentas.
+
+### `medir_modulos.js` — os números
+
+Banco com frota sintética do tamanho da real (170 veículos, 20 mil
+lançamentos, 8 mil odômetros). Não substitui medir na planilha — aqui não há
+I/O de Sheets. Mede o **custo de CPU em JavaScript puro**, que é justamente
+onde mora o custo quadrático, o único que piora sozinho conforme a base cresce.
+
+Primeira rodada, antes de mexer:
+
+| | antes | depois |
+|---|---|---|
+| IPVA de toda a frota (a tela) | **1.073 ms** | 7,8 ms |
+| `kmDoDia_` × 300 (tela de correção) | **1.149 ms** | 14,6 ms |
+| `alertasOdometroEIpva_` | **1.017 ms** | 259 ms |
+| `alertasConsumo_` | 0,9 ms | — |
+
+E o Apps Script é várias vezes mais lento que o Node, então um segundo aqui
+são muitos lá.
+
+As duas causas eram a mesma de sempre, em funções diferentes:
+
+- **`gruposIpvaDaPlaca_`** varria TODOS os lançamentos uma vez POR PLACA. A
+  tela de IPVA e o alerta diário percorrem a frota chamando isso: 167 × 20.000
+  = 3,3 milhões de iterações, com regex de placa em cada uma.
+- **`kmDoDia_`** varria os 8 mil registros de odômetro a cada consulta, e a
+  tela de correção consulta até 300 vezes.
+
+Ambas viraram **índice construído numa passagem**, amarrado à identidade do
+array de origem — o mesmo truque do memo da V4.16.1: quando o cache de
+execução cai, a releitura devolve um array novo e o índice se descarta
+sozinho. Sem segundo lugar para lembrar.
+
+No `kmDoDia_` a regra de negócio é sutil e foi preservada: o KM só vale
+quando há **uma** leitura daquela placa naquele dia; duas são ambíguas e
+devolvem vazio. O índice guarda a contagem, não só o valor.
+
+### `conferir_desempenho.js` — a guarda
+
+Lê o código-fonte e procura varredura de coleção dentro de laço, e escrita de
+planilha dentro de laço. Nenhum dos dois aparece em teste de comportamento: o
+resultado continua **certo**, só demora. Uma lista congela os oito casos
+restantes com o motivo de cada um; o valor está em reprovar o que for novo.
+
+### O que o medidor revelou sobre a V4.16.1
+
+O memo da classificação tem um custo que eu não tinha medido:
+
+| | com memo | sem memo |
+|---|---|---|
+| 170 placas **distintas** | 44,9 ms | 23,8 ms |
+| mesma placa × 1000 | **0,6 ms** | 136,3 ms |
+
+O memo **custa o dobro** quando nenhuma placa repete. Os quatro laços que
+ainda o chamam (importação, reparo, reclassificação, `onEdit`) têm repetição
+pesada, e o caso de placas distintas era a depreciação, que não chama mais.
+Fica registrado em vez de escondido.
+
+### Ainda não resolvido
+
+`excluirVeiculo_` apaga os lançamentos **um por vez**, cada um com leitura e
+remoção de linha. Veículo com histórico longo demora. Está na lista de
+aceitas da guarda com essa anotação, e junto com a suíte do fechamento na
+lista de pendências.
+
+### Três erros meus, todos na mesma direção
+
+1. **O primeiro varredor deu 89 achados**, quase todos falsos: ele não sabia
+   que os leitores de base são cacheados por execução. Um relatório cheio de
+   falso positivo é um relatório que ninguém lê.
+2. **A propagação transitiva marcava `numBR_` como varredor.** Trocada por
+   exigir que a função varra ela mesma.
+3. **O banco mediu índice quente.** O `__zerarCaches` limpava dois caches e
+   não os índices novos, então a medição saiu lisonjeando a própria mudança
+   que deveria julgar: "0,0 ms". Com todos os caches zerados por volta, os
+   números honestos são os da tabela acima — bons, mas não mágicos.
+
+E um erro de teste: a prova da normalização de placa esperava `abc-1d23` →
+`ABC1D23`. `normalizaPlaca_` troca traço por **espaço**: o certo é `ABC 1D23`.
+O teste estava errado, não o código.
+
+### Provas
+
+`conferir_indices_execucao.js` (30) e `conferir_desempenho.js` (6). Oito
+mutações nos índices, oito pegas — incluindo as duas que mais importam: fazer
+o índice sobreviver à mudança dos dados, e ignorar a ambiguidade de duas
+leituras no mesmo dia. Total do projeto: **469 provas**.
