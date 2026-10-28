@@ -3123,13 +3123,10 @@
       (d.bloqueadas ? '\n' + d.bloqueadas + ' NÃO entra(m): precisa(m) de decisão sua.' : '') +
       '\n\nCada lançamento atual vai para Lançamentos Excluídos e outro é gravado no lugar.';
     if (!confirm(texto)) return;
-    botao.disabled = true;
-    botao.textContent = 'Acertando…';
-    google.script.run.withSuccessHandler(aplicouAjuste).withFailureHandler(function (e) {
-      botao.disabled = false;
-      botao.textContent = '⚖️ Acertar divergências';
-      falha(e);
-    }).webDepreciacaoAjustarDivergencias(TOKEN, []);
+    comVigia(botao, 'Acertando…', function (pronto, erro) {
+      google.script.run.withSuccessHandler(function (r) { pronto(); aplicouAjuste(r); })
+        .withFailureHandler(erro).webDepreciacaoAjustarDivergencias(TOKEN, []);
+    });
   }
 
   function aplicouAjuste(r) {
@@ -3144,6 +3141,38 @@
         r.falhados.map(function (f) { return '<li>' + esc(f.placa) + ' — ' + esc(f.motivo) + '</li>'; }).join('') +
         '</ul></div>';
     }
+  }
+
+  /**
+   * Roda uma chamada longa com vigia de tempo.
+   *
+   * O Apps Script corta a execução em 6 minutos e, quando isso acontece,
+   * nem o sucesso nem a falha chegam ao navegador: o botão ficaria em
+   * "Acertando…" para sempre, sem o usuário saber se gravou ou não. O vigia
+   * devolve o botão e diz o que fazer — que é conferir, não repetir às cegas.
+   */
+  function comVigia(botao, rotulo, trabalho) {
+    var original = botao.textContent;
+    var encerrado = false;
+    botao.disabled = true;
+    botao.textContent = rotulo;
+    var relogio = setTimeout(function () {
+      if (encerrado) return;
+      encerrado = true;
+      botao.disabled = false;
+      botao.textContent = original;
+      status('A operação passou de 3 minutos e o servidor não respondeu. ' +
+        'Recarregue a tela e confira o que já foi gravado ANTES de tentar de novo.');
+    }, 180000);
+    function soltar() {
+      if (encerrado) return false;
+      encerrado = true;
+      clearTimeout(relogio);
+      botao.disabled = false;
+      botao.textContent = original;
+      return true;
+    }
+    trabalho(function () { soltar(); }, function (e) { if (soltar()) falha(e); });
   }
 
   function depMarcarTodas(marcar) {
@@ -3209,13 +3238,10 @@
     if (!marcadas.length) { status('Marque ao menos uma divergência.'); return; }
     if (!confirm('Acertar ' + marcadas.length + ' lançamento(s) pelo valor da competência?' +
       '\n\nO lançamento atual vai para Lançamentos Excluídos e outro é gravado no lugar.')) return;
-    botao.disabled = true;
-    botao.textContent = 'Acertando…';
-    google.script.run.withSuccessHandler(aplicouAjuste).withFailureHandler(function (e) {
-      botao.disabled = false;
-      botao.textContent = 'Acertar os marcados pelo valor da competência';
-      falha(e);
-    }).webDepreciacaoAjustarDivergencias(TOKEN, marcadas);
+    comVigia(botao, 'Acertando…', function (pronto, erro) {
+      google.script.run.withSuccessHandler(function (r) { pronto(); aplicouAjuste(r); })
+        .withFailureHandler(erro).webDepreciacaoAjustarDivergencias(TOKEN, marcadas);
+    });
   }
 
   function depPainelVinculo(v) {

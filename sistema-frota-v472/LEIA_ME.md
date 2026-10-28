@@ -2504,3 +2504,71 @@ importa: a divergência carrega com a tela, e o acerto em massa confirma
 mostrando quantas e quanto. Tirar o `confirm` derruba a segunda.
 
 Total do projeto: **625 provas**.
+
+## V4.20.1 — o botão que ficava preso em "Acertando…"
+
+Travava e não saía do lugar. A causa é aritmética:
+
+| | |
+|---|---|
+| lançamentos na base | ~20.000 |
+| divergências a acertar | ~50 |
+| cada acerto chamava | `corrigirLancamento_` → **exclui e regrava** |
+| excluir desloca | todas as linhas de baixo (~10.000) |
+| **linhas copiadas no total** | **~500.000** |
+| limite do Apps Script | **6 minutos** |
+
+Estourava o limite. Quando isso acontece, nem o sucesso nem a falha chegam ao
+navegador: o botão fica em "Acertando…" **para sempre**, e o operador não sabe
+se gravou, se gravou pela metade, ou se não gravou nada.
+
+### Conserto: ajuste em lote, no lugar
+
+`ajustarValoresDepreciacao_` lê as colunas uma vez, muda os alvos em memória e
+grava **duas vezes no total** — valor e observação — independentemente de
+quantas divergências sejam. De 500 mil operações de linha para 5 chamadas de
+planilha.
+
+De quebra, o lançamento **mantém o ID**. O excluir-e-regravar trocava o ID a
+cada acerto, e é por ID que as pendências apontam para o lançamento.
+
+### A rastreabilidade mudou de forma, não sumiu
+
+Era: o original ia para `Lançamentos Excluídos` e outro era gravado.
+Agora: a própria linha conta a história, na observação.
+
+> Depreciação mensal de 2026-08 — valor da competência. Ajustado de
+> R$ 6.036,05 para R$ 5.195,98 em 28/10/2026 14:32 por fulano@giassi.com.br.
+
+Mais o registro no Log. É uma troca consciente: perdeu-se a cópia da linha
+antiga numa aba separada, ganhou-se o de-para visível ao lado do valor, o ID
+estável, e uma operação que **termina**.
+
+### Nunca gravar na linha errada
+
+Número de linha é coordenada que envelhece — se alguém excluiu um lançamento
+com a tela aberta, a linha 3 já é de outro. Antes de escrever, cada alvo é
+conferido contra **ID, placa e tipo** da linha. Qualquer divergência recusa
+aquele alvo, diz "recarregue a tela", e os outros seguem.
+
+### O botão não pode ficar preso
+
+`comVigia` dá 3 minutos à chamada. Se o servidor não responder, devolve o
+botão e diz o que fazer:
+
+> A operação passou de 3 minutos e o servidor não respondeu. Recarregue a tela
+> e confira o que já foi gravado **ANTES** de tentar de novo.
+
+Repetir às cegas um acerto que talvez tenha gravado é pior que não repetir.
+
+### Uma prova que afirmava o desenho antigo
+
+`ok('o ajuste passa por corrigirLancamento_', …)` — escrita na V4.19.0, com
+razão na época. Ao trocar o mecanismo ela reprovou, e estava certa em
+reprovar: o desenho mudou. Foi reescrita para afirmar o que vale agora — que
+o ajuste **não** exclui e regrava, e que o de-para fica na linha e no Log.
+
+Uma prova que vira falso alarme ao mudar o desenho não é ruído: é a suíte
+pedindo para alguém dizer, por escrito, que a mudança foi deliberada.
+
+Total do projeto: **652 provas**.

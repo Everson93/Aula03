@@ -33,6 +33,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     valorDepreciacaoDoBem_, valoresDepreciacaoDaCompetencia_, chavePatrimonio_,
     conferirVinculoBemPlaca_, patrimonioFrouxo_,
     divergenciasDepreciacao_, lancamentosDepreciacaoDoPeriodo_, CENTAVOS_DEPRECIACAO_,
+    ajustarValoresDepreciacao_, COL_LANC,
     L_, TOTAL_COL_LANC,
     TIPOS_DESPESA, TIPOS_DESPESA_MANUAL, TIPOS_GERADOS_PELO_SISTEMA_,
     COL_VEIC, COL_DM, TOTAL_COL_VEIC, TOTAL_COL_DM,
@@ -538,9 +539,19 @@ ctx.__trocarNormalizador(function (m) { return String(m); });
 
 console.log('\n10g. O ajuste é auditável, não um UPDATE');
 const fonteD = fs.readFileSync('Codigo.gs', 'utf8');
-ok('o ajuste passa por corrigirLancamento_',
-  /webDepreciacaoAjustarDivergencias[\s\S]{0,2000}corrigirLancamento_\(/.test(fonteD),
-  'um setValue no valor mudaria o total do mês sem rastro');
+// Até a V4.20.0 o ajuste ia por corrigirLancamento_, que exclui e regrava:
+// auditável, mas desloca a planilha inteira a cada divergência e estourava o
+// limite de 6 minutos. A V4.20.1 trocou por ajuste em lote no lugar, e a
+// rastreabilidade mudou de FORMA, não deixou de existir — fica na própria
+// linha (de quanto, para quanto, quando, quem) e no Log.
+ok('o ajuste NÃO exclui e regrava por divergência',
+  !/webDepreciacaoAjustarDivergencias[\s\S]{0,1500}corrigirLancamento_\(/.test(fonteD),
+  'excluir empurra todas as linhas de baixo, a cada divergência');
+ok('a rastreabilidade fica na própria linha',
+  /Ajustado de R\$ . \+ numBR_\(de, 2\) \+ . para R\$ /.test(fonteD) && /por . \+ quem/.test(fonteD),
+  'sem o de-para na observação, o valor muda sem rastro');
+ok('e o Log registra a operação',
+  /registrarLog_\('Ajustar divergências de depreciação'/.test(fonteD));
 ok('e nunca toca nas bloqueadas',
   /if \(!i\.ajustavel\) return false;/.test(fonteD));
 ok('recusa competência fechada',
@@ -610,6 +621,148 @@ ok('status recebido por fora é usado em vez de reapurar',
   ctx.divergenciasDepreciacao_(stFalso).total === 0,
   'se ignorasse o argumento, reapuraria e acharia as duas');
 ctx.__trocarNormalizador(function (m) { return String(m); });
+
+console.log('\n10i. O acerto em lote');
+// A primeira versão chamava corrigirLancamento_ por divergência, que exclui e
+// regrava — e excluir empurra para cima todas as linhas de baixo. Com 20 mil
+// lançamentos e 50 divergências dava meio milhão de linhas copiadas, acima do
+// limite de 6 minutos do Apps Script: o cliente nunca recebia resposta e o
+// botão ficava preso em "Acertando…".
+ctx.__trocarNormalizador(ctx.__normalizarReal);
+
+// Planilha falsa que registra TODA escrita, para contar quantas são.
+function planilhaFalsa(linhas) {
+  const reg = { escritas: 0, celulas: 0 };
+  const cols = {};
+  cols[ctx.COL_LANC.VALOR] = linhas.map(function (l) { return [l.valor]; });
+  cols[ctx.COL_LANC.OBSERVACAO] = linhas.map(function (l) { return [l.obs || '']; });
+  cols[ctx.COL_LANC.PLACA] = linhas.map(function (l) { return [l.placa]; });
+  cols[ctx.COL_LANC.TIPO] = linhas.map(function (l) { return [l.tipo]; });
+  cols[ctx.COL_LANC.ID] = linhas.map(function (l) { return [l.id || '']; });
+  return { reg: reg, cols: cols, sheet: {
+    getRange: function (li, co, nl) {
+      const dados = cols[co] || linhas.map(function () { return ['']; });
+      return {
+        getValues: function () { return dados.slice(li - 2, li - 2 + nl); },
+        setValues: function (v) { reg.escritas++; reg.celulas += v.length;
+          v.forEach(function (x, k) { dados[li - 2 + k] = x; }); },
+      };
+    } } };
+}
+function linhaL(placa, valor, id) { return { placa: placa, valor: valor, tipo: 'Depreciação', id: id }; }
+
+let pfL = planilhaFalsa([
+  linhaL('AAA 0001', 100, 'LAN-1'),
+  linhaL('BBB 0002', 200, 'LAN-2'),
+  linhaL('CCC 0003', 300, 'LAN-3'),
+]);
+vm.runInContext(`
+  aba_ = function () { return __sheet; };
+  ultimaLinhaLancamentoReal_ = function () { return __ultima; };
+  invalidarCacheLancamentos_ = function () {};
+  emailContextoAtual_ = function () { return 'fulano@giassi.com.br'; };
+`, ctx);
+ctx.__sheet = pfL.sheet; ctx.__ultima = 4;
+
+let rL = ctx.ajustarValoresDepreciacao_([
+  { placa: 'AAA 0001', linha: 2, previsto: 111, id: 'LAN-1' },
+  { placa: 'BBB 0002', linha: 3, previsto: 222, id: 'LAN-2' },
+  { placa: 'CCC 0003', linha: 4, previsto: 333, id: 'LAN-3' },
+], '2026-08');
+ok('acertou os três', rL.ajustados.length === 3, JSON.stringify(rL.ajustados));
+ok('DUAS escritas no total, não duas por linha', pfL.reg.escritas === 2,
+  pfL.reg.escritas + ' escritas — é isto que faz o botão não travar');
+ok('os valores novos ficaram na planilha',
+  JSON.stringify(pfL.cols[ctx.COL_LANC.VALOR]) === '[[111],[222],[333]]',
+  JSON.stringify(pfL.cols[ctx.COL_LANC.VALOR]));
+ok('a observação registra de quanto para quanto',
+  /Ajustado de R\$ 100,00 para R\$ 111,00/.test(pfL.cols[ctx.COL_LANC.OBSERVACAO][0][0]),
+  pfL.cols[ctx.COL_LANC.OBSERVACAO][0][0]);
+ok('e quem fez', /por fulano@giassi\.com\.br/.test(pfL.cols[ctx.COL_LANC.OBSERVACAO][0][0]));
+ok('o de quanto é o valor REAL que estava lá',
+  /de R\$ 300,00 para R\$ 333,00/.test(pfL.cols[ctx.COL_LANC.OBSERVACAO][2][0]),
+  pfL.cols[ctx.COL_LANC.OBSERVACAO][2][0]);
+
+console.log('\n10j. Nunca gravar na linha errada');
+// Número de linha é coordenada que envelhece. Se a tela ficou aberta enquanto
+// alguém excluiu um lançamento, a linha 3 já é de outro — e gravar ali trocaria
+// o valor de um lançamento que ninguém mandou mexer.
+pfL = planilhaFalsa([
+  linhaL('AAA 0001', 100, 'LAN-1'),
+  linhaL('ZZZ 9999', 200, 'LAN-OUTRO'),
+]);
+ctx.__sheet = pfL.sheet; ctx.__ultima = 3;
+rL = ctx.ajustarValoresDepreciacao_([
+  { placa: 'BBB 0002', linha: 3, previsto: 222, id: 'LAN-2' },
+], '2026-08');
+ok('ID diferente na linha: RECUSA', rL.ajustados.length === 0 && rL.falhados.length === 1,
+  JSON.stringify(rL));
+ok('e diz para recarregar', /recarregue a tela/.test(rL.falhados[0].motivo), rL.falhados[0].motivo);
+ok('nada foi gravado', pfL.reg.escritas === 0, String(pfL.reg.escritas));
+
+// Placa diferente, mesmo sem ID para comparar.
+pfL = planilhaFalsa([linhaL('AAA 0001', 100, ''), linhaL('ZZZ 9999', 200, '')]);
+ctx.__sheet = pfL.sheet; ctx.__ultima = 3;
+rL = ctx.ajustarValoresDepreciacao_([{ placa: 'BBB 0002', linha: 3, previsto: 222, id: '' }], '2026-08');
+ok('placa diferente na linha: RECUSA', rL.ajustados.length === 0, JSON.stringify(rL));
+
+// Linha que não é depreciação.
+pfL = planilhaFalsa([linhaL('AAA 0001', 100, 'LAN-1')]);
+pfL.cols[ctx.COL_LANC.TIPO][0] = ['Combustivel Proprio'];
+ctx.__sheet = pfL.sheet; ctx.__ultima = 2;
+rL = ctx.ajustarValoresDepreciacao_([{ placa: 'AAA 0001', linha: 2, previsto: 999, id: 'LAN-1' }], '2026-08');
+ok('linha que não é depreciação: RECUSA', rL.ajustados.length === 0, JSON.stringify(rL));
+ok('e o combustível não foi tocado',
+  pfL.cols[ctx.COL_LANC.VALOR][0][0] === 100, String(pfL.cols[ctx.COL_LANC.VALOR][0][0]));
+
+// Linha fora da faixa.
+pfL = planilhaFalsa([linhaL('AAA 0001', 100, 'LAN-1')]);
+ctx.__sheet = pfL.sheet; ctx.__ultima = 2;
+// Sem a guarda de faixa o código lê valores[9997], que é undefined, e
+// rebenta. Tem de REPROVAR, não crashar: crash não é reprovação.
+let erroFaixa = '';
+try { rL = ctx.ajustarValoresDepreciacao_([{ placa: 'AAA 0001', linha: 9999, previsto: 999, id: 'LAN-1' }], '2026-08'); }
+catch (e) { rL = { ajustados: [], falhados: [] }; erroFaixa = e.message; }
+ok('linha fora da faixa não lança', erroFaixa === '', erroFaixa);
+ok('linha fora da faixa: RECUSA', rL.ajustados.length === 0 &&
+  /fora da faixa/.test((rL.falhados[0] || {}).motivo || ''), JSON.stringify(rL));
+
+// Um alvo bom e um ruim: o bom passa, o ruim é relatado.
+pfL = planilhaFalsa([linhaL('AAA 0001', 100, 'LAN-1'), linhaL('ZZZ 9999', 200, 'LAN-X')]);
+ctx.__sheet = pfL.sheet; ctx.__ultima = 3;
+rL = ctx.ajustarValoresDepreciacao_([
+  { placa: 'AAA 0001', linha: 2, previsto: 111, id: 'LAN-1' },
+  { placa: 'BBB 0002', linha: 3, previsto: 222, id: 'LAN-2' },
+], '2026-08');
+ok('um bom e um ruim: o bom passa', rL.ajustados.length === 1 && rL.falhados.length === 1,
+  JSON.stringify(rL));
+ok('e o ruim NÃO foi gravado', pfL.cols[ctx.COL_LANC.VALOR][1][0] === 200,
+  String(pfL.cols[ctx.COL_LANC.VALOR][1][0]));
+
+// Lista vazia não escreve nada.
+pfL = planilhaFalsa([linhaL('AAA 0001', 100, 'LAN-1')]);
+ctx.__sheet = pfL.sheet; ctx.__ultima = 2;
+rL = ctx.ajustarValoresDepreciacao_([], '2026-08');
+ok('lista vazia não escreve', pfL.reg.escritas === 0 && rL.ajustados.length === 0);
+ctx.__trocarNormalizador(function (m) { return String(m); });
+
+console.log('\n10k. O botão não pode ficar preso');
+const appV = fs.readFileSync('App.html', 'utf8');
+ok('o acerto em massa roda com vigia de tempo', /comVigia\(botao, .Acertando/.test(appV));
+ok('o acerto seletivo também', (appV.match(/comVigia\(botao, .Acertando/g) || []).length === 2,
+  String((appV.match(/comVigia\(botao, .Acertando/g) || []).length));
+ok('o vigia devolve o botão', /botao\.disabled = false;[\s\S]{0,120}botao\.textContent = original;/.test(appV));
+ok('e diz para conferir antes de repetir',
+  /confira o que já foi gravado ANTES de tentar de novo/.test(appV),
+  'repetir às cegas um acerto que talvez tenha gravado é pior que não repetir');
+ok('sucesso e falha cancelam o vigia', /clearTimeout\(relogio\)/.test(appV));
+ok('e o vigia não dispara duas vezes', /if \(encerrado\) return/.test(appV));
+
+ok('o ajuste em lote substituiu o corrigirLancamento_ por divergência',
+  !/webDepreciacaoAjustarDivergencias[\s\S]{0,1500}corrigirLancamento_\(/.test(io_fonte()),
+  'excluir e regravar por linha desloca a planilha inteira a cada divergência');
+ok('e o lote é feito sob lock',
+  /webDepreciacaoAjustarDivergencias[\s\S]{0,900}LockService\.getScriptLock\(\)/.test(io_fonte()));
 
 console.log('\n11. Aba nova registrada em TODAS as listas');
 // Toda aba de dados tem de aparecer em sete lugares: criação, proteção, ordem,

@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.20.0';
+const VERSAO_SISTEMA = '4.20.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11534,6 +11534,83 @@ function competenciasComDepreciacao_() {
  * contra o "Total Geral" do arquivo antes de confirmar — a leitura do valor
  * depende de heuristica de separador decimal, e heuristica boa ainda erra.
  */
+/**
+ * Acerta o VALOR dos lancamentos, em lote e no lugar.
+ *
+ * A primeira versao chamava corrigirLancamento_ por divergencia, que exclui e
+ * regrava. Excluir empurra para cima TODAS as linhas de baixo: com 20 mil
+ * lancamentos e 50 divergencias davam meio milhao de linhas copiadas, muito
+ * acima do limite de 6 minutos do Apps Script. O cliente nunca recebia
+ * resposta e o botao ficava preso em "Acertando...".
+ *
+ * Aqui sao DUAS escritas no total, independentemente de quantas divergencias.
+ * E o lancamento mantem o ID — que as pendencias referenciam e que o
+ * excluir-e-regravar trocava.
+ *
+ * A rastreabilidade fica na propria linha: a observacao passa a dizer de
+ * quanto para quanto, quando e por quem. Alem do Log.
+ */
+function ajustarValoresDepreciacao_(alvos, mes) {
+  const sheet = aba_(ABAS.LANCAMENTOS);
+  const ultima = ultimaLinhaLancamentoReal_();
+  const ajustados = [], falhados = [];
+  if (ultima < 2 || !alvos.length) return { ajustados: ajustados, falhados: falhados };
+
+  const n = ultima - 1;
+  const faixaValor = sheet.getRange(2, COL_LANC.VALOR, n, 1);
+  const faixaObs = sheet.getRange(2, COL_LANC.OBSERVACAO, n, 1);
+  const valores = faixaValor.getValues();
+  const obs = faixaObs.getValues();
+  // Confere a identidade da linha antes de escrever: numero de linha e
+  // coordenada que envelhece, e gravar na linha errada trocaria o valor de
+  // OUTRO lancamento sem ninguem ver.
+  const placas = sheet.getRange(2, COL_LANC.PLACA, n, 1).getValues();
+  const tipos = sheet.getRange(2, COL_LANC.TIPO, n, 1).getValues();
+  const ids = sheet.getRange(2, COL_LANC.ID, n, 1).getValues();
+
+  const carimbo = Utilities.formatDate(new Date(), timezone_(), 'dd/MM/yyyy HH:mm');
+  const quem = String(emailContextoAtual_() || 'sistema');
+  let mudou = false;
+
+  alvos.forEach(function (a) {
+    const i = Number(a.linha) - 2;
+    if (!(i >= 0 && i < n)) {
+      falhados.push({ placa: a.placa, motivo: 'linha ' + a.linha + ' fora da faixa de lançamentos' });
+      return;
+    }
+    const idNaLinha = String(ids[i][0] || '').trim();
+    if (a.id && idNaLinha && idNaLinha !== a.id) {
+      falhados.push({ placa: a.placa, motivo: 'a linha ' + a.linha + ' já é de outro lançamento (' +
+        idNaLinha + '); recarregue a tela' });
+      return;
+    }
+    if (normalizaPlaca_(placas[i][0]) !== normalizaPlaca_(a.placa)) {
+      falhados.push({ placa: a.placa, motivo: 'a linha ' + a.linha + ' é da placa ' +
+        placas[i][0] + '; recarregue a tela' });
+      return;
+    }
+    if (['Depreciação', 'Depreciacao'].indexOf(String(tipos[i][0] || '').trim()) === -1) {
+      falhados.push({ placa: a.placa, motivo: 'a linha ' + a.linha + ' não é depreciação' });
+      return;
+    }
+    const de = Number(valores[i][0]) || 0;
+    valores[i][0] = a.previsto;
+    obs[i][0] = ('Depreciação mensal de ' + mes + ' — valor da competência. ' +
+      'Ajustado de R$ ' + numBR_(de, 2) + ' para R$ ' + numBR_(a.previsto, 2) +
+      ' em ' + carimbo + ' por ' + quem + '.').slice(0, 1000);
+    mudou = true;
+    ajustados.push({ placa: a.placa, de: de, para: a.previsto });
+  });
+
+  if (mudou) {
+    faixaValor.setValues(valores);
+    faixaObs.setValues(obs);
+    SpreadsheetApp.flush();
+    invalidarCacheLancamentos_();
+  }
+  return { ajustados: ajustados, falhados: falhados };
+}
+
 /** Primeiro passo: lista as divergencias, sem mexer em nada. */
 function webDepreciacaoDivergencias(token) {
   exigirPerfilToken_(token, 'ADMIN');
@@ -11569,23 +11646,18 @@ function webDepreciacaoAjustarDivergencias(token, placas) {
       : 'Nenhuma divergência para ajustar.' };
   }
 
-  const ajustados = [];
-  const falhados = [];
-  alvos.forEach(function (i) {
-    const motivo = 'Ajuste pelo valor da competência ' + d.mes + ': de R$ ' +
-      numBR_(i.lancado, 2) + ' para R$ ' + numBR_(i.previsto, 2) +
-      ' (bem ' + (i.bem || '—') + ').';
-    const r = corrigirLancamento_(i.id, i.linha, {
-      data: Utilities.formatDate(periodoDoMes_(d.mes).fim, timezone_(), 'yyyy-MM-dd'),
-      placa: i.placa,
-      tipo: 'Depreciação',
-      valor: i.previsto,
-      documento: 'DEP-' + d.mes,
-      observacao: 'Depreciação mensal de ' + d.mes + ' — valor da competência.',
-    }, motivo);
-    if (r && r.ok) ajustados.push({ placa: i.placa, de: i.lancado, para: i.previsto });
-    else falhados.push({ placa: i.placa, motivo: (r && r.mensagem) || 'falha não informada' });
-  });
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return { ok: false, mensagem: 'Outra operação está em andamento. Tente de novo em alguns segundos.' };
+  }
+  let ajustados, falhados;
+  try {
+    const r = ajustarValoresDepreciacao_(alvos, d.mes);
+    ajustados = r.ajustados;
+    falhados = r.falhados;
+  } finally {
+    lock.releaseLock();
+  }
 
   invalidarCacheInicio_();
   atualizarResumoSeguro_();
