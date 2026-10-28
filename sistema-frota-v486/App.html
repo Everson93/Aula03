@@ -3048,6 +3048,8 @@
         ? '<div class="aviso">' + num(st.semValor) + ' veículo(s) ativo(s) sem valor nenhum: nem no arquivo, nem no cadastro. Não são lançados.</div>'
         : '') +
 
+      depPainelVinculo(d.vinculo) +
+
       '<div class="cartao"><b>Importar o arquivo de bens</b>' +
         '<p class="sub" style="margin:6px 0 10px">Abra a planilha do contábil, selecione as duas colunas ' +
           '(<b>Bem</b> e <b>Valor</b>) e cole aqui. O cabeçalho e a linha <b>Total Geral</b> são descartados sozinhos. ' +
@@ -3083,6 +3085,43 @@
           linhasVeic + '</tbody></table></div></div>';
   }
 
+  function depPainelVinculo(v) {
+    if (!v) return '';
+    if (v.ok) {
+      return '<div class="ok-caixa"><b>Vínculo placa ↔ bem conferido.</b> ' +
+        'Os ' + num(v.ativos) + ' veículos ativos têm patrimônio, sem duplicata e sem código parecido.</div>';
+    }
+    var blocos = '';
+    if ((v.semPatrimonio || []).length) {
+      blocos += '<div><b>' + num(v.semPatrimonio.length) + ' veículo(s) ativo(s) SEM patrimônio.</b>' +
+        '<div class="sub2">Nunca vão casar com o arquivo, e não dão erro: seguem depreciando pelo ' +
+        'valor do cadastro. Estão nas pendências, com campo para preencher.</div>' +
+        '<ul style="margin:6px 0 0 18px">' + v.semPatrimonio.slice(0, 20).map(function (x) {
+          return '<li><b>' + esc(x.placa) + '</b> ' + esc(x.descricao || '') + '</li>';
+        }).join('') + '</ul>' +
+        (v.semPatrimonio.length > 20 ? '<div class="sub2">… e mais ' + num(v.semPatrimonio.length - 20) + '</div>' : '') +
+        '</div>';
+    }
+    if ((v.duplicados || []).length) {
+      blocos += '<div style="margin-top:10px"><b>Patrimônio repetido em mais de um veículo:</b>' +
+        '<ul style="margin:6px 0 0 18px">' + v.duplicados.map(function (x) {
+          return '<li>' + esc(x.patrimonio) + ' → ' + esc(x.placas.join(', ')) + '</li>';
+        }).join('') + '</ul>' +
+        '<div class="sub2">A importação recusa esses bens: não dá para escolher um no escuro.</div></div>';
+    }
+    if ((v.parecidos || []).length) {
+      blocos += '<div style="margin-top:10px"><b>Códigos que só diferem em zero à esquerda:</b>' +
+        '<ul style="margin:6px 0 0 18px">' + v.parecidos.map(function (x) {
+          return '<li>' + esc(x.formas.join(' / ')) + ' → ' + esc(x.placas.join(', ')) + '</li>';
+        }).join('') + '</ul>' +
+        '<div class="sub2">O arquivo vai casar com um só. Confira qual está certo antes de importar.</div></div>';
+    }
+    return '<div class="aviso"><b>Vínculo placa ↔ bem: ' + num(v.comPatrimonio) + ' de ' +
+      num(v.ativos) + ' veículos ativos prontos.</b>' + blocos +
+      '<div style="margin-top:10px"><button class="acao secundaria" onclick="abrir('pendencias')">' +
+      '⚠️ Abrir pendências para corrigir</button></div></div>';
+  }
+
   function depAnalisar() {
     var texto = el('depColagem').value || '';
     if (!texto.trim()) { status('Cole o conteúdo do arquivo primeiro.'); return; }
@@ -3099,6 +3138,16 @@
       if (r.totalSemCadastro) {
         blocos += '<div class="aviso"><b>' + num(r.totalSemCadastro) + ' bem(ns) sem cadastro de veículo</b> — não serão gravados, ' +
           'porque sem placa o custo não tem centro para onde ir: ' + esc(r.semCadastro.join(', ')) + '</div>';
+      }
+      if (r.totalQuaseAcertos) {
+        blocos += '<div class="aviso"><b>' + num(r.totalQuaseAcertos) + ' bem(ns) QUASE casaram</b> — o cadastro tem um ' +
+          'código que só difere em zero à esquerda ou pontuação. O sistema <b>não casa sozinho</b>: ' +
+          'dois veículos podem legitimamente ter códigos parecidos, e a depreciação iria para o errado.' +
+          '<ul style="margin:6px 0 0 18px">' + r.quaseAcertos.map(function (q) {
+            return '<li>arquivo <b>' + esc(q.noArquivo) + '</b> ↔ cadastro <b>' + esc(q.noCadastro) +
+              '</b> (' + esc(q.placa) + ' ' + esc(q.descricao || '') + ')</li>';
+          }).join('') + '</ul>' +
+          '<div class="sub2">Acerte o cadastro ou o arquivo e importe de novo.</div></div>';
       }
       if ((r.ambiguos || []).length) {
         blocos += '<div class="aviso"><b>Patrimônio repetido em mais de um veículo:</b> ' +

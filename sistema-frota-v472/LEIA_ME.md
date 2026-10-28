@@ -2182,3 +2182,51 @@ reforço para o dia em que alguém mexer na maiusculização.
   colagem.
 - O campo de depreciação continua no cadastro de Veículos, agora como reserva.
   Se um dia o arquivo for sempre completo, ele pode sair.
+
+## V4.18.1 — o vínculo placa ↔ bem
+
+Você perguntou se a placa está ligada ao número do bem. A pergunta expôs uma
+falha **silenciosa** que a V4.18.0 tinha acabado de criar.
+
+A importação casa por **patrimônio**. Um veículo ativo **sem patrimônio no
+cadastro** nunca casa com o arquivo, **nunca dá erro**, e segue sendo
+depreciado pelo valor de reserva do cadastro para sempre. Isso só apareceria
+quando alguém somasse o Resumo à mão e comparasse com o contábil — meses
+depois, sem pista do porquê.
+
+### Três formas de o vínculo estar quebrado, e só uma fazia barulho
+
+| | antes | agora |
+|---|---|---|
+| patrimônio repetido em dois veículos | já era pendência | continua, e a importação recusa o bem |
+| veículo ativo **sem** patrimônio | **nada** | pendência com campo para preencher |
+| códigos que só diferem em zero à esquerda | nada | avisado na conferência e na importação |
+
+`conferirVinculoBemPlaca_()` audita o cadastro **sem depender de arquivo
+nenhum**, e o resultado abre a tela de Depreciação: *"142 de 145 veículos
+ativos prontos"*, com a lista de quem falta e um botão para as pendências.
+
+### Quase-acerto: avisa, não casa
+
+`10000017` no arquivo e `0010000017` no cadastro são o mesmo bem para um
+humano e bens diferentes para o sistema. A tentação é casar os dois
+automaticamente — e seria **pior que não casar**: dois veículos distintos
+podem legitimamente ter códigos que só diferem em zero à esquerda, e a
+depreciação de um iria para o outro em silêncio, com o total batendo
+certinho.
+
+Então `patrimonioFrouxo_` existe só para **avisar**, nunca para decidir:
+
+> arquivo **10000017** ↔ cadastro **0010000017** (ZZZ 9999 Caminhão)
+> Acerte o cadastro ou o arquivo e importe de novo.
+
+### Provas
+
+`conferir_depreciacao_import.js` foi de 78 para **96**. Dez mutações, dez
+pegas — incluindo as duas que importam: parar de achar veículo sem
+patrimônio, e casar automaticamente por zero à esquerda.
+
+Três mutações primeiro **crasharam em vez de reprovar**, pelo mesmo descuido
+de sempre: a prova indexava `quaseAcertos[0]` num array que a mutação esvazia.
+Crash não é reprovação, é ruído — e num relatório de mutação os dois se
+parecem. Acesso defensivo nas asserções, e as três passaram a reprovar limpo.

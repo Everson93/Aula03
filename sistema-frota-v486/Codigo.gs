@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.18.0';
+const VERSAO_SISTEMA = '4.18.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -4502,6 +4502,20 @@ function coletarProblemas_(opcoesColeta) {
   });
   Object.keys(patrimonios).forEach(function(pat){
     if(patrimonios[pat].length>1) problemas.push([ABAS.VEICULOS,pat,'Código Patrimônio duplicado',patrimonios[pat].join(', ')]);
+  });
+
+  // V4.18: a depreciacao importada casa por PATRIMONIO. Veiculo ativo sem
+  // patrimonio nunca casa com o arquivo, nunca da erro, e fica depreciando
+  // pela reserva do cadastro para sempre — uma divergencia que so aparece
+  // quando alguem soma o Resumo a mao e compara com o contabil.
+  veiculosDados.forEach(function (linha) {
+    const placa = String(linha[COL_VEIC.PLACA - 1] || '').trim();
+    if (!placa) return;
+    if (String(linha[COL_VEIC.ATIVO - 1] || '').trim().toUpperCase() === 'NAO') return;
+    if (chavePatrimonio_(linha[COL_VEIC.CODIGO - 1])) return;
+    problemas.push([ABAS.VEICULOS, placa, 'Veículo ativo sem Código Patrimônio',
+      'sem patrimônio este veículo nunca casa com o arquivo de depreciação, ' +
+      'e segue depreciando pelo valor do cadastro']);
   });
 
   // ---- V4.8: células do cadastro com erro de fórmula (ex.: descrição "=#REF!").
@@ -10992,17 +11006,35 @@ function analisarImportacaoDepreciacao_(texto) {
 
   // Casa cada bem com o cadastro: sem placa, o custo nao tem centro para ir.
   const porPatrimonio = {};
+  const porFrouxo = {};
   dadosVeiculosExecucao_().forEach(function (v) {
     const pat = chavePatrimonio_(v[COL_VEIC.CODIGO - 1]);
     if (!pat) return;
     if (porPatrimonio[pat] === undefined) porPatrimonio[pat] = v;
     else porPatrimonio[pat] = 'AMBIGUO';
+    const fx = '#' + patrimonioFrouxo_(pat);
+    if (porFrouxo[fx] === undefined) porFrouxo[fx] = { patrimonio: pat, veiculo: v };
+    else porFrouxo[fx] = 'AMBIGUO';
   });
   const semCadastro = [];
   const ambiguos = [];
+  const quaseAcertos = [];
   itens.forEach(function (it) {
     const achado = porPatrimonio[it.bem];
-    if (achado === undefined) { it.placa = ''; semCadastro.push(it.bem); return; }
+    if (achado === undefined) {
+      it.placa = '';
+      semCadastro.push(it.bem);
+      // Quase-acerto: existe no cadastro um codigo que so difere em zero a
+      // esquerda ou pontuacao. NAO casa — so conta, para o operador decidir
+      // qual dos dois esta errado.
+      const perto = porFrouxo['#' + patrimonioFrouxo_(it.bem)];
+      if (perto && perto !== 'AMBIGUO' && perto.patrimonio !== it.bem) {
+        quaseAcertos.push({ noArquivo: it.bem, noCadastro: perto.patrimonio,
+          placa: String(perto.veiculo[COL_VEIC.PLACA - 1] || '').trim(),
+          descricao: String(perto.veiculo[COL_VEIC.DESCRICAO - 1] || '').trim() });
+      }
+      return;
+    }
     if (achado === 'AMBIGUO') { it.placa = ''; ambiguos.push(it.bem); return; }
     it.placa = String(achado[COL_VEIC.PLACA - 1] || '').trim();
     it.descricao = String(achado[COL_VEIC.DESCRICAO - 1] || '').trim();
@@ -11016,7 +11048,77 @@ function analisarImportacaoDepreciacao_(texto) {
     ignoradas: ignoradas,
     semCadastro: semCadastro,
     ambiguos: ambiguos,
+    quaseAcertos: quaseAcertos,
+    // Bens do cadastro que o arquivo NAO trouxe: vao depreciar pela reserva.
+    // Saber disso antes de gravar e melhor que descobrir no fechamento.
     prontos: itens.filter(function (i) { return i.placa; }).length,
+  };
+}
+
+/**
+ * Forma frouxa do patrimonio, SO para achar quase-acerto.
+ *
+ * "10000017" e "0010000017" sao o mesmo bem para um humano e bens diferentes
+ * para o sistema. Casar os dois automaticamente seria pior que nao casar:
+ * dois veiculos distintos podem legitimamente ter codigos que so diferem em
+ * zero a esquerda, e a depreciacao iria para o errado em silencio. Esta forma
+ * serve so para AVISAR, nunca para decidir.
+ */
+function patrimonioFrouxo_(valor) {
+  const t = chavePatrimonio_(valor).replace(/[^A-Z0-9]/g, '').replace(/^0+/, '');
+  return t || chavePatrimonio_(valor).replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * Audita o vinculo placa <-> bem no cadastro, sem depender de arquivo nenhum.
+ *
+ * Tres coisas quebram a importacao, e so uma delas e barulhenta:
+ *   - patrimonio duplicado   -> ja e pendencia; a importacao recusa
+ *   - veiculo ativo SEM patrimonio -> SILENCIOSO: nunca casa, nunca reclama
+ *   - patrimonios que so diferem em zero a esquerda -> o arquivo casa com um
+ *     e o operador jura que mandou o outro
+ */
+function conferirVinculoBemPlaca_() {
+  const semPatrimonio = [];
+  const porPatrimonio = {};
+  const porFrouxo = {};
+  let ativos = 0;
+
+  dadosVeiculosExecucao_().forEach(function (v) {
+    const placa = String(v[COL_VEIC.PLACA - 1] || '').trim();
+    if (!placa) return;
+    const ativo = String(v[COL_VEIC.ATIVO - 1] || '').trim().toUpperCase() !== 'NAO';
+    if (!ativo) return;
+    ativos++;
+    const pat = chavePatrimonio_(v[COL_VEIC.CODIGO - 1]);
+    const descricao = String(v[COL_VEIC.DESCRICAO - 1] || '').trim();
+    if (!pat) { semPatrimonio.push({ placa: placa, descricao: descricao }); return; }
+    (porPatrimonio['#' + pat] || (porPatrimonio['#' + pat] = [])).push(placa);
+    (porFrouxo['#' + patrimonioFrouxo_(pat)] || (porFrouxo['#' + patrimonioFrouxo_(pat)] = []))
+      .push({ placa: placa, patrimonio: pat });
+  });
+
+  const duplicados = Object.keys(porPatrimonio)
+    .filter(function (k) { return porPatrimonio[k].length > 1; })
+    .map(function (k) { return { patrimonio: k.slice(1), placas: porPatrimonio[k] }; });
+
+  // Codigos diferentes que viram o mesmo depois de tirar zero a esquerda.
+  const parecidos = Object.keys(porFrouxo)
+    .map(function (k) {
+      const distintos = {};
+      porFrouxo[k].forEach(function (x) { distintos[x.patrimonio] = true; });
+      return Object.keys(distintos).length > 1 ? { formas: Object.keys(distintos),
+        placas: porFrouxo[k].map(function (x) { return x.placa; }) } : null;
+    })
+    .filter(function (x) { return x; });
+
+  return {
+    ativos: ativos,
+    comPatrimonio: ativos - semPatrimonio.length,
+    semPatrimonio: semPatrimonio,
+    duplicados: duplicados,
+    parecidos: parecidos,
+    ok: !semPatrimonio.length && !duplicados.length && !parecidos.length,
   };
 }
 
@@ -11301,6 +11403,7 @@ function webDepreciacao(token, mesRef) {
     competencias: competenciasComDepreciacao_(),
     bens: bensDaCompetencia_(alvo),
     totalBens: bensDaCompetencia_(alvo).reduce(function (t, b) { return t + b.valor; }, 0),
+    vinculo: conferirVinculoBemPlaca_(),
   };
 }
 
@@ -11320,6 +11423,12 @@ function competenciasComDepreciacao_() {
  * contra o "Total Geral" do arquivo antes de confirmar — a leitura do valor
  * depende de heuristica de separador decimal, e heuristica boa ainda erra.
  */
+/** Conferencia do vinculo placa <-> bem, sem arquivo nenhum. */
+function webDepreciacaoConferirVinculo(token) {
+  exigirPerfilToken_(token, 'ADMIN');
+  return conferirVinculoBemPlaca_();
+}
+
 function webDepreciacaoAnalisar(token, texto) {
   exigirPerfilToken_(token, 'ADMIN');
   const r = analisarImportacaoDepreciacao_(texto);
@@ -11333,6 +11442,8 @@ function webDepreciacaoAnalisar(token, texto) {
     semCadastro: r.semCadastro.slice(0, 30),
     totalSemCadastro: r.semCadastro.length,
     ambiguos: r.ambiguos.slice(0, 20),
+    quaseAcertos: r.quaseAcertos.slice(0, 20),
+    totalQuaseAcertos: r.quaseAcertos.length,
     amostra: r.itens.slice(0, 8),
   };
 }
@@ -11657,6 +11768,11 @@ function specDaPendencia_(problema) {
     aba: V, coluna: COL_VEIC.CENTRO, tipo: 'lista', rotulo: 'Centro de custo',
     localizar: 'placa', perfil: 'ADMIN',
     lista: 'centros' });
+
+  registrarCorrecaoPendencia_('Veículo ativo sem Código Patrimônio', {
+    aba: V, coluna: COL_VEIC.CODIGO, tipo: 'texto', rotulo: 'Código Patrimônio',
+    localizar: 'placa', perfil: 'ADMIN',
+    ajuda: 'o mesmo número que vem na coluna "Bem" do arquivo de depreciação' });
 
   registrarCorrecaoPendencia_('Código Patrimônio duplicado', {
     aba: V, coluna: COL_VEIC.CODIGO, tipo: 'texto', rotulo: 'Código Patrimônio',

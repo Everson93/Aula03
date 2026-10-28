@@ -26,6 +26,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     valorImportadoParaNumero_, linhaNaoEhBem_, analisarImportacaoDepreciacao_,
     valorDepreciacaoDoBem_, valoresDepreciacaoDaCompetencia_, chavePatrimonio_,
+    conferirVinculoBemPlaca_, patrimonioFrouxo_,
     TIPOS_DESPESA, TIPOS_DESPESA_MANUAL, TIPOS_GERADOS_PELO_SISTEMA_,
     COL_VEIC, COL_DM, TOTAL_COL_VEIC, TOTAL_COL_DM,
     ORIGEM_DEP_CADASTRO_, ORIGEM_DEP_IMPORTADO_, ORIGEM_DEP_MANUAL_,
@@ -238,6 +239,93 @@ ok('o payload do formulário usa a lista manual',
   /tipos: TIPOS_DESPESA_MANUAL,/.test(fonte));
 ok('a lista de opções da correção usa a manual',
   /if \(nome === 'tipos'\) return TIPOS_DESPESA_MANUAL\.slice\(\);/.test(fonte));
+
+console.log('\n10b. O vínculo placa ↔ bem');
+// A falha silenciosa: veículo ativo SEM patrimônio nunca casa com o arquivo,
+// nunca dá erro, e deprecia pela reserva do cadastro para sempre. Só aparece
+// quando alguém soma o Resumo à mão e compara com o contábil.
+ctx.__dep = [];
+ctx.__veic = [
+  veic('10000017', 'AAA 0001', 'Caminhão', 'LOJA 1', 100),
+  veic('',         'BBB 0002', 'Carro sem patrimônio', 'LOJA 2', 100),
+  veic('10001099', 'CCC 0003', 'Van', 'LOJA 3', 100),
+];
+let vin = ctx.conferirVinculoBemPlaca_();
+ok('conta os ativos', vin.ativos === 3, String(vin.ativos));
+ok('ACHA o veículo ativo sem patrimônio',
+  vin.semPatrimonio.length === 1 && (vin.semPatrimonio[0] || {}).placa === 'BBB 0002',
+  JSON.stringify(vin.semPatrimonio));
+ok('e diz quantos estão prontos', vin.comPatrimonio === 2, String(vin.comPatrimonio));
+ok('não declara OK com um faltando', vin.ok === false);
+
+// Veículo inativo sem patrimônio não é problema: ele não deprecia.
+const inativo = veic('', 'DDD 0004', 'Vendido', 'LOJA 4', 0);
+inativo[ctx.COL_VEIC.ATIVO - 1] = 'NAO';
+ctx.__veic = ctx.__veic.concat([inativo]);
+vin = ctx.conferirVinculoBemPlaca_();
+ok('veículo INATIVO sem patrimônio não entra na lista',
+  vin.semPatrimonio.length === 1, JSON.stringify(vin.semPatrimonio));
+
+// Patrimônio duplicado.
+ctx.__veic = [
+  veic('10000017', 'AAA 0001', 'Um', 'LOJA 1', 100),
+  veic('10000017', 'ZZZ 9999', 'Outro', 'LOJA 9', 100),
+];
+vin = ctx.conferirVinculoBemPlaca_();
+ok('acha patrimônio em dois veículos',
+  vin.duplicados.length === 1 && (vin.duplicados[0] || { placas: [] }).placas.length === 2,
+  JSON.stringify(vin.duplicados));
+
+// Zero à esquerda: o caso que engana o olho.
+ctx.__veic = [
+  veic('10000017',   'AAA 0001', 'Um', 'LOJA 1', 100),
+  veic('0010000017', 'ZZZ 9999', 'Outro', 'LOJA 9', 100),
+];
+vin = ctx.conferirVinculoBemPlaca_();
+ok('acha códigos que só diferem em zero à esquerda',
+  vin.parecidos.length === 1 &&
+  (vin.parecidos[0] || { formas: [] }).formas.length === 2,
+  JSON.stringify(vin.parecidos));
+ok('mas NÃO os trata como duplicados', vin.duplicados.length === 0,
+  'são códigos diferentes para o sistema; juntá-los seria decidir no escuro');
+
+// Cadastro limpo.
+ctx.__veic = [
+  veic('10000017', 'AAA 0001', 'Um', 'LOJA 1', 100),
+  veic('10001099', 'BBB 0002', 'Dois', 'LOJA 2', 100),
+];
+vin = ctx.conferirVinculoBemPlaca_();
+ok('cadastro limpo declara OK', vin.ok === true, JSON.stringify(vin));
+
+console.log('\n10c. Quase-acerto: avisa, não casa');
+ctx.__veic = [veic('0010000017', 'ZZZ 9999', 'Caminhão', 'LOJA 9', 100)];
+const rq = ctx.analisarImportacaoDepreciacao_('10000017\t500,00');
+ok('NÃO casa sozinho por zero à esquerda', (rq.itens[0] || {}).placa === '',
+  'casar sozinho mandaria a depreciação para o veículo errado, em silêncio');
+// Acesso defensivo: a mutação que apaga os quase-acertos tem de REPROVAR,
+// não rebentar com TypeError. Crash não é reprovação, é ruído.
+const q0 = rq.quaseAcertos[0] || {};
+ok('mas avisa que quase casou', rq.quaseAcertos.length === 1 &&
+  q0.noArquivo === '10000017' && q0.noCadastro === '0010000017',
+  JSON.stringify(rq.quaseAcertos));
+ok('e diz de que veículo se trata', q0.placa === 'ZZZ 9999', JSON.stringify(q0));
+ok('o bem continua contado como sem cadastro', rq.semCadastro.join() === '10000017');
+
+// Bem que não parece com nada não gera quase-acerto falso.
+const rq2 = ctx.analisarImportacaoDepreciacao_('77777777\t500,00');
+ok('bem sem nenhuma semelhança não inventa quase-acerto',
+  rq2.quaseAcertos.length === 0, JSON.stringify(rq2.quaseAcertos));
+
+// Quando casa exato, não há quase-acerto.
+ctx.__veic = [veic('10000017', 'AAA 0001', 'Caminhão', 'LOJA 1', 100)];
+const rq3 = ctx.analisarImportacaoDepreciacao_('10000017\t500,00');
+ok('casamento exato não vira quase-acerto',
+  rq3.quaseAcertos.length === 0 && (rq3.itens[0] || {}).placa === 'AAA 0001',
+  JSON.stringify(rq3.itens[0]));
+
+ok('patrimonioFrouxo_ tira zero à esquerda', ctx.patrimonioFrouxo_('0010000017') === '10000017');
+ok('e pontuação', ctx.patrimonioFrouxo_('100.000-17') === '10000017');
+ok('código só de zeros não vira vazio', ctx.patrimonioFrouxo_('000') === '000');
 
 console.log('\n11. Aba nova registrada em TODAS as listas');
 // Toda aba de dados tem de aparecer em sete lugares: criação, proteção, ordem,
