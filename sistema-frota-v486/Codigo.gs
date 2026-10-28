@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.18.1';
+const VERSAO_SISTEMA = '4.18.2';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11131,7 +11131,15 @@ function valoresDepreciacaoDaCompetencia_(mesRef) {
   if (!DEP_MENSAL_INDICE_EXEC_ || DEP_MENSAL_INDICE_EXEC_.fonte !== fonte) {
     const porMes = {};
     fonte.forEach(function (l) {
-      const mes = String(l[COL_DM.COMPETENCIA - 1] || '').trim();
+      // normalizarMesReferencia_, NAO String(): "2026-08" numa celula sem
+      // formato texto vira Date no Sheets, e String(Date) da
+      // "Sat Aug 01 2026 ...". Comparar isso com "2026-08" nunca casa, e o
+      // sintoma e o pior possivel: o bem aparece na lista (que normaliza) e
+      // a situacao diz SEM VALOR (que nao normalizava). Mesma armadilha da
+      // V4.8, agora num lugar novo.
+      let mes;
+      try { mes = normalizarMesReferencia_(l[COL_DM.COMPETENCIA - 1]); }
+      catch (e) { return; }
       const bem = chavePatrimonio_(l[COL_DM.BEM - 1]);
       if (!mes || !bem) return;
       const m = porMes['#' + mes] || (porMes['#' + mes] = {});
@@ -11198,6 +11206,10 @@ function gravarDepreciacaoCompetencia_(mesRef, itens, origem, responsavel) {
     sheet.getRange(2, COL_DM.VALOR, todas.length, 1).setNumberFormat('R$ #,##0.00');
     sheet.getRange(2, COL_DM.ATUALIZADO, todas.length, 1).setNumberFormat('dd/mm/yyyy HH:mm');
     sheet.getRange(2, COL_DM.BEM, todas.length, 1).setNumberFormat('@');
+    // Sem isto o Sheets le "2026-08" como data de agosto de 2026 e guarda um
+    // Date na celula. A leitura ja normaliza, mas gravar texto como texto
+    // evita o problema na origem — e deixa a aba legivel.
+    sheet.getRange(2, COL_DM.COMPETENCIA, todas.length, 1).setNumberFormat('@');
   }
   invalidarCacheDepreciacaoMensal_();
   DEP_MENSAL_INDICE_EXEC_ = null;

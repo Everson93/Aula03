@@ -16,7 +16,12 @@ const ctx = {
   PropertiesService: { getDocumentProperties: () => ({ getProperty: () => null, setProperty: () => {}, deleteProperty: () => {} }),
                        getScriptProperties: () => ({ getProperty: () => null, setProperty: () => {} }) },
   SpreadsheetApp: { getActiveSpreadsheet: () => null, flush: () => {} },
-  Utilities: { getUuid: () => 'x', formatDate: () => '2026-08' },
+  // formatDate de verdade o bastante: devolver '2026-08' fixo faria o teste da
+  // competência-Date passar sem provar nada.
+  Utilities: { getUuid: () => 'x', formatDate: (d, tz, f) => {
+    const mm = ('0' + (d.getMonth() + 1)).slice(-2);
+    return f === 'yyyy-MM' ? d.getFullYear() + '-' + mm : String(d);
+  } },
   CacheService: { getScriptCache: () => ({ get: () => null, put: () => {}, remove: () => {} }) },
   LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }) },
 };
@@ -36,8 +41,19 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   registrarLog_ = function () {};
   dadosVeiculosExecucao_ = function () { return __veic; };
   lerDepreciacaoMensal_ = function () { return __dep; };
+  // Guarda a de VERDADE antes de trocar pelo duplê: um bloco adiante precisa
+  // dela para reproduzir a competência que o Sheets transformou em Date.
+  globalThis.__normalizarReal = normalizarMesReferencia_;
+  globalThis.__trocarNormalizador = function (fn) { normalizarMesReferencia_ = fn; };
   normalizarMesReferencia_ = function (m) { return String(m); };
+  ss_ = function () { return { getSpreadsheetTimeZone: function () { return 'America/Sao_Paulo'; } }; };
+  timezone_ = function () { return 'America/Sao_Paulo'; };
 `, ctx);
+
+// Um Date criado AQUI não passa no `instanceof Date` de dentro do vm: realms
+// diferentes, construtores diferentes. Sem esta fábrica o teste da competência
+// em formato de data passaria pelo ramo de texto e não provaria nada.
+const D = vm.runInContext('(function (a, m, d) { return new Date(a, m, d); })', ctx);
 
 let provas = 0, falhas = 0;
 function ok(nome, cond, detalhe) {
@@ -326,6 +342,77 @@ ok('casamento exato não vira quase-acerto',
 ok('patrimonioFrouxo_ tira zero à esquerda', ctx.patrimonioFrouxo_('0010000017') === '10000017');
 ok('e pontuação', ctx.patrimonioFrouxo_('100.000-17') === '10000017');
 ok('código só de zeros não vira vazio', ctx.patrimonioFrouxo_('000') === '000');
+
+console.log('\n10d. A competência que o Sheets transformou em Date');
+// O DEFEITO REAL (V4.18.2): "2026-08" numa célula sem formato texto vira Date
+// no Google Sheets. Uma leitura usava String() e as outras normalizavam — o
+// bem aparecia na lista de bens e a situação dizia SEM VALOR, com o valor
+// importado ali, visível na tela de cima.
+ctx.__trocarNormalizador(ctx.__normalizarReal);
+ctx.__veic = [veic('10030362', 'QJT 0047', 'FIORINO /FURGÃO', 'Loja 03', 0)];
+const comoDate = new Array(ctx.TOTAL_COL_DM).fill('');
+comoDate[ctx.COL_DM.COMPETENCIA - 1] = D(2026, 7, 1);   // agosto, como Date
+comoDate[ctx.COL_DM.BEM - 1] = '10030362';
+comoDate[ctx.COL_DM.VALOR - 1] = 415.44;
+comoDate[ctx.COL_DM.ORIGEM - 1] = 'IMPORTADO';
+ctx.__dep = [comoDate];
+
+const valsDate = ctx.valoresDepreciacaoDaCompetencia_('2026-08');
+ok('a competência gravada como Date é encontrada',
+  !!valsDate['#10030362'],
+  'o Sheets guarda Date; comparar com String() nunca casa — era este o SEM VALOR');
+const vDate = ctx.valorDepreciacaoDoBem_('10030362', 0, valsDate);
+ok('e o valor importado é usado, não o zero do cadastro',
+  vDate.valor === 415.44, JSON.stringify(vDate));
+ok('dizendo que veio do arquivo', vDate.origem === ctx.ORIGEM_DEP_IMPORTADO_, vDate.origem);
+ok('não vaza para outra competência',
+  !ctx.valoresDepreciacaoDaCompetencia_('2026-09')['#10030362']);
+
+// Texto continua funcionando, nas duas grafias.
+const comoTexto = comoDate.slice();
+comoTexto[ctx.COL_DM.COMPETENCIA - 1] = '2026-08';
+ctx.__dep = [comoTexto];
+ok('competência como texto também é encontrada',
+  (ctx.valoresDepreciacaoDaCompetencia_('2026-08')['#10030362'] || {}).valor === 415.44);
+
+// Lixo na célula não derruba o índice inteiro.
+const lixo = comoDate.slice();
+lixo[ctx.COL_DM.COMPETENCIA - 1] = 'competência?';
+lixo[ctx.COL_DM.BEM - 1] = '99999999';
+ctx.__dep = [comoTexto, lixo];
+let semQuebrar = true;
+try { ctx.valoresDepreciacaoDaCompetencia_('2026-08'); } catch (e) { semQuebrar = false; }
+ok('uma linha com competência ilegível não derruba o índice', semQuebrar,
+  'uma célula estragada não pode zerar a depreciação da frota inteira');
+// Chamada protegida também: se a de cima reprovou porque lançou, esta lançaria
+// igual e viraria crash — e crash não é reprovação.
+let boas = null;
+try { boas = ctx.valoresDepreciacaoDaCompetencia_('2026-08')['#10030362']; } catch (e) { boas = null; }
+ok('e as linhas boas continuam lá', (boas || {}).valor === 415.44, JSON.stringify(boas));
+ctx.__trocarNormalizador(function (m) { return String(m); });
+
+console.log('\n10e. Toda leitura da competência passa pelo normalizador');
+// A regra que teria evitado o defeito: ler COL_DM.COMPETENCIA com String() em
+// um lugar e normalizar nos outros é o mesmo contrato com dois lados. Nenhum
+// teste de comportamento pega isso enquanto a célula for texto — só o fonte.
+const fonteC = fs.readFileSync('Codigo.gs', 'utf8');
+const leituras = fonteC.split('\n')
+  .map(function (l, i) { return { n: i + 1, t: l }; })
+  .filter(function (x) { return /COL_DM\.COMPETENCIA - 1\]/.test(x.t); });
+const cruas = leituras.filter(function (x) {
+  if (/normalizarMesReferencia_\(l\[COL_DM\.COMPETENCIA - 1\]\)/.test(x.t)) return false;
+  if (/linha\[COL_DM\.COMPETENCIA - 1\] =/.test(x.t)) return false;      // escrita
+  if (/l\[COL_DM\.COMPETENCIA - 1\] &&/.test(x.t)) return false;          // só testa preenchido
+  return true;
+});
+ok('nenhuma leitura da competência fora do normalizador',
+  cruas.length === 0,
+  cruas.map(function (x) { return 'linha ' + x.n + ': ' + x.t.trim(); }).join('\n          '));
+ok('e há leituras de verdade sendo conferidas', leituras.length >= 4, String(leituras.length));
+
+ok('a gravação formata a competência como texto',
+  /setNumberFormat\('@'\);[\s\S]{0,400}COL_DM\.COMPETENCIA, todas\.length, 1\)\.setNumberFormat\('@'\)/.test(fonteC),
+  'sem formato texto o Sheets volta a guardar Date na célula');
 
 console.log('\n11. Aba nova registrada em TODAS as listas');
 // Toda aba de dados tem de aparecer em sete lugares: criação, proteção, ordem,

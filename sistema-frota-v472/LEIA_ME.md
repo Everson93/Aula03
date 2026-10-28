@@ -2230,3 +2230,64 @@ Três mutações primeiro **crasharam em vez de reprovar**, pelo mesmo descuido
 de sempre: a prova indexava `quaseAcertos[0]` num array que a mutação esvazia.
 Crash não é reprovação, é ruído — e num relatório de mutação os dois se
 parecem. Acesso defensivo nas asserções, e as três passaram a reprovar limpo.
+
+## V4.18.2 — o bem importado aparecendo como SEM VALOR
+
+Você importou os 129 bens, viu o `10030362 • QJT 0047 • R$ 415,44 • IMPORTADO`
+na lista — e logo abaixo, na situação por veículo, **PREVISTO R$ 0,00 •
+SEM VALOR**. O mesmo bem, na mesma tela, com duas respostas.
+
+### A causa é a armadilha da V4.8, num lugar novo
+
+`"2026-08"` numa célula **sem formato texto** vira **Date** no Google Sheets.
+Está escrito neste LEIA-ME desde a V4.8, e eu caí de novo.
+
+Seis lugares leem a competência da aba. Cinco usavam
+`normalizarMesReferencia_`, que trata o Date. **Um usava `String()`:**
+
+```js
+const mes = String(l[COL_DM.COMPETENCIA - 1] || '').trim();
+```
+
+Para uma célula com Date isso dá `"Sat Aug 01 2026 00:00:00 GMT-0300 (…)"`,
+que nunca casa com `"2026-08"`. O índice da competência saía vazio, o valor
+importado não era encontrado, e o bem caía na **reserva do cadastro** — que
+para esse veículo é zero. Daí o `SEM VALOR`.
+
+E o sintoma era o pior possível: a lista de bens normalizava e mostrava certo;
+a situação não normalizava e mostrava SEM VALOR. **Duas telas, uma certa e uma
+errada, lado a lado.** Nada de erro, nada de log — só o número errado.
+
+É outra vez a mesma família: um contrato com seis lados, cinco obedecendo e um
+não.
+
+### Conserto, nos dois lados
+
+1. A leitura passa pelo `normalizarMesReferencia_`, com `try` — uma célula
+   ilegível devolve essa linha e segue, em vez de zerar a depreciação da frota
+   inteira.
+2. A gravação formata a coluna Competência como **texto**, para a célula parar
+   de virar Date na origem.
+
+### A regra que teria evitado
+
+Prova estática que lê o fonte: **nenhuma leitura de `COL_DM.COMPETENCIA` pode
+estar fora do normalizador**. Enquanto a célula for texto, nenhum teste de
+comportamento pega isso — foi exatamente o que aconteceu: as 96 provas da
+V4.18.1 passavam todas.
+
+E elas passavam por um motivo específico, que vale registrar: **meu duplê de
+teste trocava `normalizarMesReferencia_` por `String(m)`**. O duplê tinha o
+defeito embutido, então o código defeituoso concordava com ele. Agora o teste
+guarda a função de verdade antes de trocá-la e usa a real no bloco que importa
+— com o `Date` criado **dentro do vm**, senão ele nem entraria no ramo de data
+(realms diferentes, construtores diferentes).
+
+### Provas
+
+`conferir_depreciacao_import.js`: 96 → **106**. Reintroduzir o `String()`
+derruba 4 provas. Total do projeto: **575**.
+
+Uma mutação crashou em vez de reprovar, de novo pelo mesmo descuido: a segunda
+asserção chamava a função sem proteção depois de a primeira já ter lançado.
+Protegida.
