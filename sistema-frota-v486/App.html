@@ -3140,10 +3140,8 @@
     var marcadas = [].slice.call(document.querySelectorAll('.dvChk:checked'))
       .map(function (c) { return c.value; });
     if (!marcadas.length) { status('Marque ao menos uma divergência.'); return; }
-    if (!confirm('Acertar ' + marcadas.length + ' lançamento(s) pelo valor da competência?
-
-' +
-      'O lançamento atual vai para Lançamentos Excluídos e outro é gravado no lugar.')) return;
+    if (!confirm('Acertar ' + marcadas.length + ' lançamento(s) pelo valor da competência?' +
+      '\n\nO lançamento atual vai para Lançamentos Excluídos e outro é gravado no lugar.')) return;
     botao.disabled = true;
     botao.textContent = 'Acertando…';
     google.script.run.withSuccessHandler(function (r) {
@@ -3196,7 +3194,7 @@
     }
     return '<div class="aviso"><b>Vínculo placa ↔ bem: ' + num(v.comPatrimonio) + ' de ' +
       num(v.ativos) + ' veículos ativos prontos.</b>' + blocos +
-      '<div style="margin-top:10px"><button class="acao secundaria" onclick="abrir('pendencias')">' +
+      '<div style="margin-top:10px"><button class="acao secundaria" onclick="abrir(\'pendencias\')">' +
       '⚠️ Abrir pendências para corrigir</button></div></div>';
   }
 

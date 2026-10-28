@@ -8,7 +8,7 @@ da web. Estado completo em `ESTADO_DO_PROJETO.md`; histórico de decisões em
 
 - `sistema-frota-v486/Codigo.gs` — todo o servidor (527 funções)
 - `sistema-frota-v486/App.html` — o app da web inteiro, num arquivo
-- `sistema-frota-v486/conferir_*.js` — 25 suítes, 605 provas
+- `sistema-frota-v486/conferir_*.js` — 26 suítes, 611 provas
 
 ## Rodar as provas
 
@@ -18,12 +18,14 @@ for f in conferir_*.js; do
   case "$f" in
     conferir_callbacks.js) node "$f" Codigo.gs App.html Lancamento.html Central.html ;;
     conferir_nomes_unicos.js) node "$f" Codigo.gs ;;
+    conferir_sintaxe_html.js) node "$f" App.html Lancamento.html Central.html ;;
     *) node "$f" ;;
   esac
 done
 ```
 
-`conferir_callbacks.js` e `conferir_nomes_unicos.js` recebem os arquivos como argumento.
+`conferir_callbacks.js`, `conferir_nomes_unicos.js` e `conferir_sintaxe_html.js`
+recebem os arquivos como argumento.
 
 ## Regras
 
@@ -52,6 +54,13 @@ e duas funções com o mesmo nome não dão erro: a última sobrescreve a primei
 em silêncio, inclusive para código que roda antes dela (hoisting). Antes de
 criar uma função, `grep -n "^function nome_" Codigo.gs`. A suíte
 `conferir_nomes_unicos.js` guarda isso.
+
+**Ao editar HTML com script Python, cuidado com a barra invertida.** Numa
+string Python não-crua, `\n` vira quebra de linha e `\'` vira `'` — e isso
+quebra o literal JavaScript sem aviso. Use `r'''...'''`, ou monte a barra com
+`chr(92)`. Um `<script>` com erro de sintaxe não define **nenhuma** função, e
+o sintoma aparece longe da causa (`entrar is not defined` no primeiro clique).
+`conferir_sintaxe_html.js` compila o script de cada HTML e guarda isso.
 
 **`Date` entre realms**: um `Date` criado fora do `vm` não passa no
 `instanceof Date` de dentro. Use `Object.prototype.toString.call()`.

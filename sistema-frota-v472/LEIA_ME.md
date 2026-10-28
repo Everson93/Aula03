@@ -2402,3 +2402,49 @@ E o CLAUDE.md ganhou a regra: antes de criar uma função,
 `grep -n "^function nome_" Codigo.gs`.
 
 Total do projeto: **605 provas**.
+
+
+## V4.19.2 — `entrar is not defined`
+
+O console mostrou `Uncaught ReferenceError: entrar is not defined` no botão
+Entrar. Mas `entrar()` **existe**, na linha 1040 do `App.html`.
+
+É esse o jeito de um erro de sintaxe se apresentar: o navegador descarta o
+`<script>` **inteiro** e nenhuma função é definida. O primeiro clique denuncia
+uma função qualquer, a milhares de linhas de distância da causa.
+
+### A causa: duas barras invertidas perdidas
+
+Eu editei o `App.html` com um script Python usando aspas triplas **não-cruas**.
+Nesse tipo de string, Python resolve o escape antes de escrever o arquivo:
+
+| eu escrevi | chegou no arquivo | efeito |
+|---|---|---|
+| `'…competência?\n\n' +` | quebra de linha de verdade | literal não fechado |
+| `onclick="abrir(\'x\')"` | `onclick="abrir('x')"` | aspas fecham a string |
+
+Duas edições, dois escapes, mesma origem. A primeira já bastava para matar o
+arquivo.
+
+### Por que nenhuma suíte pegou
+
+`conferir_callbacks.js`, `conferir_funcoes_html.js` e as outras leem o HTML
+como **texto**. Texto quebrado continua sendo texto: todas passaram. Só um
+**parser** pega.
+
+### `conferir_sintaxe_html.js`
+
+Recorta cada `<script>` dos três HTML e compila com `new vm.Script`, que é o
+parser do V8 — o mesmo do navegador — sem executar uma linha. Quando falha,
+soma a linha do bloco ao offset do erro para apontar a linha do arquivo real.
+
+Reintroduzi os três defeitos para conferir: `\n` virando quebra de linha,
+aspas sem escape, e um recorte no meio de uma função (o acidente da V4.13.1).
+Os três são pegos.
+
+### A regra
+
+No CLAUDE.md: ao editar HTML com script Python, usar `r'''...'''` ou montar a
+barra com `chr(92)`.
+
+Total do projeto: **611 provas**.
