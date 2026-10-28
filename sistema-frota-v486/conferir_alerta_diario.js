@@ -37,6 +37,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     montarAlertasDiarios_, destinatariosAlerta_, enviarAlertasDiariosAgendado_,
     corpoAlertaHtml_, R_, TOTAL_COL_RESUMO, COL_VEIC, PRODUTOS_BOMBA,
     custoVariavelResumo_, R_CUSTO_VARIAVEL_, MINIMO_VEICULOS_REFERENCIA_, mediana_,
+    numBR_, alertasConsumo_,
     MAXIMO_ITENS_POR_BLOCO_,
   });
   exigirExecucaoMutacao_ = function () {};
@@ -285,8 +286,8 @@ ok('endereço inválido é descartado e duplicata some',
 console.log('\n8. Um bloco com erro não derruba os outros');
 limpar();
 ctx.__pendencias = 4;
-const originalConsumo = ctx.alertasConsumo_;
-vm.runInContext('alertasConsumo_ = function () { throw new Error("falha proposital"); };', ctx);
+vm.runInContext('__consumoBom = alertasConsumo_; ' +
+  'alertasConsumo_ = function () { throw new Error("falha proposital"); };', ctx);
 const comErro = ctx.montarAlertasDiarios_();
 ok('o bloco quebrado vira aviso em vez de matar o alerta',
   comErro.blocos.some(function (b) { return b.itens.some(function (i) { return i.indexOf('Não foi possível') === 0; }); }),
@@ -294,6 +295,9 @@ ok('o bloco quebrado vira aviso em vez de matar o alerta',
 ok('os outros blocos continuam chegando',
   comErro.blocos.some(function (b) { return b.itens.some(function (i) { return i.indexOf('4 pendência') === 0; }); }),
   JSON.stringify(comErro.blocos));
+// Restaura: sem isto o stub que lança vaza para os blocos seguintes, e a falha
+// aparece longe de onde foi plantada.
+vm.runInContext('alertasConsumo_ = __consumoBom;', ctx);
 
 console.log('\n8b. Por que mediana e não média');
 // O defeito que a propria fixture revelou: com 4 carretas normais + 1 bebendo o
@@ -322,6 +326,26 @@ ok('diz quantos ficaram de fora', /e mais 62/.test(html));
 ok('mas a contagem no título continua a real', /\(74\)/.test(html));
 ok('e o bloco seguinte continua chegando', /saldo baixo/.test(html),
   'de nada adianta cortar se o bloco pequeno sumir junto');
+
+console.log('\n10. Número em formato brasileiro');
+// "R$ 4.604/km" — saída do toFixed — se lê como quatro mil reais por km em
+// pt-BR, porque ponto é separador de MILHAR. Num relatório de custo isso não
+// parece erro de formatação: parece catástrofe.
+limpar();
+ctx.__resumo = [
+  linhaResumo('CAR1', 10000, 1000, 6000),
+  linhaResumo('CAR2', 10000, 1000, 6000),
+  linhaResumo('CAR3', 10000, 1000, 6000),
+  linhaResumo('CAR4', 10000, 1000, 6000),
+  linhaResumo('CAR9', 10000, 1000, 46040),   // custo variável R$ 4,604/km
+];
+const txt = ctx.alertasConsumo_().filter(function (a) { return a.indexOf('CAR9') === 0; })[0];
+ok('usa vírgula decimal', /R\$ 4,604\/km/.test(txt || ''), txt);
+ok('e NÃO ponto, que leria como milhar', !/R\$ 4\.604\/km/.test(txt || ''), txt);
+ok('numBR_ formata com vírgula', ctx.numBR_(4.604, 3) === '4,604', ctx.numBR_(4.604, 3));
+ok('e com ponto no milhar, que é o certo em pt-BR',
+  ctx.numBR_(1278.5, 2) === '1.278,50', ctx.numBR_(1278.5, 2));
+ok('zero e nulo não viram NaN', ctx.numBR_(0, 2) === '0,00' && ctx.numBR_(null, 2) === '0,00');
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

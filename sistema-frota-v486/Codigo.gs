@@ -557,7 +557,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.15.1';
+const VERSAO_SISTEMA = '4.15.2';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -12487,6 +12487,25 @@ function removerTriggersLegados_() {
 const FUNCAO_ALERTA_DIARIO_ = 'enviarAlertasDiariosAgendado_';
 const ESTOQUE_MINIMO_PADRAO_ = 500;
 
+/**
+ * Numero no formato brasileiro, para texto que uma PESSOA le.
+ *
+ * `toFixed` usa ponto decimal. Em pt-BR ponto e separador de MILHAR, entao
+ * "R$ 4.604/km" — que e R$ 4,604 — se le como quatro mil e seiscentos reais por
+ * quilometro. Num relatorio de custo isso nao parece erro de formatacao: parece
+ * catastrofe, e o operador vai atras de um problema que nao existe.
+ *
+ * E a mesma familia das duas armadilhas de locale que ja morderam este projeto:
+ * o separador de argumento (";" e nao ",") e o codigo de ano do TEXT ("aaaa" e
+ * nao "yyyy"). A diferenca e que esta nao da erro — so mente.
+ */
+function numBR_(valor, casas) {
+  return Number(valor || 0).toLocaleString('pt-BR', {
+    minimumFractionDigits: casas === undefined ? 2 : casas,
+    maximumFractionDigits: casas === undefined ? 2 : casas,
+  });
+}
+
 /** Veiculos com custo por km ou consumo fora da curva na competencia aberta. */
 /**
  * Colunas de custo que VARIAM com o uso do veiculo.
@@ -12599,12 +12618,12 @@ function alertasConsumo_() {
     medida.forEach(function (m) {
       const desvios = [];
       if (refCustoKm > 0 && m.custoKm > 2 * refCustoKm) {
-        desvios.push('custo variável R$ ' + m.custoKm.toFixed(3) + '/km, mais que o dobro ' +
-          'da mediana da categoria (R$ ' + refCustoKm.toFixed(3) + ')');
+        desvios.push('custo variável R$ ' + numBR_(m.custoKm, 3) + '/km, mais que o dobro ' +
+          'da mediana da categoria (R$ ' + numBR_(refCustoKm, 3) + ')');
       }
       if (refKmLitro > 0 && m.kmLitro > 0 && m.kmLitro < refKmLitro / 2) {
-        desvios.push('rendimento ' + m.kmLitro.toFixed(2) + ' km/l, menos da metade ' +
-          'da mediana da categoria (' + refKmLitro.toFixed(2) + ')');
+        desvios.push('rendimento ' + numBR_(m.kmLitro, 2) + ' km/l, menos da metade ' +
+          'da mediana da categoria (' + numBR_(refKmLitro, 2) + ')');
       }
       // Um achado por veiculo: os dois desvios sao o mesmo fato visto de dois
       // angulos, e duas linhas so inflam a contagem.
@@ -12631,11 +12650,11 @@ function alertasTanqueEPendencias_() {
   PRODUTOS_BOMBA.forEach(function (produto) {
     const e = estadoTanque_(produto, null);
     if (e.litros < minimo) {
-      achados.push(produto + ' — saldo de ' + e.litros.toFixed(1) + ' L, abaixo do ' +
-        'mínimo de ' + minimo + ' L');
+      achados.push(produto + ' — saldo de ' + numBR_(e.litros, 1) + ' L, abaixo do ' +
+        'mínimo de ' + numBR_(minimo, 0) + ' L');
     }
     if (e.litrosSemLastro > 0.001) {
-      achados.push(produto + ' — ' + e.litrosSemLastro.toFixed(1) + ' L saíram sem carga ' +
+      achados.push(produto + ' — ' + numBR_(e.litrosSemLastro, 1) + ' L saíram sem carga ' +
         'registrada; o custo desses litros não tem lastro');
     }
   });
@@ -12679,7 +12698,8 @@ function alertasOdometroEIpva_() {
     if (atual.data < periodo.inicio || atual.data > periodo.fim) continue;
     if (atual.km < anterior.km) {
       achados.push(atual.placa + ' — leitura de ' + formatarData_(atual.data) + ' é ' +
-        atual.km + ' km, menor que a anterior (' + anterior.km + ' km), linha ' + atual.linha);
+        numBR_(atual.km, 0) + ' km, menor que a anterior (' + numBR_(anterior.km, 0) +
+        ' km), linha ' + atual.linha);
     }
   }
 
@@ -12692,7 +12712,7 @@ function alertasOdometroEIpva_() {
     const grupos = gruposIpvaDaPlaca_(placa);
     const parcelas = Object.keys(grupos).reduce(function (t, g) { return t + grupos[g].parcelas; }, 0);
     if (!parcelas) {
-      achados.push(placa + ' — IPVA de R$ ' + sugerido.toFixed(2) + ' no cadastro e ' +
+      achados.push(placa + ' — IPVA de R$ ' + numBR_(sugerido, 2) + ' no cadastro e ' +
         'nenhuma parcela lançada');
     }
   });
