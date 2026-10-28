@@ -2082,3 +2082,103 @@ O teste estava errado, não o código.
 mutações nos índices, oito pegas — incluindo as duas que mais importam: fazer
 o índice sobreviver à mudança dos dados, e ignorar a ambiguidade de duas
 leituras no mesmo dia. Total do projeto: **469 provas**.
+
+## V4.18.0 — módulo de depreciação
+
+O arquivo que você mandou (`depreciação mes 08.xlsx`) tem duas abas, cabeçalho
+na linha 3, duas colunas — **Bem** (patrimônio) e **Valor** — e uma linha
+`Total Geral` no fim de cada aba. São 128 veículos e 1 máquina, R$ 290.076,89.
+
+Três decisões suas, antes de construir:
+
+1. **Continua virando lançamento.** O menu é a porta de entrada; daí o sistema
+   gera os lançamentos como sempre. Resumo, rateio, fechamento e lacre de
+   integridade não foram tocados.
+2. **O campo do cadastro vira reserva.** O valor do arquivo manda; bem que não
+   veio no arquivo do mês é depreciado pelo cadastro, **e a tela diz que usou
+   a reserva**. Nada deixa de ser depreciado por esquecimento no arquivo.
+3. **A competência é escolhida na importação**, com a aberta pré-selecionada.
+
+### Como funciona
+
+Aba nova `Depreciação Mensal`: competência, bem, placa, valor, origem
+(IMPORTADO / MANUAL), atualizado em, responsável. Gravar uma competência
+**substitui** o que havia dela — importar o mesmo arquivo duas vezes dá o
+mesmo resultado.
+
+A importação é em dois passos de propósito: **conferir** e só então **gravar**.
+O primeiro passo lê e mostra `129 bens • R$ 290.076,89` para ser comparado com
+o "Total Geral" do arquivo. O motivo está abaixo.
+
+### O ponto perigoso: o ponto
+
+Em pt-BR, `4.310` é quatro mil e trezentos; `470.04` é quatrocentos e setenta.
+O mesmo caractere, dois significados. Ler errado **multiplica ou divide a
+depreciação por mil, e não dá erro nenhum** — grava o número errado e segue.
+
+A regra, nesta ordem: havendo vírgula e ponto, o último é o decimal; só
+vírgula, é decimal; só ponto com exatamente 3 dígitos depois, é milhar; só
+ponto, é decimal. Cobre as duas colagens (pt-BR `4.310,09` e en-US `470.04`).
+
+Mas heurística boa ainda é heurística, e por isso existe o passo de
+conferência. O arquivo convenientemente traz o `Total Geral` para comparar.
+
+### As outras armadilhas do arquivo
+
+- **`Total Geral` não é um bem.** Importá-la criaria um bem fantasma de
+  R$ 286.810. Ela e os cabeçalhos saem calados; o resto que não entra é
+  listado com o motivo, porque linha sumindo em silêncio é como se perde um
+  bem inteiro sem ninguém notar.
+- **Bem sem cadastro de veículo não entra.** Sem placa o custo não tem centro
+  para onde ir, e um valor gravado que nunca vira lançamento faria o total da
+  tela divergir do Resumo. Volta na lista, para ser cadastrado.
+- **Patrimônio repetido em dois veículos** não escolhe um no escuro: avisa.
+- **Bem repetido na colagem** tem os valores **somados**, e isso é contado e
+  dito — para o total continuar batendo com o arquivo.
+- **Ruído de ponto flutuante** (`470.0400000000001`) arredonda a centavo.
+- **Competência fechada** é recusada: ela tem lacre, e mexer no valor depois
+  faria o lacre deixar de bater sem ninguém ter editado um lançamento.
+
+### "Depreciação" sai do formulário, sem invalidar o passado
+
+`TIPOS_DESPESA` **continua inteiro**. Há milhares de lançamentos de
+Depreciação na base, e tirá-la de lá invalidaria todos de uma vez. O que muda
+é o que o formulário **oferece**: `TIPOS_DESPESA_MANUAL` é a lista sem os
+tipos que o sistema gera.
+
+São duas pontas do mesmo contrato, e confundi-las é o defeito que mais voltou
+neste projeto. Por isso há prova estática lendo o fonte: a validação da aba e
+o `validarLancamento` têm de usar a lista **cheia**; o payload do formulário e
+as opções da correção de pendência, a **manual**. Trocar uma pela outra não
+quebra nenhum teste de comportamento — ou passa a recusar lançamento antigo,
+ou volta a oferecer Depreciação.
+
+### A aba nova em sete listas
+
+Criação, proteção, ordem, cor, invalidação no `onEdit`, validação de backup e
+zeramento. Esquecer uma não quebra nada hoje; quebra meses depois. Foi assim
+que Orçamento e Comprovantes ficaram invisíveis no menu por duas versões
+(V4.11.1). Agora há prova estática conferindo que a aba nova aparece em todas,
+e que toda função `webDepreciacao*` do servidor é chamada na tela e vice-versa.
+
+### Provas
+
+`conferir_depreciacao_import.js`, **78 provas**, 13 mutações cobertas.
+O arquivo real foi passado pelo parser ponta a ponta: 129 bens,
+R$ 290.076,89, batendo ao centavo com a soma das duas abas, zero linhas
+ignoradas. Total do projeto: **547 provas**.
+
+Uma prova minha era fraca e a mutação mostrou: eu testava `__proto__` achando
+que o prefixo `#` das chaves protegia. Quem protege é `chavePatrimonio_`, que
+**maiusculiza** — e `__PROTO__` não é propriedade de protótipo. O teste agora
+prova a proteção que de fato existe, e o prefixo ficou documentado como
+reforço para o dia em que alguém mexer na maiusculização.
+
+### Pendente deste módulo
+
+- A **máquina** (patrimônio 10041887) está na segunda aba do arquivo. O parser
+  trata as duas abas igual, porque o formato é o mesmo — mas se um dia as abas
+  precisarem de tratamento diferente, hoje não há como distingui-las na
+  colagem.
+- O campo de depreciação continua no cadastro de Veículos, agora como reserva.
+  Se um dia o arquivo for sempre completo, ele pode sair.

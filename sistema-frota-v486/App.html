@@ -2969,40 +2969,211 @@
     }).withFailureHandler(falha).webRevalidarPendencias(TOKEN);
   }
 
-  function renderDepreciacao(d) {
-    var liberada = d.liberada !== false;
-    var linhas = (d.itens || []).filter(function(i){ return i.valorMensal>0 || i.lancado>0 || i.lancadoForaData>0; }).map(function(i){
-      return '<tr><td><b>'+esc(i.placa)+'</b><div class="sub2">'+esc(i.descricao||'')+'</div></td><td>'+esc(i.centro||'')+'</td><td>'+brl(i.valorMensal)+'</td><td>'+brl(Number(i.lancado||0)+Number(i.lancadoForaData||0))+'</td><td><span class="chip">'+esc(i.situacao)+'</span></td></tr>';
-    }).join('');
-    var botao = liberada
-      ? '<button class="dash-refresh" onclick="gerarDepreciacao()">Gerar pendentes</button>'
-      : '<button class="dash-refresh" disabled title="Disponível somente em '+esc(d.dataLancamento||'')+'">Disponível em '+esc(d.dataLancamento||'')+'</button>';
-    var regra = liberada
-      ? ''
-      : '<div class="ok-caixa"><b>Regra da competência:</b> a depreciação só é inserida no último dia do período, em '+esc(d.dataLancamento||'')+'. Até essa data os veículos ficam como <b>AGUARDANDO</b> e não contam como pendência.</div>';
-    el('tela').innerHTML =
-      '<div class="dash-head"><div><div class="dash-eyebrow">Competência patrimonial</div><h2>Depreciação mensal</h2><p>'+esc(d.mesExtenso)+' • '+esc(d.periodo)+'</p></div><div class="dash-acoes">'+botao+'</div></div>'+
-      regra+
-      '<div class="dash-kpis">'+
-        '<div class="dash-kpi"><div class="label">Valor previsto</div><div class="numero">'+brl(d.valorPrevisto)+'</div></div>'+
-        '<div class="dash-kpi"><div class="label">Valor lançado</div><div class="numero">'+brl(d.valorLancado)+'</div></div>'+
-        '<div class="dash-kpi"><div class="label">Concluídos</div><div class="numero">'+num(d.concluidos)+' / '+num(d.previstos)+'</div></div>'+
-        '<div class="dash-kpi"><div class="label">'+(liberada?'Pendências':'Aguardando')+'</div><div class="numero">'+num(liberada?(d.pendentes+d.divergentes):(d.aguardando||0))+'</div><div class="nota">'+(liberada?(num(d.divergentes)+' divergente(s)'):'exigência em '+esc(d.dataLancamento||''))+'</div></div></div>'+
-      (d.semValor>0?'<div class="aviso">'+num(d.semValor)+' veículo(s) ativo(s) estão sem valor mensal de depreciação cadastrado. Eles não são lançados automaticamente.</div>':'')+
-      '<div class="cartao" style="padding:0;overflow:hidden"><div class="rolagem"><table><thead><tr><th>Veículo</th><th>Centro</th><th>Previsto</th><th>Lançado</th><th>Situação</th></tr></thead><tbody>'+linhas+'</tbody></table></div></div>';
+  var DEP_COMPETENCIA = '';
+  var DEP_ANALISE = null;
+
+  function telaDepreciacao(mes) {
+    carregando('conferindo depreciação…');
+    google.script.run.withSuccessHandler(renderDepreciacao).withFailureHandler(falha)
+      .webDepreciacao(TOKEN, mes || '');
   }
 
-  function telaDepreciacao() {
-    carregando('conferindo depreciação…');
-    google.script.run.withSuccessHandler(renderDepreciacao).withFailureHandler(falha).webDepreciacao(TOKEN);
+  function renderDepreciacao(d) {
+    var st = d.status || {};
+    DEP_COMPETENCIA = d.competencia || st.mes || '';
+    DEP_ANALISE = null;
+    var liberada = st.liberada !== false;
+    var bens = d.bens || [];
+    var naAberta = DEP_COMPETENCIA === d.competenciaAberta;
+
+    var opcoes = (d.competencias || []).map(function (m) {
+      return '<option value="' + esc(m) + '"' + (m === DEP_COMPETENCIA ? ' selected' : '') + '>' +
+        esc(m) + (m === d.competenciaAberta ? ' (aberta)' : '') + '</option>';
+    }).join('');
+
+    var linhasBens = bens.map(function (b) {
+      return '<tr><td><b>' + esc(b.bem) + '</b><div class="sub2">' + esc(b.descricao || '') + '</div></td>' +
+        '<td>' + esc(b.placa || '') + '</td><td>' + esc(b.centro || '') + '</td>' +
+        '<td class="num">' + brl(b.valor) + '</td>' +
+        '<td><span class="chip">' + esc(b.origem || '') + '</span></td>' +
+        '<td><button class="acao secundaria" style="padding:4px 10px;font-size:12px" ' +
+        'onclick="depEditarBem(\'' + esc(b.bem) + '\',' + Number(b.valor || 0) + ')">editar</button> ' +
+        '<button class="acao secundaria" style="padding:4px 10px;font-size:12px" ' +
+        'onclick="depExcluirBem(\'' + esc(b.bem) + '\')">remover</button></td></tr>';
+    }).join('');
+
+    var linhasVeic = (st.itens || [])
+      .filter(function (i) { return i.valorMensal > 0 || i.lancado > 0 || i.lancadoForaData > 0; })
+      .map(function (i) {
+        var reserva = i.origemValor === 'CADASTRO';
+        return '<tr><td><b>' + esc(i.placa) + '</b><div class="sub2">' + esc(i.descricao || '') + '</div></td>' +
+          '<td>' + esc(i.centro || '') + '</td><td class="num">' + brl(i.valorMensal) +
+          (reserva ? '<div class="sub2">reserva do cadastro</div>' : '') + '</td>' +
+          '<td class="num">' + brl(Number(i.lancado || 0) + Number(i.lancadoForaData || 0)) + '</td>' +
+          '<td><span class="chip">' + esc(i.situacao) + '</span></td></tr>';
+      }).join('');
+
+    var botaoGerar = !naAberta
+      ? '<button class="dash-refresh" disabled title="Só a competência aberta gera lançamento">Gerar pendentes</button>'
+      : (liberada
+        ? '<button class="dash-refresh" onclick="gerarDepreciacao()">Gerar pendentes</button>'
+        : '<button class="dash-refresh" disabled title="Disponível em ' + esc(st.dataLancamento || '') + '">Disponível em ' + esc(st.dataLancamento || '') + '</button>');
+
+    el('tela').innerHTML =
+      '<div class="dash-head"><div><div class="dash-eyebrow">Competência patrimonial</div>' +
+        '<h2>Depreciação mensal</h2><p>' + esc(st.mesExtenso || '') + ' • ' + esc(st.periodo || '') + '</p></div>' +
+        '<div class="dash-acoes">' +
+          '<select id="depMes" onchange="telaDepreciacao(this.value)" style="max-width:200px">' + opcoes + '</select> ' +
+          botaoGerar + '</div></div>' +
+
+      (!liberada && naAberta
+        ? '<div class="ok-caixa"><b>Regra da competência:</b> a depreciação só vira lançamento no último dia do período, em ' +
+          esc(st.dataLancamento || '') + '. Até lá os veículos ficam como <b>AGUARDANDO</b> e não contam como pendência.</div>'
+        : '') +
+
+      '<div class="dash-kpis">' +
+        '<div class="dash-kpi"><div class="label">Bens na competência</div><div class="numero">' + num(bens.length) + '</div>' +
+          '<div class="nota">' + brl(d.totalBens) + '</div></div>' +
+        '<div class="dash-kpi"><div class="label">Valor previsto</div><div class="numero">' + brl(st.valorPrevisto) + '</div></div>' +
+        '<div class="dash-kpi"><div class="label">Valor lançado</div><div class="numero">' + brl(st.valorLancado) + '</div></div>' +
+        '<div class="dash-kpi"><div class="label">Concluídos</div><div class="numero">' + num(st.concluidos) + ' / ' + num(st.previstos) + '</div></div>' +
+      '</div>' +
+
+      (Number(st.deOrigemReserva || 0) > 0
+        ? '<div class="aviso"><b>' + num(st.deOrigemReserva) + ' veículo(s)</b> estão sendo depreciados pelo valor do ' +
+          '<b>cadastro</b>, e não pelo arquivo da competência — eles não vieram na importação deste mês. ' +
+          num(st.deOrigemArquivo) + ' vieram do arquivo.</div>'
+        : '') +
+      (Number(st.semValor || 0) > 0
+        ? '<div class="aviso">' + num(st.semValor) + ' veículo(s) ativo(s) sem valor nenhum: nem no arquivo, nem no cadastro. Não são lançados.</div>'
+        : '') +
+
+      '<div class="cartao"><b>Importar o arquivo de bens</b>' +
+        '<p class="sub" style="margin:6px 0 10px">Abra a planilha do contábil, selecione as duas colunas ' +
+          '(<b>Bem</b> e <b>Valor</b>) e cole aqui. O cabeçalho e a linha <b>Total Geral</b> são descartados sozinhos. ' +
+          'Nada é gravado antes de você conferir o total.</p>' +
+        '<textarea id="depColagem" rows="6" placeholder="10000017&#9;4310,09&#10;10001099&#9;208,34" ' +
+          'style="width:100%;font-family:monospace;font-size:13px"></textarea>' +
+        '<div style="margin-top:10px">' +
+          '<button class="acao secundaria" onclick="depAnalisar()">🔍 Conferir antes de gravar</button></div>' +
+        '<div id="depPrevia" style="margin-top:12px"></div></div>' +
+
+      '<div class="cartao"><b>Lançar um bem na mão</b>' +
+        '<p class="sub" style="margin:6px 0 10px">Para o bem que não veio no arquivo, ou para corrigir um valor importado.</p>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">' +
+          '<div><label for="depBem">Bem / patrimônio</label>' +
+            '<input type="text" id="depBem" style="max-width:180px" placeholder="10042709"></div>' +
+          '<div><label for="depValor">Valor R$</label>' +
+            '<input type="text" id="depValor" style="max-width:150px" placeholder="1.234,56"></div>' +
+          '<button class="acao secundaria" onclick="depSalvarBem()">Gravar bem</button></div></div>' +
+
+      '<div class="cartao" style="padding:0;overflow:hidden">' +
+        '<div style="padding:14px 16px 0"><b>Bens de ' + esc(DEP_COMPETENCIA) + '</b> ' +
+          '<span class="sub2">' + num(bens.length) + ' bem(ns) • ' + brl(d.totalBens) + '</span></div>' +
+        '<div class="rolagem"><table><thead><tr><th>Bem</th><th>Placa</th><th>Centro</th>' +
+          '<th class="num">Valor</th><th>Origem</th><th></th></tr></thead><tbody>' +
+          (linhasBens || '<tr><td colspan="6" class="sub2" style="padding:14px">Nenhum bem gravado nesta competência. Importe o arquivo ou lance na mão.</td></tr>') +
+          '</tbody></table></div></div>' +
+
+      '<div class="cartao" style="padding:0;overflow:hidden">' +
+        '<div style="padding:14px 16px 0"><b>Situação por veículo</b> ' +
+          '<span class="sub2">o que já virou lançamento na competência aberta</span></div>' +
+        '<div class="rolagem"><table><thead><tr><th>Veículo</th><th>Centro</th>' +
+          '<th class="num">Previsto</th><th class="num">Lançado</th><th>Situação</th></tr></thead><tbody>' +
+          linhasVeic + '</tbody></table></div></div>';
+  }
+
+  function depAnalisar() {
+    var texto = el('depColagem').value || '';
+    if (!texto.trim()) { status('Cole o conteúdo do arquivo primeiro.'); return; }
+    el('depPrevia').innerHTML = '<div class="carregando">lendo…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      DEP_ANALISE = r;
+      var blocos = '';
+      if (r.totalIgnoradas) {
+        blocos += '<div class="aviso"><b>' + num(r.totalIgnoradas) + ' linha(s) não entraram:</b><ul style="margin:6px 0 0 18px">' +
+          r.ignoradas.map(function (i) {
+            return '<li>linha ' + i.linha + ' — ' + esc(i.motivo) + ' <span class="sub2">' + esc(i.texto) + '</span></li>';
+          }).join('') + '</ul></div>';
+      }
+      if (r.totalSemCadastro) {
+        blocos += '<div class="aviso"><b>' + num(r.totalSemCadastro) + ' bem(ns) sem cadastro de veículo</b> — não serão gravados, ' +
+          'porque sem placa o custo não tem centro para onde ir: ' + esc(r.semCadastro.join(', ')) + '</div>';
+      }
+      if ((r.ambiguos || []).length) {
+        blocos += '<div class="aviso"><b>Patrimônio repetido em mais de um veículo:</b> ' +
+          esc(r.ambiguos.join(', ')) + '. Corrija o cadastro antes de importar.</div>';
+      }
+      if (r.duplicadas) {
+        blocos += '<div class="aviso">' + num(r.duplicadas) + ' bem(ns) apareceram mais de uma vez na colagem. ' +
+          'Os valores foram <b>somados</b>.</div>';
+      }
+      el('depPrevia').innerHTML =
+        '<div class="ok-caixa"><b>Confira contra o arquivo antes de gravar.</b><br>' +
+          '<span style="font-size:19px"><b>' + num(r.quantidade) + ' bens • ' + brl(r.total) + '</b></span><br>' +
+          '<span class="sub2">Esse total tem de bater com o "Total Geral" da planilha do contábil. ' +
+          'Se não bater, o separador decimal foi lido errado — não grave.</span></div>' +
+        blocos +
+        (r.prontos
+          ? '<div style="margin-top:10px"><button class="acao" onclick="depImportar(this)">✅ Gravar ' +
+            num(r.prontos) + ' bem(ns) em ' + esc(DEP_COMPETENCIA) + '</button></div>'
+          : '<div class="erro-caixa">Nenhum bem casou com o cadastro. Nada a gravar.</div>');
+    }).withFailureHandler(function (e) {
+      el('depPrevia').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webDepreciacaoAnalisar(TOKEN, texto);
+  }
+
+  function depImportar(botao) {
+    botao.disabled = true;
+    botao.textContent = 'Gravando…';
+    google.script.run.withSuccessHandler(function (r) {
+      status(r.mensagem || 'Importado.');
+      INICIO_CLIENTE = null;
+      if (r.ok && r.dados) renderDepreciacao(r.dados);
+      else { botao.disabled = false; botao.textContent = 'Gravar'; }
+    }).withFailureHandler(function (e) {
+      botao.disabled = false; botao.textContent = 'Gravar';
+      falha(e);
+    }).webDepreciacaoImportar(TOKEN, el('depColagem').value || '', DEP_COMPETENCIA);
+  }
+
+  function depEditarBem(bem, valor) {
+    el('depBem').value = bem;
+    el('depValor').value = String(valor).replace('.', ',');
+    el('depBem').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el('depValor').focus();
+  }
+
+  function depSalvarBem() {
+    var bem = (el('depBem').value || '').trim();
+    var valor = (el('depValor').value || '').trim();
+    if (!bem || !valor) { status('Informe o bem e o valor.'); return; }
+    carregando('gravando…');
+    google.script.run.withSuccessHandler(function (r) {
+      status(r.mensagem || '');
+      INICIO_CLIENTE = null;
+      if (r.ok && r.dados) renderDepreciacao(r.dados);
+      else telaDepreciacao(DEP_COMPETENCIA);
+    }).withFailureHandler(falha).webDepreciacaoSalvarBem(TOKEN, DEP_COMPETENCIA, bem, valor);
+  }
+
+  function depExcluirBem(bem) {
+    if (!confirm('Remover o bem ' + bem + ' da competência ' + DEP_COMPETENCIA + '?')) return;
+    carregando('removendo…');
+    google.script.run.withSuccessHandler(function (r) {
+      status(r.mensagem || '');
+      INICIO_CLIENTE = null;
+      if (r.ok && r.dados) renderDepreciacao(r.dados);
+      else telaDepreciacao(DEP_COMPETENCIA);
+    }).withFailureHandler(falha).webDepreciacaoExcluirBem(TOKEN, DEP_COMPETENCIA, bem);
   }
 
   function gerarDepreciacao() {
     carregando('gerando lançamentos mensais…');
-    google.script.run.withSuccessHandler(function(r){
+    google.script.run.withSuccessHandler(function (r) {
       status(r.mensagem || 'Depreciação atualizada.');
       INICIO_CLIENTE = null;
-      renderDepreciacao(r.status);
+      telaDepreciacao(DEP_COMPETENCIA);
     }).withFailureHandler(falha).webGerarDepreciacao(TOKEN);
   }
 

@@ -47,6 +47,10 @@ const ABAS = {
   // V4.11: comprovantes que chegam depois da competência fechar. Ficam FORA da
   // contabilidade até alguém decidir incorporá-los. Ver COL_COMP.
   COMPROVANTES: 'Comprovantes Atrasados',
+  // V4.18: a depreciacao passou a ter modulo proprio. O valor de cada bem vem
+  // do arquivo mensal do contabil, por competencia, e nao mais so do campo
+  // fixo do cadastro. Ver COL_DM e analisarImportacaoDepreciacao_.
+  DEPRECIACAO_MENSAL: 'Depreciação Mensal',
 };
 
 /** Tipos de despesa aceitos no lancamento (ordem = ordem do dropdown). */
@@ -76,6 +80,21 @@ const TIPOS_DESPESA = [
   // V4.8: gastos com carro novo (aquisição/preparação). É ATIVO, como a Plotagem.
   'Carro Novo',
 ];
+
+/**
+ * Tipos que o SISTEMA gera e ninguem digita.
+ *
+ * TIPOS_DESPESA continua inteiro: ele valida o que ja esta gravado, e ha
+ * milhares de lancamentos de Depreciacao na base. Tirar 'Depreciacao' de la
+ * invalidaria todos eles de uma vez. O que muda e so o que o FORMULARIO
+ * oferece — duas pontas do mesmo contrato, e e por confundi-las que este
+ * projeto ja quebrou seis vezes. Ver conferir_tipos_despesa.js.
+ */
+const TIPOS_GERADOS_PELO_SISTEMA_ = ['Depreciação'];
+
+const TIPOS_DESPESA_MANUAL = TIPOS_DESPESA.filter(function (t) {
+  return TIPOS_GERADOS_PELO_SISTEMA_.indexOf(t) === -1;
+});
 
 /** Tipos que aceitam litros (o formulario libera o campo). */
 const TIPOS_COM_LITROS = [
@@ -578,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.17.0';
+const VERSAO_SISTEMA = '4.18.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1590,6 +1609,8 @@ CABECALHOS[ABAS.RATEIO_MENSAL] = ['Competência', 'Centro de Custo', '% Rateio',
   'Recebe Rateio', 'Atualizado em', 'Responsável'];
 CABECALHOS[ABAS.ORCAMENTO] = ['Competência', 'Centro de Custo', 'Valor Previsto R$',
   'Atualizado em', 'Responsável'];
+CABECALHOS[ABAS.DEPRECIACAO_MENSAL] = ['Competência', 'Bem / Patrimônio', 'Placa / ID',
+  'Valor R$', 'Origem', 'Atualizado em', 'Responsável'];
 CABECALHOS[ABAS.COMPROVANTES] = ['Data do Abastecimento', 'Placa / ID', 'Tipo de Despesa',
   'Litros', 'Valor R$', 'KM no Comprovante', 'NF / Documento', 'Centro de Custo',
   'Competência de Origem', 'Situação', 'Observação', 'Registrado em', 'Registrado por',
@@ -1605,6 +1626,7 @@ LARGURAS[ABAS.CARGA_BOMBA] = [95, 150, 130, 130, 140, 110, 380];
 LARGURAS[ABAS.HISTORICO] = [130, 150, 125, 360, 165, 220];
 LARGURAS[ABAS.RATEIO_MENSAL] = [110, 200, 110, 120, 150, 220];
 LARGURAS[ABAS.ORCAMENTO] = [110, 200, 150, 150, 220];
+LARGURAS[ABAS.DEPRECIACAO_MENSAL] = [110, 140, 120, 130, 110, 150, 220];
 LARGURAS[ABAS.COMPROVANTES] = [130, 110, 170, 90, 110, 140, 150, 150, 130, 115, 260,
   140, 200, 140, 160];
 
@@ -1620,6 +1642,8 @@ LINHAS_MINIMAS[ABAS.CARGA_BOMBA] = LIMITE_CARGA_BOMBA;
 // 200 centros x 60 competências: cinco anos de histórico sem precisar ampliar.
 LINHAS_MINIMAS[ABAS.RATEIO_MENSAL] = 12000;
 LINHAS_MINIMAS[ABAS.ORCAMENTO] = 12000;
+// 200 bens x 60 competencias: cinco anos sem precisar ampliar.
+LINHAS_MINIMAS[ABAS.DEPRECIACAO_MENSAL] = 12000;
 LINHAS_MINIMAS[ABAS.COMPROVANTES] = 3000;
 
 /** Cria as abas de dados que ainda nao existem e padroniza o visual. */
@@ -1630,7 +1654,7 @@ function montarAbasDeDados_() {
 
   [ABAS.CENTROS, ABAS.VEICULOS, ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.HISTORICO,
    ABAS.FORNECEDORES, ABAS.CARGA_BOMBA, ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO,
-   ABAS.COMPROVANTES]
+   ABAS.COMPROVANTES, ABAS.DEPRECIACAO_MENSAL]
     .forEach(function (nome) {
       const sheet = aba_(nome, true);
       const minimoLinhas = (nome === ABAS.LANCAMENTOS || nome === ABAS.ODOMETRO)
@@ -3424,7 +3448,7 @@ function dadosFormulario() {
   return {
     placas: listaPlacas_(true), // legado/compatibilidade
     veiculos: opcoesVeiculos_(true),
-    tipos: TIPOS_DESPESA,
+    tipos: TIPOS_DESPESA_MANUAL,
     tiposComLitros: TIPOS_COM_LITROS,
     tiposOficina: TIPOS_OFICINA,
     tiposExigemDocumento: TIPOS_EXIGEM_DOCUMENTO,
@@ -5066,7 +5090,8 @@ function auditarProtecoesPerfil_() {
 
   [ABAS.DASHBOARD,ABAS.RATEIO,ABAS.LOG,ABAS.PARAMETROS,ABAS.USUARIOS,
    ABAS.VEICULOS,ABAS.CENTROS,ABAS.HISTORICO,
-   ABAS.RATEIO_MENSAL,ABAS.ORCAMENTO,ABAS.COMPROVANTES].forEach(function(n){ exigirFolha(n,admins,[]); });
+   ABAS.RATEIO_MENSAL,ABAS.ORCAMENTO,ABAS.COMPROVANTES,
+   ABAS.DEPRECIACAO_MENSAL].forEach(function(n){ exigirFolha(n,admins,[]); });
   exigirFolha(ABAS.RESUMO,operacionais,[]);
   exigirFolha(ABAS.CONSULTA,admins,['B3']);
   exigirFaixa(ABAS.CONSULTA,'B3',todos);
@@ -5345,7 +5370,8 @@ function organizarAbas_() {
   const planilha = ss_();
   const ordem = [ABAS.CENTRAL_OPERACIONAL, ABAS.DASHBOARD, ABAS.RESUMO, ABAS.RELATORIOS, ABAS.RATEIO, ABAS.CONSULTA,
     ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.CARGA_BOMBA, ABAS.VEICULOS, ABAS.CENTROS,
-    ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO, ABAS.COMPROVANTES, ABAS.FORNECEDORES,
+    ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO, ABAS.DEPRECIACAO_MENSAL, ABAS.COMPROVANTES,
+    ABAS.FORNECEDORES,
     ABAS.HISTORICO, ABAS.PARAMETROS, ABAS.CONFERENCIA, ABAS.USUARIOS, ABAS.LOG];
   ordem.forEach(function (nome, i) {
     const sheet = planilha.getSheetByName(nome);
@@ -5367,6 +5393,7 @@ function organizarAbas_() {
   cores[ABAS.CENTROS] = CORES.GRAFITE;
   cores[ABAS.RATEIO_MENSAL] = CORES.GRAFITE;
   cores[ABAS.ORCAMENTO] = CORES.GRAFITE;
+  cores[ABAS.DEPRECIACAO_MENSAL] = CORES.GRAFITE;
   cores[ABAS.COMPROVANTES] = CORES.LARANJA;
   cores[ABAS.FORNECEDORES] = CORES.GRAFITE;
   cores[ABAS.CARGA_BOMBA] = CORES.LARANJA;
@@ -7414,7 +7441,8 @@ function onEdit(e) {
     const sheet = e.range.getSheet();
     const nomeAba = sheet.getName();
     if ([ABAS.PARAMETROS, ABAS.VEICULOS, ABAS.CENTROS, ABAS.LANCAMENTOS, ABAS.ODOMETRO, ABAS.USUARIOS,
-         ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO, ABAS.COMPROVANTES].indexOf(nomeAba) !== -1) {
+         ABAS.RATEIO_MENSAL, ABAS.ORCAMENTO, ABAS.COMPROVANTES,
+         ABAS.DEPRECIACAO_MENSAL].indexOf(nomeAba) !== -1) {
       invalidarCacheInicio_();
       invalidarCacheSaude_();
     }
@@ -10826,6 +10854,280 @@ function webSituacaoIpva(token) {
   };
 }
 
+// ============================================================ depreciação mensal
+//
+// V4.18: a depreciação de cada bem passou a vir do arquivo mensal do contábil,
+// por competência, em vez de sair só do campo fixo do cadastro de Veículos.
+// O campo do cadastro continua existindo como RESERVA: bem que não veio no
+// arquivo do mês é depreciado pelo valor de cadastro, e o sistema diz que usou
+// a reserva. Assim nada deixa de ser depreciado por esquecimento no arquivo.
+
+const COL_DM = { COMPETENCIA: 1, BEM: 2, PLACA: 3, VALOR: 4, ORIGEM: 5,
+  ATUALIZADO: 6, RESPONSAVEL: 7 };
+const TOTAL_COL_DM = totalColunas_(COL_DM);
+
+const ORIGEM_DEP_IMPORTADO_ = 'IMPORTADO';
+const ORIGEM_DEP_MANUAL_ = 'MANUAL';
+const ORIGEM_DEP_CADASTRO_ = 'CADASTRO';
+
+let DEPRECIACAO_MENSAL_EXEC_CACHE_ = null;
+
+function lerDepreciacaoMensal_() {
+  if (DEPRECIACAO_MENSAL_EXEC_CACHE_) return DEPRECIACAO_MENSAL_EXEC_CACHE_;
+  const sheet = ss_().getSheetByName(ABAS.DEPRECIACAO_MENSAL);
+  DEPRECIACAO_MENSAL_EXEC_CACHE_ = (sheet && sheet.getLastRow() >= 2)
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, TOTAL_COL_DM).getValues()
+      .filter(function (l) { return l[COL_DM.COMPETENCIA - 1] && l[COL_DM.BEM - 1]; })
+    : [];
+  return DEPRECIACAO_MENSAL_EXEC_CACHE_;
+}
+
+function invalidarCacheDepreciacaoMensal_() { DEPRECIACAO_MENSAL_EXEC_CACHE_ = null; }
+
+/**
+ * Converte o valor como ele chega de uma colagem de planilha.
+ *
+ * A armadilha e o ponto sozinho: em pt-BR "4.310" e quatro mil e trezentos,
+ * mas "470.04" e quatrocentos e setenta. Errar isso multiplica ou divide a
+ * depreciacao por mil, e NAO da erro — so grava o numero errado.
+ *
+ * Regra, nesta ordem:
+ *   1. ha virgula e ponto  -> o ULTIMO que aparecer e o decimal
+ *   2. so virgula          -> decimal
+ *   3. so ponto, com exatamente 3 digitos depois do unico ponto -> milhar
+ *   4. so ponto            -> decimal
+ *
+ * Mesmo assim a importacao mostra o total antes de gravar, para ser conferido
+ * contra o "Total Geral" do arquivo: heuristica boa ainda e heuristica.
+ */
+function valorImportadoParaNumero_(bruto) {
+  let t = String(bruto == null ? '' : bruto).trim();
+  if (!t) return null;
+  t = t.replace(/^R\$\s*/i, '').replace(/\s/g, '');
+  const negativo = /^\(.*\)$/.test(t) || /^-/.test(t);
+  t = t.replace(/[()\-]/g, '');
+  if (!/^[\d.,]+$/.test(t)) return null;
+
+  const ultimaVirgula = t.lastIndexOf(',');
+  const ultimoPonto = t.lastIndexOf('.');
+  let limpo;
+  if (ultimaVirgula !== -1 && ultimoPonto !== -1) {
+    const decimal = ultimaVirgula > ultimoPonto ? ',' : '.';
+    const milhar = decimal === ',' ? '.' : ',';
+    limpo = t.split(milhar).join('').replace(decimal, '.');
+  } else if (ultimaVirgula !== -1) {
+    limpo = t.split(',').join('.');
+    if (limpo.split('.').length > 2) return null;   // 1,234,567 nao e pt-BR
+  } else if (ultimoPonto !== -1) {
+    const pontos = t.split('.').length - 1;
+    const depois = t.length - ultimoPonto - 1;
+    limpo = (pontos > 1 || depois === 3) ? t.split('.').join('') : t;
+  } else {
+    limpo = t;
+  }
+  const n = Number(limpo);
+  if (!isFinite(n)) return null;
+  return Math.round((negativo ? -n : n) * 100) / 100;
+}
+
+/** Linha que e cabecalho ou totalizador, e nao um bem. */
+function linhaNaoEhBem_(primeira) {
+  const t = String(primeira == null ? '' : primeira).trim();
+  if (!t) return true;
+  const semAcento = t.toUpperCase()
+    .replace(/[ÁÀÂÃÄ]/g, 'A').replace(/[ÉÈÊË]/g, 'E').replace(/[ÍÌÎÏ]/g, 'I')
+    .replace(/[ÓÒÔÕÖ]/g, 'O').replace(/[ÚÙÛÜ]/g, 'U').replace(/Ç/g, 'C');
+  // "Total Geral" e a ultima linha do arquivo do contabil. Importa-la criaria
+  // um bem fantasma com a soma de todos os outros.
+  if (/^TOTAL\b/.test(semAcento) || /\bTOTAL GERAL\b/.test(semAcento)) return true;
+  if (semAcento === 'BEM' || semAcento === 'PATRIMONIO' || semAcento === 'CODIGO') return true;
+  return false;
+}
+
+/**
+ * Le a colagem do arquivo de bens e devolve o que seria gravado, SEM gravar.
+ *
+ * Devolve tambem o que nao entrou e por que: linha ignorada em silencio e o
+ * jeito mais facil de perder um bem inteiro sem ninguem notar.
+ */
+function analisarImportacaoDepreciacao_(texto) {
+  const linhas = String(texto == null ? '' : texto).split(/\r?\n/);
+  const itens = [];
+  const ignoradas = [];
+  const vistos = {};
+  let duplicadas = 0;
+
+  linhas.forEach(function (linha, i) {
+    if (!String(linha).trim()) return;
+    const celulas = String(linha).split(/\t|;/).map(function (c) { return String(c).trim(); });
+    const bem = chavePatrimonio_(celulas[0]);
+    if (linhaNaoEhBem_(celulas[0])) return;          // cabeçalho e total saem calados
+    if (celulas.length < 2) {
+      ignoradas.push({ linha: i + 1, texto: linha.slice(0, 60), motivo: 'sem a coluna do valor' });
+      return;
+    }
+    const valor = valorImportadoParaNumero_(celulas[celulas.length - 1]);
+    if (valor === null) {
+      ignoradas.push({ linha: i + 1, texto: linha.slice(0, 60),
+        motivo: 'valor não reconhecido: "' + celulas[celulas.length - 1] + '"' });
+      return;
+    }
+    if (valor <= 0) {
+      ignoradas.push({ linha: i + 1, texto: linha.slice(0, 60),
+        motivo: 'valor zero ou negativo (R$ ' + numBR_(valor, 2) + ')' });
+      return;
+    }
+    const chave = '#' + bem;
+    if (vistos[chave] !== undefined) {
+      // O mesmo bem duas vezes: somar seria inventar, e o ultimo vencer seria
+      // escolher no escuro. Soma e avisa, para o total bater com o arquivo.
+      itens[vistos[chave]].valor = Math.round((itens[vistos[chave]].valor + valor) * 100) / 100;
+      itens[vistos[chave]].vezes++;
+      duplicadas++;
+      return;
+    }
+    vistos[chave] = itens.length;
+    itens.push({ bem: bem, valor: valor, vezes: 1 });
+  });
+
+  // Casa cada bem com o cadastro: sem placa, o custo nao tem centro para ir.
+  const porPatrimonio = {};
+  dadosVeiculosExecucao_().forEach(function (v) {
+    const pat = chavePatrimonio_(v[COL_VEIC.CODIGO - 1]);
+    if (!pat) return;
+    if (porPatrimonio[pat] === undefined) porPatrimonio[pat] = v;
+    else porPatrimonio[pat] = 'AMBIGUO';
+  });
+  const semCadastro = [];
+  const ambiguos = [];
+  itens.forEach(function (it) {
+    const achado = porPatrimonio[it.bem];
+    if (achado === undefined) { it.placa = ''; semCadastro.push(it.bem); return; }
+    if (achado === 'AMBIGUO') { it.placa = ''; ambiguos.push(it.bem); return; }
+    it.placa = String(achado[COL_VEIC.PLACA - 1] || '').trim();
+    it.descricao = String(achado[COL_VEIC.DESCRICAO - 1] || '').trim();
+  });
+
+  return {
+    itens: itens,
+    total: itens.reduce(function (t, i) { return t + i.valor; }, 0),
+    quantidade: itens.length,
+    duplicadas: duplicadas,
+    ignoradas: ignoradas,
+    semCadastro: semCadastro,
+    ambiguos: ambiguos,
+    prontos: itens.filter(function (i) { return i.placa; }).length,
+  };
+}
+
+/** Valores da competencia, por patrimonio. Indice de uma passagem. */
+let DEP_MENSAL_INDICE_EXEC_ = null;
+
+function valoresDepreciacaoDaCompetencia_(mesRef) {
+  const alvo = normalizarMesReferencia_(mesRef);
+  const fonte = lerDepreciacaoMensal_();
+  if (!DEP_MENSAL_INDICE_EXEC_ || DEP_MENSAL_INDICE_EXEC_.fonte !== fonte) {
+    const porMes = {};
+    fonte.forEach(function (l) {
+      const mes = String(l[COL_DM.COMPETENCIA - 1] || '').trim();
+      const bem = chavePatrimonio_(l[COL_DM.BEM - 1]);
+      if (!mes || !bem) return;
+      const m = porMes['#' + mes] || (porMes['#' + mes] = {});
+      m['#' + bem] = {
+        valor: Number(l[COL_DM.VALOR - 1]) || 0,
+        origem: String(l[COL_DM.ORIGEM - 1] || '').trim() || ORIGEM_DEP_IMPORTADO_,
+      };
+    });
+    DEP_MENSAL_INDICE_EXEC_ = { fonte: fonte, porMes: porMes };
+  }
+  return DEP_MENSAL_INDICE_EXEC_.porMes['#' + alvo] || {};
+}
+
+/**
+ * Valor a depreciar de um bem na competencia, e de onde ele veio.
+ *
+ * A ordem e a decisao do usuario: o arquivo do mes manda; na falta dele, o
+ * campo do cadastro entra como reserva, e isso fica DITO. Reserva silenciosa
+ * seria indistinguivel de valor conferido.
+ */
+function valorDepreciacaoDoBem_(patrimonio, valorCadastro, valoresDoMes) {
+  const chave = '#' + chavePatrimonio_(patrimonio);
+  const doMes = valoresDoMes[chave];
+  if (doMes && doMes.valor > 0) return { valor: doMes.valor, origem: doMes.origem };
+  return { valor: Number(valorCadastro) || 0, origem: ORIGEM_DEP_CADASTRO_ };
+}
+
+/**
+ * Grava os valores de UMA competencia, substituindo o que havia dela.
+ *
+ * Substitui em vez de somar: importar o mesmo arquivo duas vezes tem de dar o
+ * mesmo resultado. Outras competencias ficam intactas.
+ */
+function gravarDepreciacaoCompetencia_(mesRef, itens, origem, responsavel) {
+  exigirExecucaoMutacao_();
+  const alvo = normalizarMesReferencia_(mesRef);
+  const sheet = aba_(ABAS.DEPRECIACAO_MENSAL, true);
+  garantirColunas_(sheet, TOTAL_COL_DM);
+  garantirCabecalhoAba_(sheet, ABAS.DEPRECIACAO_MENSAL);
+
+  const outras = lerDepreciacaoMensal_().filter(function (l) {
+    return normalizarMesReferencia_(l[COL_DM.COMPETENCIA - 1]) !== alvo;
+  });
+  const agora = new Date();
+  const quem = String(responsavel || emailContextoAtual_() || 'sistema');
+  const novas = itens.map(function (i) {
+    const linha = new Array(TOTAL_COL_DM).fill('');
+    linha[COL_DM.COMPETENCIA - 1] = alvo;
+    linha[COL_DM.BEM - 1] = chavePatrimonio_(i.bem);
+    linha[COL_DM.PLACA - 1] = String(i.placa || '');
+    linha[COL_DM.VALOR - 1] = Number(i.valor) || 0;
+    linha[COL_DM.ORIGEM - 1] = String(i.origem || origem || ORIGEM_DEP_IMPORTADO_);
+    linha[COL_DM.ATUALIZADO - 1] = agora;
+    linha[COL_DM.RESPONSAVEL - 1] = quem;
+    return linha;
+  });
+
+  const todas = outras.concat(novas);
+  garantirLinhas_(sheet, Math.max(LINHAS_MINIMAS[ABAS.DEPRECIACAO_MENSAL], todas.length + 50));
+  const ultima = sheet.getLastRow();
+  if (ultima >= 2) sheet.getRange(2, 1, ultima - 1, TOTAL_COL_DM).clearContent();
+  if (todas.length) {
+    sheet.getRange(2, 1, todas.length, TOTAL_COL_DM).setValues(todas);
+    sheet.getRange(2, COL_DM.VALOR, todas.length, 1).setNumberFormat('R$ #,##0.00');
+    sheet.getRange(2, COL_DM.ATUALIZADO, todas.length, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+    sheet.getRange(2, COL_DM.BEM, todas.length, 1).setNumberFormat('@');
+  }
+  invalidarCacheDepreciacaoMensal_();
+  DEP_MENSAL_INDICE_EXEC_ = null;
+  return novas.length;
+}
+
+/** Os bens ja gravados numa competencia, para a tela listar e editar. */
+function bensDaCompetencia_(mesRef) {
+  const alvo = normalizarMesReferencia_(mesRef);
+  const porPatrimonio = {};
+  dadosVeiculosExecucao_().forEach(function (v) {
+    const pat = chavePatrimonio_(v[COL_VEIC.CODIGO - 1]);
+    if (pat && porPatrimonio[pat] === undefined) porPatrimonio[pat] = v;
+  });
+  return lerDepreciacaoMensal_()
+    .filter(function (l) { return normalizarMesReferencia_(l[COL_DM.COMPETENCIA - 1]) === alvo; })
+    .map(function (l) {
+      const bem = chavePatrimonio_(l[COL_DM.BEM - 1]);
+      const v = porPatrimonio[bem];
+      return {
+        bem: bem,
+        placa: String(l[COL_DM.PLACA - 1] || '') ||
+          (v ? String(v[COL_VEIC.PLACA - 1] || '') : ''),
+        descricao: v ? String(v[COL_VEIC.DESCRICAO - 1] || '') : '⚠ sem cadastro',
+        centro: v ? String(v[COL_VEIC.CENTRO - 1] || '') : '',
+        valor: Number(l[COL_DM.VALOR - 1]) || 0,
+        origem: String(l[COL_DM.ORIGEM - 1] || ''),
+      };
+    })
+    .sort(function (a, b) { return b.valor - a.valor; });
+}
+
 function statusDepreciacaoMensal_() {
   const mesRef = normalizarMesReferencia_(param_('MES_REFERENCIA'));
   const periodo = periodoDoMes_(mesRef);
@@ -10856,13 +11158,21 @@ function statusDepreciacaoMensal_() {
   const itens = [];
   let previstos = 0, concluidos = 0, pendentes = 0, divergentes = 0, semValor = 0, aguardando = 0;
   let valorPrevisto = 0, valorLancado = 0;
+  let deOrigemArquivo = 0, deOrigemReserva = 0;
+  const valoresDoMes = valoresDepreciacaoDaCompetencia_(mesRef);
 
   veiculos.forEach(function (v) {
     const placa = normalizaPlaca_(v[COL_VEIC.PLACA - 1]);
     if (!placa) return;
     const ativo = String(v[COL_VEIC.ATIVO - 1] || '').trim().toUpperCase() !== 'NAO';
     if (!ativo) return;
-    const valorMensal = Number(v[COL_VEIC.DEPRECIACAO - 1]) || 0;
+    const patrimonio = chavePatrimonio_(v[COL_VEIC.CODIGO - 1]);
+    const resolvido = valorDepreciacaoDoBem_(patrimonio, v[COL_VEIC.DEPRECIACAO - 1], valoresDoMes);
+    const valorMensal = resolvido.valor;
+    if (valorMensal > 0) {
+      if (resolvido.origem === ORIGEM_DEP_CADASTRO_) deOrigemReserva++;
+      else deOrigemArquivo++;
+    }
     const lancado = Number(lancados[placa] || 0);
     const lancadoForaData = Number(lancadosForaData[placa] || 0);
     let situacao = 'SEM VALOR';
@@ -10896,6 +11206,8 @@ function statusDepreciacaoMensal_() {
 
     itens.push({
       placa: placa,
+      bem: patrimonio,
+      origemValor: valorMensal > 0 ? resolvido.origem : '',
       descricao: String(v[COL_VEIC.DESCRICAO - 1] || ''),
       centro: String(v[COL_VEIC.CENTRO - 1] || ''),
       // Centro e categoria prontos para o lancamento, colhidos aqui porque a
@@ -10919,6 +11231,10 @@ function statusDepreciacaoMensal_() {
     previstos: previstos, concluidos: concluidos, pendentes: pendentes,
     divergentes: divergentes, aguardando: aguardando, semValor: semValor,
     valorPrevisto: valorPrevisto, valorLancado: valorLancado,
+    // Quantos valores vieram do arquivo da competência e quantos caíram na
+    // reserva do cadastro. Sem isto a reserva seria indistinguível do
+    // valor conferido pelo contábil.
+    deOrigemArquivo: deOrigemArquivo, deOrigemReserva: deOrigemReserva,
     itens: itens
   };
 }
@@ -10974,9 +11290,143 @@ function gerarDepreciacaoMensal_() {
   }
 }
 
-function webDepreciacao(token) {
+function webDepreciacao(token, mesRef) {
   exigirPerfilToken_(token, 'ADMIN');
-  return statusDepreciacaoMensal_();
+  const status = statusDepreciacaoMensal_();
+  const alvo = mesRef ? normalizarMesReferencia_(mesRef) : status.mes;
+  return {
+    status: status,
+    competencia: alvo,
+    competenciaAberta: status.mes,
+    competencias: competenciasComDepreciacao_(),
+    bens: bensDaCompetencia_(alvo),
+    totalBens: bensDaCompetencia_(alvo).reduce(function (t, b) { return t + b.valor; }, 0),
+  };
+}
+
+function competenciasComDepreciacao_() {
+  const vistos = {};
+  lerDepreciacaoMensal_().forEach(function (l) {
+    vistos[normalizarMesReferencia_(l[COL_DM.COMPETENCIA - 1])] = true;
+  });
+  vistos[normalizarMesReferencia_(param_('MES_REFERENCIA'))] = true;
+  return Object.keys(vistos).sort().reverse();
+}
+
+/**
+ * Primeiro passo da importacao: le e devolve o que SERIA gravado.
+ *
+ * Nao grava nada. A tela mostra o total e a contagem para serem conferidos
+ * contra o "Total Geral" do arquivo antes de confirmar — a leitura do valor
+ * depende de heuristica de separador decimal, e heuristica boa ainda erra.
+ */
+function webDepreciacaoAnalisar(token, texto) {
+  exigirPerfilToken_(token, 'ADMIN');
+  const r = analisarImportacaoDepreciacao_(texto);
+  return {
+    quantidade: r.quantidade,
+    prontos: r.prontos,
+    total: r.total,
+    duplicadas: r.duplicadas,
+    ignoradas: r.ignoradas.slice(0, 30),
+    totalIgnoradas: r.ignoradas.length,
+    semCadastro: r.semCadastro.slice(0, 30),
+    totalSemCadastro: r.semCadastro.length,
+    ambiguos: r.ambiguos.slice(0, 20),
+    amostra: r.itens.slice(0, 8),
+  };
+}
+
+/**
+ * Segundo passo: grava, depois de o usuario ver o total.
+ *
+ * Bem sem cadastro NAO entra. Sem placa o custo nao tem centro para ir, e um
+ * valor gravado que nunca vira lancamento so faria o total da tela divergir
+ * do que o Resumo mostra. Volta na lista de recusados, para ser cadastrado.
+ */
+function webDepreciacaoImportar(token, texto, mesRef) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const alvo = normalizarMesReferencia_(mesRef || param_('MES_REFERENCIA'));
+  exigirCompetenciaAberta_(alvo);
+  const r = analisarImportacaoDepreciacao_(texto);
+  const aceitos = r.itens.filter(function (i) { return i.placa; });
+  if (!aceitos.length) {
+    return { ok: false, mensagem: 'Nenhum bem da colagem casou com o cadastro de veículos. ' +
+      'Confira se a primeira coluna é o patrimônio.', recusados: r.semCadastro.slice(0, 30) };
+  }
+  const gravados = gravarDepreciacaoCompetencia_(alvo, aceitos, ORIGEM_DEP_IMPORTADO_);
+  invalidarCacheInicio_();
+  registrarLog_('Importar depreciação', alvo + ' • ' + gravados + ' bem(ns) • R$ ' +
+    numBR_(aceitos.reduce(function (t, i) { return t + i.valor; }, 0), 2));
+  return {
+    ok: true,
+    gravados: gravados,
+    recusados: r.semCadastro.slice(0, 30),
+    totalRecusados: r.semCadastro.length,
+    mensagem: gravados + ' bem(ns) gravado(s) na competência ' + alvo +
+      (r.semCadastro.length ? ' • ' + r.semCadastro.length + ' sem cadastro de veículo, não entraram' : ''),
+    dados: webDepreciacao(token, alvo),
+  };
+}
+
+/** Lancamento manual de um bem, ou correcao do valor importado. */
+function webDepreciacaoSalvarBem(token, mesRef, bem, valor) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const alvo = normalizarMesReferencia_(mesRef || param_('MES_REFERENCIA'));
+  exigirCompetenciaAberta_(alvo);
+  const patrimonio = chavePatrimonio_(bem);
+  if (!patrimonio) return { ok: false, mensagem: 'Informe o bem / patrimônio.' };
+  const numero = valorImportadoParaNumero_(valor);
+  if (numero === null || numero <= 0) {
+    return { ok: false, mensagem: 'Valor inválido: "' + valor + '". Use por exemplo 1.234,56.' };
+  }
+  const resolvido = resolverVeiculo_(patrimonio, false);
+  if (!resolvido.ok) {
+    return { ok: false, mensagem: 'Patrimônio ' + patrimonio + ' não está no cadastro de veículos. ' +
+      'Cadastre o bem antes de lançar a depreciação dele.' };
+  }
+  const atuais = bensDaCompetencia_(alvo).filter(function (b) { return b.bem !== patrimonio; });
+  atuais.push({ bem: patrimonio, placa: resolvido.veiculo.placa, valor: numero,
+    origem: ORIGEM_DEP_MANUAL_ });
+  gravarDepreciacaoCompetencia_(alvo, atuais, ORIGEM_DEP_MANUAL_);
+  invalidarCacheInicio_();
+  registrarLog_('Depreciação manual', alvo + ' • ' + patrimonio + ' • R$ ' + numBR_(numero, 2));
+  return { ok: true, mensagem: 'Bem ' + patrimonio + ' gravado em ' + alvo + '.',
+    dados: webDepreciacao(token, alvo) };
+}
+
+function webDepreciacaoExcluirBem(token, mesRef, bem) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const alvo = normalizarMesReferencia_(mesRef || param_('MES_REFERENCIA'));
+  exigirCompetenciaAberta_(alvo);
+  const patrimonio = chavePatrimonio_(bem);
+  const antes = bensDaCompetencia_(alvo);
+  const depois = antes.filter(function (b) { return b.bem !== patrimonio; });
+  if (depois.length === antes.length) {
+    return { ok: false, mensagem: 'Bem ' + patrimonio + ' não está na competência ' + alvo + '.' };
+  }
+  gravarDepreciacaoCompetencia_(alvo, depois, ORIGEM_DEP_MANUAL_);
+  invalidarCacheInicio_();
+  registrarLog_('Depreciação removida', alvo + ' • ' + patrimonio);
+  return { ok: true, mensagem: 'Bem ' + patrimonio + ' removido de ' + alvo + '.',
+    dados: webDepreciacao(token, alvo) };
+}
+
+/**
+ * Competencia fechada nao recebe depreciacao nova.
+ *
+ * O mes fechado tem lacre de integridade; mexer no valor depois faria o lacre
+ * deixar de bater sem que ninguem tivesse editado um lancamento.
+ */
+function exigirCompetenciaAberta_(alvo) {
+  const aberta = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  if (alvo > aberta) {
+    throw new Error('A competência ' + alvo + ' é futura. A aberta é ' + aberta + '.');
+  }
+  if (alvo < aberta && competenciasFechadas_()[alvo]) {
+    throw new Error('A competência ' + alvo + ' está fechada e tem lacre de integridade. ' +
+      'Reabra o período antes de alterar a depreciação dela.');
+  }
 }
 
 function webGerarDepreciacao(token) {
@@ -11073,7 +11523,7 @@ function registrarCorrecaoPendenciaPorPrefixo_(prefixo, spec) {
  */
 function opcoesDaLista_(nome) {
   if (nome === 'naturezas') return NATUREZAS_OFICINA.slice();
-  if (nome === 'tipos') return TIPOS_DESPESA.slice();
+  if (nome === 'tipos') return TIPOS_DESPESA_MANUAL.slice();
   if (nome === 'centros') return listaCentros_();
   if (nome === 'categorias') return listaCategorias_();
   if (nome === 'placas') return listaPlacas_(false);
@@ -11682,6 +12132,7 @@ function invalidarCachesDaAba_(aba) {
   if (aba === ABAS.LANCAMENTOS) invalidarCacheLancamentos_();
   if (aba === ABAS.ODOMETRO) invalidarCacheOdometro_();
   if (aba === ABAS.VEICULOS) VEICULOS_EXEC_CACHE_ = null;
+  if (aba === ABAS.DEPRECIACAO_MENSAL) { invalidarCacheDepreciacaoMensal_(); DEP_MENSAL_INDICE_EXEC_ = null; }
   if (aba === ABAS.CENTROS) CENTROS_EXEC_CACHE_ = null;
   invalidarCacheInicio_();
   invalidarCacheSaude_();
@@ -13821,6 +14272,8 @@ function restaurarDadosDeBackupSemLock_(backupId) {
     [ABAS.RATEIO_MENSAL, TOTAL_COL_RM],
     [ABAS.ORCAMENTO, TOTAL_COL_ORC],
     [ABAS.COMPROVANTES, TOTAL_COL_COMP],
+    // V4.18: backup anterior a esta versão não a tem.
+    [ABAS.DEPRECIACAO_MENSAL, TOTAL_COL_DM],
   ].filter(function (esp) { return !!origem.getSheetByName(esp[0]); });
 
   // Primeiro valida o backup inteiro; só depois começa a escrever na base atual.
@@ -14532,6 +14985,9 @@ function zerarSistema_(escopo, confirmacao, opcoes) {
     // Comprovante atrasado é MOVIMENTO, não cadastro: sai junto com os lançamentos
     // em qualquer escopo. Mantê-lo faria o relatório apontar para linhas apagadas.
     limparLinhas(ABAS.COMPROVANTES, [[1, TOTAL_COL_COMP]]);
+    // A depreciação da competência é MOVIMENTO, como o comprovante: sai junto
+    // com os lançamentos. Mantê-la faria o mês zerado voltar a depreciar.
+    limparLinhas(ABAS.DEPRECIACAO_MENSAL, [[1, TOTAL_COL_DM]]);
     limparLinhas(ABAS.EXCLUIDOS, [[1, 3 + TOTAL_COL_LANC]]);
     if (zerarValores) {
       const veic = planilha.getSheetByName(ABAS.VEICULOS);
