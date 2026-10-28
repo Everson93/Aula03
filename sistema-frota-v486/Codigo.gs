@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.18.2';
+const VERSAO_SISTEMA = '4.19.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11242,6 +11242,100 @@ function bensDaCompetencia_(mesRef) {
     .sort(function (a, b) { return b.valor - a.valor; });
 }
 
+/** Diferenca abaixo disto e ruido de arredondamento, nao erro de valor. */
+const CENTAVOS_DEPRECIACAO_ = 0.05;
+
+/**
+ * Lancamentos de Depreciacao da competencia, por placa.
+ *
+ * Guarda as LINHAS, nao so a soma: para acertar um valor e preciso saber qual
+ * lancamento corrigir, e se ha mais de um nao da para escolher sozinho.
+ */
+function lancamentosDepreciacaoDoPeriodo_(periodo) {
+  const porPlaca = {};
+  lerLancamentos_().forEach(function (l) {
+    const d = l[L_.DATA];
+    if (!(d instanceof Date) || d < periodo.inicio || d > periodo.fim) return;
+    if (['Depreciação', 'Depreciacao'].indexOf(String(l[L_.TIPO] || '').trim()) === -1) return;
+    const placa = normalizaPlaca_(l[L_.PLACA]);
+    if (!placa) return;
+    (porPlaca['#' + placa] || (porPlaca['#' + placa] = [])).push({
+      id: String(l[L_.ID] || ''),
+      linha: l.linhaPlanilha,
+      valor: Number(l[L_.VALOR]) || 0,
+      data: d,
+      documento: String(l[L_.DOCUMENTO] || ''),
+      observacao: String(l[L_.OBSERVACAO] || ''),
+    });
+  });
+  return porPlaca;
+}
+
+/**
+ * As divergencias entre o que a competencia manda e o que foi lancado.
+ *
+ * Separa CENTAVOS de DIFERENCA REAL porque sao problemas diferentes com o
+ * mesmo rotulo: R$ 0,02 e o lancamento antigo arredondado de outro jeito;
+ * R$ 840,07 e o valor do cadastro velho contra o valor novo do contabil.
+ * Juntar os dois num unico "DIVERGENTE" faz o operador aprovar no automatico
+ * — e um dia aprovar junto uma diferenca que importava.
+ */
+function divergenciasDepreciacao_() {
+  const status = statusDepreciacaoMensal_();
+  const periodo = periodoDoMes_(status.mes);
+  const porPlaca = lancamentosDepreciacaoDoPeriodo_(periodo);
+
+  const itens = [];
+  status.itens.forEach(function (i) {
+    const lancados = porPlaca['#' + normalizaPlaca_(i.placa)] || [];
+    const somaLancada = lancados.reduce(function (t, x) { return t + x.valor; }, 0);
+    const previsto = Number(i.valorMensal) || 0;
+    const diferenca = Math.round((somaLancada - previsto) * 100) / 100;
+    if (!lancados.length) return;                       // nada lancado: e PENDENTE, nao divergencia
+    if (Math.abs(diferenca) < 0.005) return;            // bate
+
+    let impedimento = '';
+    if (lancados.length > 1) {
+      impedimento = lancados.length + ' lançamentos de depreciação para esta placa no período — ' +
+        'não dá para saber qual ajustar';
+    } else if (previsto <= 0) {
+      impedimento = 'a competência não tem valor para este bem; ajustar significaria apagar o ' +
+        'lançamento, e apagar é decisão sua';
+    }
+
+    itens.push({
+      placa: i.placa,
+      bem: i.bem,
+      descricao: i.descricao,
+      centro: i.centro,
+      previsto: previsto,
+      lancado: somaLancada,
+      diferenca: diferenca,
+      origemValor: i.origemValor,
+      quantidade: lancados.length,
+      id: lancados.length === 1 ? lancados[0].id : '',
+      linha: lancados.length === 1 ? lancados[0].linha : 0,
+      centavos: Math.abs(diferenca) <= CENTAVOS_DEPRECIACAO_,
+      impedimento: impedimento,
+      ajustavel: !impedimento,
+    });
+  });
+
+  itens.sort(function (a, b) { return Math.abs(b.diferenca) - Math.abs(a.diferenca); });
+  const ajustaveis = itens.filter(function (i) { return i.ajustavel; });
+  return {
+    mes: status.mes,
+    mesExtenso: status.mesExtenso,
+    itens: itens,
+    total: itens.length,
+    ajustaveis: ajustaveis.length,
+    bloqueadas: itens.length - ajustaveis.length,
+    deCentavos: itens.filter(function (i) { return i.centavos; }).length,
+    somaDiferenca: Math.round(itens.reduce(function (t, i) { return t + i.diferenca; }, 0) * 100) / 100,
+    somaAjustavel: Math.round(ajustaveis.reduce(function (t, i) { return t + i.diferenca; }, 0) * 100) / 100,
+  };
+}
+
 function statusDepreciacaoMensal_() {
   const mesRef = normalizarMesReferencia_(param_('MES_REFERENCIA'));
   const periodo = periodoDoMes_(mesRef);
@@ -11435,6 +11529,77 @@ function competenciasComDepreciacao_() {
  * contra o "Total Geral" do arquivo antes de confirmar — a leitura do valor
  * depende de heuristica de separador decimal, e heuristica boa ainda erra.
  */
+/** Primeiro passo: lista as divergencias, sem mexer em nada. */
+function webDepreciacaoDivergencias(token) {
+  exigirPerfilToken_(token, 'ADMIN');
+  return divergenciasDepreciacao_();
+}
+
+/**
+ * Segundo passo: acerta o lancamento pelo valor da competencia.
+ *
+ * Vai por corrigirLancamento_, que exclui e regrava com trilha em Lancamentos
+ * Excluidos. Nao e um UPDATE no valor: a correcao de um lancamento ja gerado
+ * tem de ficar auditavel, senao o total do mes muda sem rastro.
+ *
+ * `placas` limita o ajuste ao que o usuario marcou. Sem lista, ajusta todas as
+ * ajustaveis — nunca as bloqueadas.
+ */
+function webDepreciacaoAjustarDivergencias(token, placas) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const d = divergenciasDepreciacao_();
+  exigirCompetenciaAberta_(d.mes);
+
+  const filtro = {};
+  let temFiltro = false;
+  (placas || []).forEach(function (p) { filtro['#' + normalizaPlaca_(p)] = true; temFiltro = true; });
+
+  const alvos = d.itens.filter(function (i) {
+    if (!i.ajustavel) return false;
+    return !temFiltro || filtro['#' + normalizaPlaca_(i.placa)];
+  });
+  if (!alvos.length) {
+    return { ok: false, mensagem: d.bloqueadas
+      ? 'Nenhuma divergência ajustável. ' + d.bloqueadas + ' precisa(m) de decisão manual.'
+      : 'Nenhuma divergência para ajustar.' };
+  }
+
+  const ajustados = [];
+  const falhados = [];
+  alvos.forEach(function (i) {
+    const motivo = 'Ajuste pelo valor da competência ' + d.mes + ': de R$ ' +
+      numBR_(i.lancado, 2) + ' para R$ ' + numBR_(i.previsto, 2) +
+      ' (bem ' + (i.bem || '—') + ').';
+    const r = corrigirLancamento_(i.id, i.linha, {
+      data: Utilities.formatDate(periodoDoMes_(d.mes).fim, timezone_(), 'yyyy-MM-dd'),
+      placa: i.placa,
+      tipo: 'Depreciação',
+      valor: i.previsto,
+      documento: 'DEP-' + d.mes,
+      observacao: 'Depreciação mensal de ' + d.mes + ' — valor da competência.',
+    }, motivo);
+    if (r && r.ok) ajustados.push({ placa: i.placa, de: i.lancado, para: i.previsto });
+    else falhados.push({ placa: i.placa, motivo: (r && r.mensagem) || 'falha não informada' });
+  });
+
+  invalidarCacheInicio_();
+  atualizarResumoSeguro_();
+  escreverConferencia_(coletarProblemas_());
+  registrarLog_('Ajustar divergências de depreciação',
+    d.mes + ' • ' + ajustados.length + ' ajustado(s)' +
+    (falhados.length ? ' • ' + falhados.length + ' falhou/falharam' : ''));
+
+  return {
+    ok: ajustados.length > 0,
+    ajustados: ajustados,
+    falhados: falhados,
+    mensagem: ajustados.length + ' lançamento(s) acertado(s) pelo valor da competência' +
+      (falhados.length ? ' • ' + falhados.length + ' não deu(ram) certo' : '') + '.',
+    divergencias: divergenciasDepreciacao_(),
+    dados: webDepreciacao(token, d.mes),
+  };
+}
+
 /** Conferencia do vinculo placa <-> bem, sem arquivo nenhum. */
 function webDepreciacaoConferirVinculo(token) {
   exigirPerfilToken_(token, 'ADMIN');

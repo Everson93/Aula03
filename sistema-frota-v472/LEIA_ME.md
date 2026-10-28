@@ -2291,3 +2291,66 @@ derruba 4 provas. Total do projeto: **575**.
 Uma mutação crashou em vez de reprovar, de novo pelo mesmo descuido: a segunda
 asserção chamava a função sem proteção depois de a primeira já ter lançado.
 Protegida.
+
+## V4.19.0 — validar divergências
+
+Depois de importar, a situação por veículo ficou cheia de `DIVERGENTE`. Olhando
+os números da sua tela, são **dois problemas diferentes com o mesmo rótulo**:
+
+| veículo | lançado | competência | diferença | |
+|---|---|---|---|---|
+| MLY 3499 | 705,01 | 704,99 | **R$ 0,02** | arredondamento |
+| MBP 3776 | 6.036,05 | 5.195,98 | **R$ 840,07** | valor mesmo |
+| RYP 9G04 | 1.215,38 | 787,05 | R$ 428,33 | valor mesmo |
+| MFT 4312 | 3.226,60 | 2.989,11 | R$ 237,49 | valor mesmo |
+
+A causa é a transição: esses lançamentos foram gerados com o valor antigo do
+**cadastro**, e a importação trouxe o valor do **contábil**.
+
+Chamar os dois de `DIVERGENTE` é o problema. Dois centavos ao lado de
+oitocentos reais, com o mesmo rótulo, ensina o operador a aprovar no
+automático — e um dia ele aprova junto uma diferença que importava.
+
+### O botão
+
+**⚖️ Validar divergências** lista cada uma com o lançado, o da competência, a
+diferença assinada, e marca em separado as que são **só de centavos** (até
+R$ 0,05). Com uma caixa por linha, e o botão de acertar as marcadas.
+
+### Duas situações que ele se recusa a resolver sozinho
+
+1. **Mais de um lançamento de depreciação para a mesma placa no período.**
+   Não dá para saber qual ajustar. Aparece como `manual`, com o motivo.
+2. **Lançado sem valor na competência.** Ajustar ali significaria **apagar** o
+   lançamento, e apagar é decisão sua, não do botão.
+
+Nos dois casos a linha fica sem caixa de marcar: não é possível aprovar por
+engano junto com as outras.
+
+### O ajuste é auditável, não um UPDATE
+
+Cada acerto passa por `corrigirLancamento_`, que **exclui e regrava** deixando
+o original em `Lançamentos Excluídos` com o motivo:
+
+> Ajuste pelo valor da competência 2026-08: de R$ 6.036,05 para R$ 5.195,98
+> (bem 10026875).
+
+Um `setValue` no valor seria uma linha de código mais curta e mudaria o total
+do mês **sem rastro** — num sistema que fecha competência com lacre de
+integridade, isso não é economia, é buraco.
+
+Depois do ajuste o Resumo é recalculado e as pendências revalidadas, e
+competência fechada é recusada.
+
+### Provas
+
+`conferir_depreciacao_import.js`: 106 → **129**. Oito mutações, oito pegas —
+incluindo as duas que mais importam: tornar ajustável o que tem dois
+lançamentos, e deixar o ajuste tocar nas bloqueadas.
+
+Mais uma fixture minha que não exercitava nada: eu tinha posto dois lançamentos
+de R$ 150 contra R$ 300 de competência — que **batem**, então não havia
+divergência nenhuma para a prova examinar. O teste reprovou por causa da
+fixture, não do código. Corrigido para 150 + 200.
+
+Total do projeto: **598 provas**.

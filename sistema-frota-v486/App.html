@@ -3077,12 +3077,90 @@
           (linhasBens || '<tr><td colspan="6" class="sub2" style="padding:14px">Nenhum bem gravado nesta competência. Importe o arquivo ou lance na mão.</td></tr>') +
           '</tbody></table></div></div>' +
 
+      '<div class="cartao"><b>Divergências entre o lançado e a competência</b>' +
+        '<p class="sub" style="margin:6px 0 10px">Compara o que já virou lançamento com o valor ' +
+          'desta competência. Acertar reescreve o lançamento com trilha em <b>Lançamentos Excluídos</b>.</p>' +
+        '<button class="acao secundaria" onclick="depDivergencias()">⚖️ Validar divergências</button>' +
+        '<div id="depDiverg" style="margin-top:12px"></div></div>' +
+
       '<div class="cartao" style="padding:0;overflow:hidden">' +
         '<div style="padding:14px 16px 0"><b>Situação por veículo</b> ' +
           '<span class="sub2">o que já virou lançamento na competência aberta</span></div>' +
         '<div class="rolagem"><table><thead><tr><th>Veículo</th><th>Centro</th>' +
           '<th class="num">Previsto</th><th class="num">Lançado</th><th>Situação</th></tr></thead><tbody>' +
           linhasVeic + '</tbody></table></div></div>';
+  }
+
+  function depDivergencias() {
+    el('depDiverg').innerHTML = '<div class="carregando">comparando…</div>';
+    google.script.run.withSuccessHandler(renderDivergencias).withFailureHandler(function (e) {
+      el('depDiverg').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webDepreciacaoDivergencias(TOKEN);
+  }
+
+  function renderDivergencias(d) {
+    if (!d.total) {
+      el('depDiverg').innerHTML = '<div class="ok-caixa">Nenhuma divergência: o lançado bate com a competência.</div>';
+      return;
+    }
+    var linhas = d.itens.map(function (i) {
+      return '<tr><td>' +
+          (i.ajustavel ? '<input type="checkbox" class="dvChk" value="' + esc(i.placa) + '" checked>' : '') +
+        '</td>' +
+        '<td><b>' + esc(i.placa) + '</b><div class="sub2">' + esc(i.descricao || '') +
+          (i.bem ? ' • bem ' + esc(i.bem) : '') + '</div></td>' +
+        '<td class="num">' + brl(i.lancado) + '</td>' +
+        '<td class="num">' + brl(i.previsto) + '</td>' +
+        '<td class="num"><b>' + (i.diferenca > 0 ? '+' : '') + brl(i.diferenca) + '</b>' +
+          (i.centavos ? '<div class="sub2">centavos</div>' : '') + '</td>' +
+        '<td>' + (i.ajustavel
+          ? '<span class="chip">ajustável</span>'
+          : '<span class="chip">manual</span><div class="sub2">' + esc(i.impedimento) + '</div>') + '</td></tr>';
+    }).join('');
+
+    el('depDiverg').innerHTML =
+      '<div class="aviso"><b>' + num(d.total) + ' divergência(s)</b> • diferença somada ' +
+        brl(d.somaDiferenca) +
+        (d.deCentavos ? ' • ' + num(d.deCentavos) + ' é/são só de centavos' : '') +
+        (d.bloqueadas ? ' • <b>' + num(d.bloqueadas) + ' precisa(m) de decisão sua</b>' : '') +
+      '</div>' +
+      '<div class="rolagem"><table><thead><tr>' +
+        '<th style="width:28px"></th><th>Veículo</th><th class="num">Lançado</th>' +
+        '<th class="num">Competência</th><th class="num">Diferença</th><th>Situação</th>' +
+        '</tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+      (d.ajustaveis
+        ? '<div style="margin-top:12px"><button class="acao" onclick="depAjustar(this)">' +
+          '✅ Acertar os marcados pelo valor da competência</button>' +
+          '<div class="sub2" style="margin-top:6px">Cada acerto exclui e regrava o lançamento, ' +
+          'deixando o original em Lançamentos Excluídos com o motivo.</div></div>'
+        : '<div class="sub2" style="margin-top:10px">Nenhuma é ajustável automaticamente.</div>');
+  }
+
+  function depAjustar(botao) {
+    var marcadas = [].slice.call(document.querySelectorAll('.dvChk:checked'))
+      .map(function (c) { return c.value; });
+    if (!marcadas.length) { status('Marque ao menos uma divergência.'); return; }
+    if (!confirm('Acertar ' + marcadas.length + ' lançamento(s) pelo valor da competência?
+
+' +
+      'O lançamento atual vai para Lançamentos Excluídos e outro é gravado no lugar.')) return;
+    botao.disabled = true;
+    botao.textContent = 'Acertando…';
+    google.script.run.withSuccessHandler(function (r) {
+      status(r.mensagem || '');
+      INICIO_CLIENTE = null;
+      if (r.dados) renderDepreciacao(r.dados);
+      if (r.divergencias) renderDivergencias(r.divergencias);
+      if ((r.falhados || []).length) {
+        el('depDiverg').innerHTML += '<div class="erro-caixa"><b>Não deu certo em:</b><ul style="margin:6px 0 0 18px">' +
+          r.falhados.map(function (f) { return '<li>' + esc(f.placa) + ' — ' + esc(f.motivo) + '</li>'; }).join('') +
+          '</ul></div>';
+      }
+    }).withFailureHandler(function (e) {
+      botao.disabled = false;
+      botao.textContent = 'Acertar os marcados pelo valor da competência';
+      falha(e);
+    }).webDepreciacaoAjustarDivergencias(TOKEN, marcadas);
   }
 
   function depPainelVinculo(v) {

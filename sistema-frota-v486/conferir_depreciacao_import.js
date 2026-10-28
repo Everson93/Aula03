@@ -32,6 +32,8 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     valorImportadoParaNumero_, linhaNaoEhBem_, analisarImportacaoDepreciacao_,
     valorDepreciacaoDoBem_, valoresDepreciacaoDaCompetencia_, chavePatrimonio_,
     conferirVinculoBemPlaca_, patrimonioFrouxo_,
+    divergenciasDepreciacao_, lancamentosDepreciacaoDoPeriodo_, CENTAVOS_DEPRECIACAO_,
+    L_, TOTAL_COL_LANC,
     TIPOS_DESPESA, TIPOS_DESPESA_MANUAL, TIPOS_GERADOS_PELO_SISTEMA_,
     COL_VEIC, COL_DM, TOTAL_COL_VEIC, TOTAL_COL_DM,
     ORIGEM_DEP_CADASTRO_, ORIGEM_DEP_IMPORTADO_, ORIGEM_DEP_MANUAL_,
@@ -413,6 +415,141 @@ ok('e há leituras de verdade sendo conferidas', leituras.length >= 4, String(le
 ok('a gravação formata a competência como texto',
   /setNumberFormat\('@'\);[\s\S]{0,400}COL_DM\.COMPETENCIA, todas\.length, 1\)\.setNumberFormat\('@'\)/.test(fonteC),
   'sem formato texto o Sheets volta a guardar Date na célula');
+
+console.log('\n10f. Validar divergências');
+// O caso real: o lançamento foi gerado com o valor antigo do cadastro e a
+// importação trouxe outro. MLY 3499 difere em R$ 0,02 (arredondamento);
+// MBP 3776 difere em R$ 840,07 (valor mesmo). O mesmo rótulo DIVERGENTE para
+// dois problemas diferentes faz o operador aprovar no automático — e um dia
+// aprovar junto uma diferença que importava.
+ctx.__trocarNormalizador(ctx.__normalizarReal);
+function lanc(placa, valor, dia, id) {
+  const l = new Array(ctx.TOTAL_COL_LANC).fill('');
+  l[ctx.L_.DATA] = D(2026, 7, dia || 25);
+  l[ctx.L_.PLACA] = placa;
+  l[ctx.L_.TIPO] = 'Depreciação';
+  l[ctx.L_.VALOR] = valor;
+  l[ctx.L_.ID] = id || ('LAN-' + placa.replace(/\W/g, ''));
+  l.linhaPlanilha = 100;
+  return l;
+}
+function depLinha(bem, valor) {
+  const l = new Array(ctx.TOTAL_COL_DM).fill('');
+  l[ctx.COL_DM.COMPETENCIA - 1] = '2026-08';
+  l[ctx.COL_DM.BEM - 1] = bem;
+  l[ctx.COL_DM.VALOR - 1] = valor;
+  l[ctx.COL_DM.ORIGEM - 1] = 'IMPORTADO';
+  return l;
+}
+ctx.__veic = [
+  veic('B1', 'MLY 3499', 'FIAT/DOBLO', 'ADM Central', 0),
+  veic('B2', 'MBP 3776', 'Baú Frig.', 'CONSTRUÇÃO', 0),
+  veic('B3', 'MGT 3791', 'BAU', 'DEPÓSITO', 0),
+  veic('B4', 'DUP 0001', 'Dois lançamentos', 'LOJA 1', 0),
+  veic('B5', 'SEM 0001', 'Fora do arquivo', 'LOJA 2', 0),
+];
+ctx.__dep = [depLinha('B1', 704.99), depLinha('B2', 5195.98), depLinha('B3', 4628.37),
+             depLinha('B4', 300)];
+vm.runInContext(`
+  param_ = function (n) { if (n === 'MES_REFERENCIA') return '2026-08'; return ''; };
+  periodoDoMes_ = function () { return { inicio: new Date(2026, 6, 26), fim: new Date(2026, 7, 25) }; };
+  dataUltimoDiaPeriodo_ = function () { return new Date(2026, 7, 25); };
+  depreciacaoLiberada_ = function () { return true; };
+  aba_ = function () { return { getRange: function () { return { getValues: function () { return []; } }; },
+    getLastRow: function () { return 1; } }; };
+  quantidadeLancamentosReais_ = function () { return 0; };
+  nomeDoMes_ = function () { return 'agosto'; };
+  formatarData_ = function () { return '25/08/2026'; };
+  lerLancamentos_ = function () { return __lanc; };
+`, ctx);
+ctx.__lanc = [
+  lanc('MLY 3499', 705.01),                     // centavos
+  lanc('MBP 3776', 6036.05),                    // diferença real
+  lanc('MGT 3791', 4628.37),                    // bate
+  // 150 + 200 = 350 contra 300 da competência: diverge E tem dois lançamentos.
+  // (A primeira versão usava 150 + 150 = 300, que batia — a fixture não
+  //  exercitava nada, e o teste reprovou por isso, não pelo código.)
+  lanc('DUP 0001', 150, 25, 'LAN-A'),
+  lanc('DUP 0001', 200, 25, 'LAN-B'),
+  lanc('SEM 0001', 500),                        // lançado sem valor na competência
+];
+
+const dv = ctx.divergenciasDepreciacao_();
+const porPlaca = {};
+dv.itens.forEach(function (i) { porPlaca[i.placa] = i; });
+
+ok('quem bate NÃO entra na lista', !porPlaca['MGT 3791'],
+  JSON.stringify(Object.keys(porPlaca)));
+ok('a diferença de centavos entra, mas MARCADA como centavos',
+  porPlaca['MLY 3499'] && porPlaca['MLY 3499'].centavos === true,
+  JSON.stringify(porPlaca['MLY 3499']));
+ok('e a de R$ 840 NÃO é marcada como centavos',
+  porPlaca['MBP 3776'] && porPlaca['MBP 3776'].centavos === false,
+  JSON.stringify(porPlaca['MBP 3776']));
+ok('a diferença é lançado menos competência',
+  Math.abs(porPlaca['MBP 3776'].diferenca - 840.07) < 0.005,
+  String(porPlaca['MBP 3776'].diferenca));
+ok('o maior desvio vem primeiro', dv.itens[0].placa === 'MBP 3776', dv.itens[0].placa);
+
+ok('DUAS lançamentos para a mesma placa NÃO é ajustável',
+  porPlaca['DUP 0001'] && porPlaca['DUP 0001'].ajustavel === false,
+  JSON.stringify(porPlaca['DUP 0001']));
+ok('e diz por quê', /não dá para saber qual ajustar/.test((porPlaca['DUP 0001'] || {}).impedimento || ''),
+  (porPlaca['DUP 0001'] || {}).impedimento);
+ok('lançado sem valor na competência também NÃO é ajustável',
+  porPlaca['SEM 0001'] && porPlaca['SEM 0001'].ajustavel === false,
+  JSON.stringify(porPlaca['SEM 0001']));
+ok('porque ajustar ali significaria apagar',
+  /apagar é decisão sua/.test((porPlaca['SEM 0001'] || {}).impedimento || ''),
+  (porPlaca['SEM 0001'] || {}).impedimento);
+
+ok('conta quantas são ajustáveis', dv.ajustaveis === 2, String(dv.ajustaveis));
+ok('e quantas estão bloqueadas', dv.bloqueadas === 2, String(dv.bloqueadas));
+ok('conta as de centavos à parte', dv.deCentavos === 1, String(dv.deCentavos));
+ok('a soma ajustável ignora as bloqueadas',
+  Math.abs(dv.somaAjustavel - (0.02 + 840.07)) < 0.01, String(dv.somaAjustavel));
+ok('só o ajustável carrega o id do lançamento',
+  (porPlaca['MBP 3776'] || {}).id !== '' && (porPlaca['DUP 0001'] || { id: 'X' }).id === '',
+  JSON.stringify([(porPlaca['MBP 3776'] || {}).id, (porPlaca['DUP 0001'] || {}).id]));
+
+// Quem não tem lançamento nenhum é PENDENTE, não divergência.
+ctx.__lanc = [];
+const dv2 = ctx.divergenciasDepreciacao_();
+ok('sem lançamento nenhum não há divergência, há pendência',
+  dv2.total === 0, JSON.stringify(dv2.itens.map(function (i) { return i.placa; })));
+
+// Tudo batendo: lista vazia.
+ctx.__lanc = [lanc('MLY 3499', 704.99), lanc('MBP 3776', 5195.98),
+              lanc('MGT 3791', 4628.37), lanc('DUP 0001', 300), lanc('SEM 0001', 0)];
+const dv3 = ctx.divergenciasDepreciacao_();
+ok('tudo batendo dá lista vazia', dv3.total === 0,
+  JSON.stringify(dv3.itens.map(function (i) { return i.placa + ' ' + i.diferenca; })));
+
+// Lançamento fora do período não conta.
+ctx.__lanc = [lanc('MLY 3499', 704.99), lanc('MBP 3776', 5195.98),
+              lanc('MGT 3791', 4628.37), lanc('DUP 0001', 300), lanc('SEM 0001', 0),
+              lanc('MBP 3776', 9999, 25)];
+vm.runInContext(`__lanc[5][L_.DATA] = new Date(2026, 9, 25);`, ctx);
+const dv4 = ctx.divergenciasDepreciacao_();
+ok('lançamento de outro mês não vira divergência deste', dv4.total === 0,
+  JSON.stringify(dv4.itens.map(function (i) { return i.placa + ' ' + i.diferenca; })));
+ctx.__trocarNormalizador(function (m) { return String(m); });
+
+console.log('\n10g. O ajuste é auditável, não um UPDATE');
+const fonteD = fs.readFileSync('Codigo.gs', 'utf8');
+ok('o ajuste passa por corrigirLancamento_',
+  /webDepreciacaoAjustarDivergencias[\s\S]{0,2000}corrigirLancamento_\(/.test(fonteD),
+  'um setValue no valor mudaria o total do mês sem rastro');
+ok('e nunca toca nas bloqueadas',
+  /if \(!i\.ajustavel\) return false;/.test(fonteD));
+ok('recusa competência fechada',
+  /webDepreciacaoAjustarDivergencias[\s\S]{0,600}exigirCompetenciaAberta_\(/.test(fonteD));
+ok('revalida as pendências depois',
+  /webDepreciacaoAjustarDivergencias[\s\S]{0,3000}escreverConferencia_\(coletarProblemas_\(\)\)/.test(fonteD));
+const appD = fs.readFileSync('App.html', 'utf8');
+ok('a tela lista antes de deixar acertar',
+  appD.indexOf('webDepreciacaoDivergencias') < appD.indexOf('webDepreciacaoAjustarDivergencias'));
+ok('e manda só as marcadas', /dvChk:checked/.test(appD));
 
 console.log('\n11. Aba nova registrada em TODAS as listas');
 // Toda aba de dados tem de aparecer em sete lugares: criação, proteção, ordem,
