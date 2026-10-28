@@ -1777,3 +1777,53 @@ delas gravando no vizinho.
   O salt impede rainbow table; falta custo contra força bruta.
 - **Sessão em `CacheService`** — pode ser despejada antes do TTL de 6 h, e o
   sintoma é o usuário deslogar sozinho sem padrão.
+
+## V4.15.3 — o alerta diz do que é feito o custo
+
+A SXC 9I77 (Saveiro, patrimônio 10042709) apareceu no bloco *"Consumo fora da
+curva"* com **R$ 6,103/km, mais que o dobro da mediana da categoria**. Fui
+verificar na consulta do veículo:
+
+| | |
+|---|---|
+| custo total | R$ 2.782,85 |
+| oficina | R$ 2.130,00 — **77% do total** |
+| combustível | R$ 542,71 |
+| km rodados | 456 |
+| km/l | 5,23 — normal para uma Saveiro |
+
+Não era erro de dado: 87,140 L a 5,23 km/l dão exatamente os 456 km, então não
+faltava leitura de odômetro. A aritmética do alerta também estava certa. O que
+estava errado era **o que ele comunicava**: uma manutenção pontual de R$ 2.130
+diluída em 456 km dá R$ 4,67/km só de oficina, e isso chega como se fosse
+problema de consumo. Para descobrir que não era, foi preciso abrir a consulta
+de um veículo por vez.
+
+O alerta já tinha essa informação na mão e não contava. Agora conta:
+
+> SXC 9I77 — custo variável R$ 5,861/km, mais que o dobro da mediana da
+> categoria (R$ 2,150) — 80% é oficina (R$ 2.130,00 em 456 km)
+
+`rubricaDominante_()` devolve a maior das oito colunas de custo variável com a
+participação dela. Quem lê separa num relance "mês atípico" de "problema
+estrutural", sem sair do e-mail.
+
+Duas observações que ficam registradas, não viraram código:
+
+1. **O piso de rodagem passou raspando.** O piso é 20% da mediana de km da
+   categoria; a Saveiro rodou 456 km. Num mês de rodagem um pouco menor ela
+   teria sido excluída da avaliação e o aviso nem existiria. O piso continua
+   como está porque não tenho evidência de qual valor seria melhor — mas é um
+   limiar que decide por pouco, e isso merece ser dito.
+2. **A categoria é grossa demais.** É uma Saveiro classificada como *Leve* mas
+   lotada em EMPILHADEIRAS: um veículo de apoio de pátio, comparado contra
+   leves que rodam milhares de km. É o mesmo ponto de granularidade dos grupos
+   de frota (V4.10), agora com um caso concreto.
+
+Também vale saber, para não estranhar a diferença: a tela de consulta mostra
+`R$ POR KM` como **total ÷ km**, enquanto o alerta usa **custo variável ÷ km**.
+Nesta Saveiro os dois batem só porque ela não tem custo fixo no mês.
+
+Provas: `conferir_alerta_diario.js` subiu de 46 para 57, com a fixture
+reproduzindo a SXC 9I77. Duas mutações confirmaram a cobertura — tirar a
+composição derruba 5 provas, ignorar linha de custo zero derruba 1.

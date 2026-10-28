@@ -557,7 +557,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.15.2';
+const VERSAO_SISTEMA = '4.15.3';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -12529,6 +12529,38 @@ function custoVariavelResumo_(linha) {
   return total;
 }
 
+/** Rotulo legivel de cada coluna de custo variavel, para a composicao do alerta. */
+const ROTULO_CUSTO_VARIAVEL_ = {
+  COMBUSTIVEL: 'combustível', LUBRIFICANTE: 'lubrificante', ARLA: 'ARLA',
+  LAVACAO: 'lavação', OFICINA: 'oficina', PNEUS: 'pneus',
+  PEDAGIO: 'pedágio', GAS: 'gás',
+};
+
+/**
+ * Rubrica que mais pesa no custo variavel do veiculo, com a participacao dela.
+ *
+ * Existe porque "R$ 6,103/km, mais que o dobro da mediana" manda o operador
+ * abrir a consulta de cada veiculo para descobrir o obvio. No caso que motivou
+ * isto — uma Saveiro com R$ 2.130 de oficina diluidos em 456 km — o consumo
+ * estava normal (5,23 km/l) e o estouro era manutencao pontual. Dizer isso na
+ * propria linha separa "mes atipico" de "problema estrutural" sem sair da tela.
+ */
+function rubricaDominante_(linha) {
+  let melhor = null;
+  let total = 0;
+  R_CUSTO_VARIAVEL_.forEach(function (nome) {
+    const v = Number(linha[R_[nome]]) || 0;
+    total += v;
+    if (!melhor || v > melhor.valor) melhor = { nome: nome, valor: v };
+  });
+  if (!melhor || total <= 0 || melhor.valor <= 0) return null;
+  return {
+    rotulo: ROTULO_CUSTO_VARIAVEL_[melhor.nome] || melhor.nome.toLowerCase(),
+    valor: melhor.valor,
+    fracao: melhor.valor / total,
+  };
+}
+
 /**
  * Mediana de uma lista de numeros.
  *
@@ -12609,7 +12641,8 @@ function alertasConsumo_() {
       const litros = Number(l[R_.LITROS]) || 0;
       return { placa: String(l[R_.PLACA] || ''), km: km,
         custoKm: km > 0 ? custoVariavelResumo_(l) / km : 0,
-        kmLitro: litros > 0 ? km / litros : 0 };
+        kmLitro: litros > 0 ? km / litros : 0,
+        dominante: rubricaDominante_(l) };
     });
     const refCustoKm = mediana_(medida.map(function (m) { return m.custoKm; }));
     const comLitros = medida.filter(function (m) { return m.kmLitro > 0; });
@@ -12618,8 +12651,14 @@ function alertasConsumo_() {
     medida.forEach(function (m) {
       const desvios = [];
       if (refCustoKm > 0 && m.custoKm > 2 * refCustoKm) {
+        // A composição vem junto: sem ela, descobrir que foi uma oficina pontual
+        // exige abrir a consulta de um veículo por vez.
+        const comp = m.dominante
+          ? ' — ' + Math.round(m.dominante.fracao * 100) + '% é ' + m.dominante.rotulo +
+            ' (R$ ' + numBR_(m.dominante.valor, 2) + ' em ' + numBR_(m.km, 0) + ' km)'
+          : '';
         desvios.push('custo variável R$ ' + numBR_(m.custoKm, 3) + '/km, mais que o dobro ' +
-          'da mediana da categoria (R$ ' + numBR_(refCustoKm, 3) + ')');
+          'da mediana da categoria (R$ ' + numBR_(refCustoKm, 3) + ')' + comp);
       }
       if (refKmLitro > 0 && m.kmLitro > 0 && m.kmLitro < refKmLitro / 2) {
         desvios.push('rendimento ' + numBR_(m.kmLitro, 2) + ' km/l, menos da metade ' +

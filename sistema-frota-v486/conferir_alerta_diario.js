@@ -37,7 +37,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     montarAlertasDiarios_, destinatariosAlerta_, enviarAlertasDiariosAgendado_,
     corpoAlertaHtml_, R_, TOTAL_COL_RESUMO, COL_VEIC, PRODUTOS_BOMBA,
     custoVariavelResumo_, R_CUSTO_VARIAVEL_, MINIMO_VEICULOS_REFERENCIA_, mediana_,
-    numBR_, alertasConsumo_,
+    numBR_, alertasConsumo_, rubricaDominante_, ROTULO_CUSTO_VARIAVEL_,
     MAXIMO_ITENS_POR_BLOCO_,
   });
   exigirExecucaoMutacao_ = function () {};
@@ -346,6 +346,60 @@ ok('numBR_ formata com vírgula', ctx.numBR_(4.604, 3) === '4,604', ctx.numBR_(4
 ok('e com ponto no milhar, que é o certo em pt-BR',
   ctx.numBR_(1278.5, 2) === '1.278,50', ctx.numBR_(1278.5, 2));
 ok('zero e nulo não viram NaN', ctx.numBR_(0, 2) === '0,00' && ctx.numBR_(null, 2) === '0,00');
+
+console.log('\n11. O alerta diz do que é feito o custo');
+// Caso real: SXC 9I77, uma Saveiro com 456 km no mês e R$ 2.130 de oficina.
+// O km/l estava normal (5,23) e mesmo assim ela aparecia no bloco "consumo
+// fora da curva" a R$ 6,103/km. Estava certo na aritmética e errado no que
+// comunicava: para descobrir que era UMA manutenção pontual, e não um
+// problema de consumo, era preciso abrir a consulta do veículo.
+limpar();
+function comOficina(placa, km, litros, combustivel, oficina) {
+  const l = linhaResumo(placa, km, litros, combustivel);
+  l[ctx.R_.OFICINA] = oficina;
+  l[ctx.R_.TOTAL] = combustivel + oficina;
+  l[ctx.R_.RS_KM] = km > 0 ? (combustivel + oficina) / km : 0;
+  return l;
+}
+ctx.__resumo = [
+  // A rodagem da referência importa: o piso de rodagem é uma fração da
+  // mediana da categoria, e foi por pouco que a Saveiro passou por ele.
+  comOficina('REF1', 2000, 250, 3500, 800),
+  comOficina('REF2', 2000, 250, 3600, 700),
+  comOficina('REF3', 2000, 250, 3400, 900),
+  comOficina('REF4', 2000, 250, 3500, 800),
+  comOficina('SXC9I77', 456, 87.14, 542.71, 2130),
+];
+const saveiro = ctx.alertasConsumo_().filter(function (a) { return a.indexOf('SXC9I77') === 0; })[0] || '';
+ok('o veículo continua sendo apontado', saveiro !== '', 'o alerta não pode deixar de avisar');
+ok('diz qual rubrica domina', /oficina/.test(saveiro), saveiro);
+ok('e com que participação', /8[01]% é oficina/.test(saveiro), saveiro);
+ok('mostra o valor da rubrica', /R\$ 2\.130,00/.test(saveiro), saveiro);
+ok('e a rodagem que está diluindo esse valor', /456 km/.test(saveiro), saveiro);
+ok('sem estragar o número principal', /R\$ 5,861\/km/.test(saveiro), saveiro);
+
+// A composição vale para qualquer rubrica, não só oficina.
+limpar();
+ctx.__resumo = [
+  linhaResumo('REF1', 4000, 500, 4000),
+  linhaResumo('REF2', 4000, 500, 4000),
+  linhaResumo('REF3', 4000, 500, 4000),
+  linhaResumo('REF4', 4000, 500, 4000),
+  linhaResumo('BEBE', 4000, 2000, 16000),
+];
+const bebe = ctx.alertasConsumo_().filter(function (a) { return a.indexOf('BEBE') === 0; })[0] || '';
+ok('quando é combustível mesmo, é isso que ele diz', /100% é combustível/.test(bebe), bebe);
+
+// E a função sozinha, nos cantos.
+const vazia = new Array(ctx.TOTAL_COL_RESUMO).fill(0);
+ok('linha sem nenhum custo não inventa rubrica', ctx.rubricaDominante_(vazia) === null);
+const empate = new Array(ctx.TOTAL_COL_RESUMO).fill(0);
+empate[ctx.R_.OFICINA] = 100; empate[ctx.R_.PNEUS] = 100;
+ok('empate escolhe um e não quebra', ctx.rubricaDominante_(empate) !== null);
+ok('e a fração do empate é metade', Math.abs(ctx.rubricaDominante_(empate).fracao - 0.5) < 1e-9);
+ok('toda coluna de custo variável tem rótulo em português',
+  ctx.R_CUSTO_VARIAVEL_.every(function (n) { return !!ctx.ROTULO_CUSTO_VARIAVEL_[n]; }),
+  'uma coluna sem rótulo cairia no nome interno da constante');
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);
