@@ -1827,3 +1827,82 @@ Nesta Saveiro os dois batem só porque ela não tem custo fixo no mês.
 Provas: `conferir_alerta_diario.js` subiu de 46 para 57, com a fixture
 reproduzindo a SXC 9I77. Duas mutações confirmaram a cobertura — tirar a
 composição derruba 5 provas, ignorar linha de custo zero derruba 1.
+
+## V4.16.0 — manutenção é evento, não rotina
+
+Você olhou a SXC 9I77 e disse a frase que faltava: *"provavelmente esse valor
+está fora porque foi feita manutenção preventiva no mês; como é algo que não é
+feito sempre, por isso o valor ficou fora do padrão"*.
+
+Isso não é uma observação sobre um veículo. É o **defeito do critério**.
+
+O alerta somava oito colunas de custo variável e dividia pelo km do mês.
+Combustível, lubrificante, ARLA, lavação, pedágio e gás acontecem *todo mês* e
+crescem com o km — a mediana mensal sabe julgar isso. Oficina e pneus
+acontecem *por evento*: uma preventiva de R$ 2.130 não é o custo daquele mês,
+é o custo de vinte mil quilômetros que calhou de ser pago naquele mês. Jogar
+os dois na mesma conta julga um evento com a régua de uma rotina, e o
+resultado é garantido: **todo veículo que faz a preventiva vira anomalia no mês
+em que a faz.**
+
+### O que mudou
+
+`R_CUSTO_VARIAVEL_` foi particionado em dois:
+
+| | colunas | julgado como |
+|---|---|---|
+| `R_CUSTO_RODAGEM_` | combustível, lubrificante, ARLA, lavação, pedágio, gás | desvio contra a mediana da categoria |
+| `R_CUSTO_MANUTENCAO_` | oficina, pneus | **corte por valor**, em bloco próprio |
+
+O bloco "Consumo fora da curva" passa a medir só rodagem e a dizer *custo de
+rodagem* em vez de *custo variável* — o nome agora corresponde ao que a conta
+faz. A SXC 9I77 sai dele: a rodagem dela é R$ 1,43/km, dentro da faixa.
+
+O bloco novo, "Manutenção do mês", mostra o mesmo gasto sem chamá-lo de
+anomalia:
+
+> SXC9I77 (Leve) — R$ 2.130,00 em oficina e pneus — R$ 4,67/km se diluído nos
+> 456 km do mês
+>
+> — corte por valor (acima de R$ 1.500,00), não por desvio: manutenção é gasto
+> por evento, e um mês caro pode ser simplesmente a preventiva que venceu.
+
+Não há critério estatístico nele **de propósito**. Comparar gasto por evento
+contra a mediana mensal dos outros veículos seria repetir o mesmo erro num
+bloco novo. É um corte por valor, e o texto diz que é um corte por valor. O
+piso vem do parâmetro `MANUTENCAO_RELEVANTE_RS` (padrão R$ 1.500); zero
+desliga o bloco.
+
+`paramOuPadrao_` lê parâmetro que pode não existir: `param_` lança quando o
+nome falta, e está certo — mas um parâmetro *novo* falta em toda planilha que
+ainda não rodou o Instalar, e derrubar o alerta por isso trocaria um aviso
+útil por silêncio.
+
+### O que NÃO foi resolvido
+
+**O sistema ainda não sabe o que é preventiva.** `NATUREZAS_OFICINA` tem onze
+opções — *Peça de reposição*, *Freios / suspensão*, *Motor / transmissão*… —
+e todas respondem **o que foi feito**. Nenhuma responde **por que**. Preventiva
+versus corretiva é um eixo que simplesmente não existe no cadastro, e é por
+isso que o alerta não conseguia distinguir os dois casos sozinho: a informação
+nunca foi pedida. Separar rodagem de manutenção tira o falso alarme, mas é
+contorno — a classificação certa continua faltando.
+
+**O alerta é diário e o resumo é mensal.** A SXC 9I77 vai aparecer no bloco de
+manutenção todos os dias até virar a competência. Isso já valia para o bloco
+de consumo, então o comportamento não piorou, mas agora há uma linha a mais
+repetindo. Resolver exigiria o alerta lembrar o que já avisou.
+
+### Provas
+
+`conferir_alerta_diario.js`: 57 → 72. Sete mutações, sete pegas — devolver
+oficina à rodagem derruba 11 provas.
+
+Uma correção no método, não no código: a verificação de mutação contava linhas
+`FALHA`, e isso dá zero tanto quando a prova não pega quanto quando o arquivo
+nem compila. Dois casos opostos com a mesma aparência. Passou a olhar o código
+de saída e a separar `SOBREVIVEU` de `CRASH`. Na primeira rodada honesta, duas
+provas que pareciam boas eram fracas: uma rebentava com `TypeError` em vez de
+reprovar, e a de `paramOuPadrao_` passava pelo ramo do `undefined` sem nunca
+entrar no `catch` que dizia testar — `param_` não lança no ambiente de prova.
+Agora o teste força o lançamento.

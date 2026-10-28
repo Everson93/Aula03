@@ -101,6 +101,25 @@ const TIPOS_COM_LITROS = [
  */
 const GRUPO_FROTA_OUTROS_ = 'Outros';
 
+/**
+ * Parametro que pode nao existir ainda.
+ *
+ * `param_` lanca quando o nome falta na aba, e esta certo: um parametro
+ * esquecido tem de aparecer. Mas um parametro NOVO falta em toda instalacao
+ * que ainda nao rodou o Instalar — e derrubar o alerta inteiro por causa
+ * disso trocaria um aviso util por silencio. Aqui o padrao vale ate a
+ * planilha ser atualizada.
+ */
+function paramOuPadrao_(nome, padrao) {
+  try {
+    const v = param_(nome);
+    if (v === '' || v === null || v === undefined) return padrao;
+    return v;
+  } catch (e) {
+    return padrao;
+  }
+}
+
 function gruposFrota_() {
   const bruto = String(param_('GRUPOS_FROTA') || '');
   const ordem = [];
@@ -527,6 +546,8 @@ const PARAMETROS_PADRAO = [
   ['EMAIL_ALERTAS', '', 'E-mails que recebem o alerta diário, separados por vírgula (vazio desliga)'],
   ['HORA_ALERTA', 7, 'Hora do dia (0-23) em que o alerta diário é enviado'],
   ['ESTOQUE_MINIMO_L', 500, 'Litros abaixo dos quais o tanque interno entra no alerta diário'],
+  ['MANUTENCAO_RELEVANTE_RS', 1500,
+    'Valor de oficina+pneus no mês a partir do qual o veículo entra no bloco de manutenção'],
   ['GRUPOS_FROTA',
     'Transporte: Truck Normal, Truck Frigorifico, Carreta Normal, Carreta Frigorifica | ' +
     'Apoio: Carro, Moto, Leve | Operação interna: Empilhadeira/Paleteira, Maquina',
@@ -557,7 +578,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.15.3';
+const VERSAO_SISTEMA = '4.16.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -12523,6 +12544,30 @@ const MINIMO_VEICULOS_REFERENCIA_ = 4;
 /** Fracao da rodagem mediana da categoria abaixo da qual o veiculo nao e avaliado. */
 const FRACAO_RODAGEM_MINIMA_ = 0.2;
 
+/**
+ * Custo de MANUTENCAO: acontece por evento, nao por mes.
+ *
+ * Uma preventiva de R$ 2.130 nao e "o custo daquele mes" — e o custo de vinte
+ * mil quilometros, que calhou de ser pago naquele mes. Comparar isso contra a
+ * mediana mensal da categoria e erro de categoria: julga um evento com a regua
+ * de uma rotina. Por isso sai da conta de outlier e vira bloco proprio.
+ */
+const R_CUSTO_MANUTENCAO_ = ['OFICINA', 'PNEUS'];
+
+/** Custo que anda junto com o km todo mes: e esse que a mediana sabe julgar. */
+const R_CUSTO_RODAGEM_ = R_CUSTO_VARIAVEL_.filter(function (n) {
+  return R_CUSTO_MANUTENCAO_.indexOf(n) === -1;
+});
+
+function somarColunas_(linha, colunas) {
+  let total = 0;
+  colunas.forEach(function (nome) { total += Number(linha[R_[nome]]) || 0; });
+  return total;
+}
+
+function custoRodagemResumo_(linha) { return somarColunas_(linha, R_CUSTO_RODAGEM_); }
+function custoManutencaoResumo_(linha) { return somarColunas_(linha, R_CUSTO_MANUTENCAO_); }
+
 function custoVariavelResumo_(linha) {
   let total = 0;
   R_CUSTO_VARIAVEL_.forEach(function (nome) { total += Number(linha[R_[nome]]) || 0; });
@@ -12545,10 +12590,10 @@ const ROTULO_CUSTO_VARIAVEL_ = {
  * estava normal (5,23 km/l) e o estouro era manutencao pontual. Dizer isso na
  * propria linha separa "mes atipico" de "problema estrutural" sem sair da tela.
  */
-function rubricaDominante_(linha) {
+function rubricaDominante_(linha, colunas) {
   let melhor = null;
   let total = 0;
-  R_CUSTO_VARIAVEL_.forEach(function (nome) {
+  (colunas || R_CUSTO_VARIAVEL_).forEach(function (nome) {
     const v = Number(linha[R_[nome]]) || 0;
     total += v;
     if (!melhor || v > melhor.valor) melhor = { nome: nome, valor: v };
@@ -12602,6 +12647,49 @@ function mediana_(valores) {
  * mesmo campo em que o caminhao marca KM, e um piso absoluto excluiria todas as
  * empilhadeiras ou nenhuma carreta.
  */
+/**
+ * Manutencao do mes: informacao, nao anomalia.
+ *
+ * Este bloco existe porque oficina e pneus saíram da conta de outlier. Eles
+ * continuam importando — R$ 2.130 numa Saveiro merece ser visto —, so nao
+ * merecem ser chamados de "consumo fora da curva". A diferenca nao e de
+ * formatacao: um aviso que diz a coisa errada ensina a ignorar o aviso.
+ *
+ * Nao ha criterio estatistico aqui de proposito. Comparar um gasto por evento
+ * contra a mediana mensal dos outros veiculos seria o mesmo erro, so que num
+ * bloco novo. E um corte por valor, e diz que e um corte por valor.
+ */
+function alertasManutencao_() {
+  const piso = Number(paramOuPadrao_('MANUTENCAO_RELEVANTE_RS', 1500)) || 0;
+  if (piso <= 0) return [];
+
+  const relevantes = lerResumo_()
+    .map(function (l) {
+      return {
+        placa: String(l[R_.PLACA] || ''),
+        categoria: String(l[R_.CATEGORIA] || '').trim() || '(sem categoria)',
+        valor: custoManutencaoResumo_(l),
+        km: Number(l[R_.KM]) || 0,
+      };
+    })
+    .filter(function (v) { return v.placa && v.valor >= piso; })
+    .sort(function (a, b) { return b.valor - a.valor; });
+
+  if (!relevantes.length) return [];
+
+  const itens = relevantes.map(function (v) {
+    // A rodagem vai junto porque e ela que diz se o gasto se dilui ou nao.
+    const porKm = v.km > 0 ? ' — R$ ' + numBR_(v.valor / v.km, 2) + '/km se diluído nos ' +
+      numBR_(v.km, 0) + ' km do mês' : ' — veículo sem rodagem no mês';
+    return v.placa + ' (' + v.categoria + ') — R$ ' + numBR_(v.valor, 2) +
+      ' em oficina e pneus' + porKm;
+  });
+  itens.push('— corte por valor (acima de R$ ' + numBR_(piso, 2) + '), não por desvio: ' +
+    'manutenção é gasto por evento, e um mês caro pode ser simplesmente a ' +
+    'preventiva que venceu.');
+  return itens;
+}
+
 function alertasConsumo_() {
   const linhas = lerResumo_().filter(function (l) { return Number(l[R_.KM]) > 0; });
   if (!linhas.length) return [];
@@ -12640,9 +12728,9 @@ function alertasConsumo_() {
       const km = Number(l[R_.KM]) || 0;
       const litros = Number(l[R_.LITROS]) || 0;
       return { placa: String(l[R_.PLACA] || ''), km: km,
-        custoKm: km > 0 ? custoVariavelResumo_(l) / km : 0,
+        custoKm: km > 0 ? custoRodagemResumo_(l) / km : 0,
         kmLitro: litros > 0 ? km / litros : 0,
-        dominante: rubricaDominante_(l) };
+        dominante: rubricaDominante_(l, R_CUSTO_RODAGEM_) };
     });
     const refCustoKm = mediana_(medida.map(function (m) { return m.custoKm; }));
     const comLitros = medida.filter(function (m) { return m.kmLitro > 0; });
@@ -12657,7 +12745,7 @@ function alertasConsumo_() {
           ? ' — ' + Math.round(m.dominante.fracao * 100) + '% é ' + m.dominante.rotulo +
             ' (R$ ' + numBR_(m.dominante.valor, 2) + ' em ' + numBR_(m.km, 0) + ' km)'
           : '';
-        desvios.push('custo variável R$ ' + numBR_(m.custoKm, 3) + '/km, mais que o dobro ' +
+        desvios.push('custo de rodagem R$ ' + numBR_(m.custoKm, 3) + '/km, mais que o dobro ' +
           'da mediana da categoria (R$ ' + numBR_(refCustoKm, 3) + ')' + comp);
       }
       if (refKmLitro > 0 && m.kmLitro > 0 && m.kmLitro < refKmLitro / 2) {
@@ -12771,6 +12859,8 @@ function montarAlertasDiarios_() {
   // Cada bloco e isolado: um erro em "tanque" nao pode impedir o aviso de odometro.
   try { bloco('Consumo fora da curva', alertasConsumo_()); }
   catch (e) { blocos.push({ titulo: 'Consumo fora da curva', itens: ['Não foi possível apurar: ' + e.message] }); }
+  try { bloco('Manutenção do mês', alertasManutencao_()); }
+  catch (e) { blocos.push({ titulo: 'Manutenção do mês', itens: ['Não foi possível apurar: ' + e.message] }); }
   try { bloco('Tanque e pendências', alertasTanqueEPendencias_()); }
   catch (e) { blocos.push({ titulo: 'Tanque e pendências', itens: ['Não foi possível apurar: ' + e.message] }); }
   try { bloco('Odômetro e IPVA', alertasOdometroEIpva_()); }

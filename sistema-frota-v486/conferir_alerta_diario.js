@@ -38,6 +38,8 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     corpoAlertaHtml_, R_, TOTAL_COL_RESUMO, COL_VEIC, PRODUTOS_BOMBA,
     custoVariavelResumo_, R_CUSTO_VARIAVEL_, MINIMO_VEICULOS_REFERENCIA_, mediana_,
     numBR_, alertasConsumo_, rubricaDominante_, ROTULO_CUSTO_VARIAVEL_,
+    alertasManutencao_, custoRodagemResumo_, custoManutencaoResumo_,
+    R_CUSTO_RODAGEM_, R_CUSTO_MANUTENCAO_, paramOuPadrao_,
     MAXIMO_ITENS_POR_BLOCO_,
   });
   exigirExecucaoMutacao_ = function () {};
@@ -347,38 +349,69 @@ ok('e com ponto no milhar, que é o certo em pt-BR',
   ctx.numBR_(1278.5, 2) === '1.278,50', ctx.numBR_(1278.5, 2));
 ok('zero e nulo não viram NaN', ctx.numBR_(0, 2) === '0,00' && ctx.numBR_(null, 2) === '0,00');
 
-console.log('\n11. O alerta diz do que é feito o custo');
-// Caso real: SXC 9I77, uma Saveiro com 456 km no mês e R$ 2.130 de oficina.
-// O km/l estava normal (5,23) e mesmo assim ela aparecia no bloco "consumo
-// fora da curva" a R$ 6,103/km. Estava certo na aritmética e errado no que
-// comunicava: para descobrir que era UMA manutenção pontual, e não um
-// problema de consumo, era preciso abrir a consulta do veículo.
+console.log('\n11. Manutenção é evento, não rotina');
+// Caso real: SXC 9I77, uma Saveiro com 456 km no mês e R$ 2.130 de oficina —
+// preventiva, confirmada pelo usuário. O km/l estava normal (5,23) e ela
+// aparecia no bloco "consumo fora da curva" a R$ 6,103/km.
+//
+// A aritmética estava certa e o aviso estava errado: julgava um gasto POR
+// EVENTO com a régua de um gasto POR MÊS. Vinte mil km de preventiva pagos
+// num mês só não são o custo daquele mês.
 limpar();
-function comOficina(placa, km, litros, combustivel, oficina) {
+function comOficina(placa, km, litros, combustivel, oficina, lavacao) {
   const l = linhaResumo(placa, km, litros, combustivel);
   l[ctx.R_.OFICINA] = oficina;
-  l[ctx.R_.TOTAL] = combustivel + oficina;
-  l[ctx.R_.RS_KM] = km > 0 ? (combustivel + oficina) / km : 0;
+  l[ctx.R_.LAVACAO] = lavacao || 0;
+  l[ctx.R_.TOTAL] = combustivel + oficina + (lavacao || 0);
+  l[ctx.R_.RS_KM] = km > 0 ? l[ctx.R_.TOTAL] / km : 0;
   return l;
 }
 ctx.__resumo = [
-  // A rodagem da referência importa: o piso de rodagem é uma fração da
-  // mediana da categoria, e foi por pouco que a Saveiro passou por ele.
   comOficina('REF1', 2000, 250, 3500, 800),
   comOficina('REF2', 2000, 250, 3600, 700),
   comOficina('REF3', 2000, 250, 3400, 900),
   comOficina('REF4', 2000, 250, 3500, 800),
-  comOficina('SXC9I77', 456, 87.14, 542.71, 2130),
+  comOficina('SXC9I77', 456, 87.14, 542.71, 2130, 110.14),
 ];
-const saveiro = ctx.alertasConsumo_().filter(function (a) { return a.indexOf('SXC9I77') === 0; })[0] || '';
-ok('o veículo continua sendo apontado', saveiro !== '', 'o alerta não pode deixar de avisar');
-ok('diz qual rubrica domina', /oficina/.test(saveiro), saveiro);
-ok('e com que participação', /8[01]% é oficina/.test(saveiro), saveiro);
-ok('mostra o valor da rubrica', /R\$ 2\.130,00/.test(saveiro), saveiro);
-ok('e a rodagem que está diluindo esse valor', /456 km/.test(saveiro), saveiro);
-ok('sem estragar o número principal', /R\$ 5,861\/km/.test(saveiro), saveiro);
+const consumo = ctx.alertasConsumo_().join(' | ');
+ok('a preventiva NÃO é mais chamada de consumo fora da curva',
+  consumo.indexOf('SXC9I77') === -1,
+  'era este o falso alarme: ' + consumo);
+ok('e o bloco de consumo fica vazio, porque não havia nada de errado no consumo',
+  !/SXC|REF/.test(consumo), consumo);
 
-// A composição vale para qualquer rubrica, não só oficina.
+const manut = ctx.alertasManutencao_();
+const linhaSxc = manut.filter(function (x) { return x.indexOf('SXC9I77') === 0; })[0] || '';
+ok('mas o gasto continua sendo mostrado', linhaSxc !== '',
+  'tirar do bloco errado não pode virar esconder');
+ok('com o valor cheio', /R\$ 2\.130,00/.test(linhaSxc), linhaSxc);
+ok('e a rodagem em que ele se dilui', /456 km/.test(linhaSxc), linhaSxc);
+ok('dizendo que o corte é por valor, não por desvio',
+  manut.some(function (x) { return /corte por valor/.test(x); }), manut.join(' | '));
+ok('quem gastou pouco em oficina não entra', !/REF[1-4]/.test(manut.join(' | ')), manut.join(' | '));
+
+// Ordem importa: quem gastou mais aparece primeiro.
+limpar();
+ctx.__resumo = [
+  comOficina('PEQ', 2000, 250, 3000, 1600),
+  comOficina('GRA', 2000, 250, 3000, 9000),
+];
+const ordenado = ctx.alertasManutencao_();
+// Sem esta guarda, uma mutação que esvazia a lista rebenta o teste com
+// TypeError em vez de reprovar — e crash não é reprovação, é ruído.
+ok('os dois entram na lista', ordenado.length >= 2, JSON.stringify(ordenado));
+ok('o maior gasto vem primeiro', (ordenado[0] || '').indexOf('GRA') === 0, ordenado[0]);
+ok('e o menor depois', (ordenado[1] || '').indexOf('PEQ') === 0, ordenado[1]);
+
+// Um veículo parado que teve oficina: dividir por zero km não pode virar Infinity.
+limpar();
+const parado2 = comOficina('PARADO', 0, 0, 0, 5000);
+ctx.__resumo = [parado2];
+const semKm = ctx.alertasManutencao_()[0] || '';
+ok('veículo sem rodagem não vira Infinity por km',
+  /sem rodagem no mês/.test(semKm) && !/Infinity|NaN/.test(semKm), semKm);
+
+// Consumo de verdade continua sendo pego.
 limpar();
 ctx.__resumo = [
   linhaResumo('REF1', 4000, 500, 4000),
@@ -388,9 +421,67 @@ ctx.__resumo = [
   linhaResumo('BEBE', 4000, 2000, 16000),
 ];
 const bebe = ctx.alertasConsumo_().filter(function (a) { return a.indexOf('BEBE') === 0; })[0] || '';
-ok('quando é combustível mesmo, é isso que ele diz', /100% é combustível/.test(bebe), bebe);
+ok('quem realmente gasta demais na rodagem continua sendo pego', bebe !== '', 'o remédio não pode matar o alerta');
+ok('e o texto agora diz "rodagem", não "variável"', /custo de rodagem/.test(bebe), bebe);
+ok('com a composição', /100% é combustível/.test(bebe), bebe);
 
-// E a função sozinha, nos cantos.
+// As duas listas de colunas têm de particionar a antiga, sem sobra nem sobreposição.
+ok('rodagem + manutenção = todo o custo variável, sem perder coluna',
+  ctx.R_CUSTO_RODAGEM_.concat(ctx.R_CUSTO_MANUTENCAO_).sort().join(',') ===
+  ctx.R_CUSTO_VARIAVEL_.slice().sort().join(','),
+  'uma coluna fora das duas listas sumiria de todos os alertas');
+ok('e nenhuma coluna está nas duas',
+  !ctx.R_CUSTO_RODAGEM_.some(function (n) { return ctx.R_CUSTO_MANUTENCAO_.indexOf(n) !== -1; }));
+const somaL = comOficina('X', 1000, 100, 700, 300, 50);
+ok('as duas somas reconstroem o custo variável',
+  Math.abs(ctx.custoRodagemResumo_(somaL) + ctx.custoManutencaoResumo_(somaL) -
+    ctx.custoVariavelResumo_(somaL)) < 1e-9);
+
+// O parâmetro é novo: toda instalação que ainda não rodou o Instalar não o tem,
+// e `param_` lança nesse caso. Derrubar o alerta inteiro por causa disso
+// trocaria um aviso útil por silêncio.
+//
+// Este teste tem de FORÇAR o lançamento: no ambiente de prova `param_` devolve
+// undefined em vez de lançar, e a versão anterior passava pelo ramo errado —
+// aprovava o `catch` sem nunca entrar nele.
+const paramReal = ctx.param_;
+ctx.param_ = function () { throw new Error('Parâmetro "X" não encontrado na aba Parâmetros.'); };
+let caiuNoPadrao = null;
+try { caiuNoPadrao = ctx.paramOuPadrao_('MANUTENCAO_RELEVANTE_RS', 1500); }
+catch (e) { caiuNoPadrao = 'LANÇOU: ' + e.message; }
+ok('param_ que lança cai no padrão em vez de derrubar o bloco',
+  caiuNoPadrao === 1500, String(caiuNoPadrao));
+
+// E o bloco inteiro continua de pé com o parâmetro faltando.
+limpar();
+ctx.__resumo = [comOficina('SXC9I77', 456, 87.14, 542.71, 2130, 110.14)];
+let blocoVivo;
+try { blocoVivo = ctx.alertasManutencao_(); } catch (e) { blocoVivo = 'LANÇOU: ' + e.message; }
+ok('o bloco de manutenção sobrevive à falta do parâmetro',
+  Array.isArray(blocoVivo) && /SXC9I77/.test(blocoVivo.join(' ')), String(blocoVivo));
+ctx.param_ = paramReal;
+
+ok('valor presente é usado, não o padrão',
+  ctx.paramOuPadrao_ && (function () {
+    const salvo = ctx.param_;
+    ctx.param_ = function () { return 4000; };
+    const r = ctx.paramOuPadrao_('MANUTENCAO_RELEVANTE_RS', 1500);
+    ctx.param_ = salvo;
+    return r === 4000;
+  })(), 'o padrão não pode ganhar de um valor configurado');
+
+// Piso configurado acima do gasto: o veículo sai da lista.
+limpar();
+ctx.__resumo = [comOficina('SXC9I77', 456, 87.14, 542.71, 2130, 110.14)];
+const salvoP = ctx.param_;
+ctx.param_ = function () { return 5000; };
+ok('piso alto tira o veículo da lista', ctx.alertasManutencao_().length === 0,
+  'o parâmetro tem de mandar de verdade');
+ctx.param_ = function () { return 0; };
+ok('piso zero desliga o bloco', ctx.alertasManutencao_().length === 0);
+ctx.param_ = salvoP;
+
+// E a função de rubrica dominante, nos cantos.
 const vazia = new Array(ctx.TOTAL_COL_RESUMO).fill(0);
 ok('linha sem nenhum custo não inventa rubrica', ctx.rubricaDominante_(vazia) === null);
 const empate = new Array(ctx.TOTAL_COL_RESUMO).fill(0);
