@@ -8,20 +8,22 @@ da web. Estado completo em `ESTADO_DO_PROJETO.md`; histórico de decisões em
 
 - `sistema-frota-v486/Codigo.gs` — todo o servidor (527 funções)
 - `sistema-frota-v486/App.html` — o app da web inteiro, num arquivo
-- `sistema-frota-v486/conferir_*.js` — 19 suítes, 409 provas
+- `sistema-frota-v486/conferir_*.js` — 25 suítes, 605 provas
 
 ## Rodar as provas
 
 ```bash
 cd sistema-frota-v486
 for f in conferir_*.js; do
-  if [ "$f" = conferir_callbacks.js ]; then
-    node "$f" Codigo.gs App.html Lancamento.html Central.html
-  else node "$f"; fi
+  case "$f" in
+    conferir_callbacks.js) node "$f" Codigo.gs App.html Lancamento.html Central.html ;;
+    conferir_nomes_unicos.js) node "$f" Codigo.gs ;;
+    *) node "$f" ;;
+  esac
 done
 ```
 
-`conferir_callbacks.js` é a única que recebe os arquivos como argumento.
+`conferir_callbacks.js` e `conferir_nomes_unicos.js` recebem os arquivos como argumento.
 
 ## Regras
 
@@ -44,6 +46,12 @@ mais voltou neste projeto foi uma checagem que olhava um lado de algo que tem
 dois ou três. Quando der, escreva uma regra estática que leia o código-fonte e
 confronte os lados — é o que `conferir_telas.js` e `conferir_funcoes_html.js`
 fazem.
+
+**Nome novo no `Codigo.gs` é nome global.** Todos os `.gs` viram um escopo só,
+e duas funções com o mesmo nome não dão erro: a última sobrescreve a primeira,
+em silêncio, inclusive para código que roda antes dela (hoisting). Antes de
+criar uma função, `grep -n "^function nome_" Codigo.gs`. A suíte
+`conferir_nomes_unicos.js` guarda isso.
 
 **`Date` entre realms**: um `Date` criado fora do `vm` não passa no
 `instanceof Date` de dentro. Use `Object.prototype.toString.call()`.

@@ -2354,3 +2354,51 @@ divergência nenhuma para a prova examinar. O teste reprovou por causa da
 fixture, não do código. Corrigido para 150 + 200.
 
 Total do projeto: **598 provas**.
+
+
+## V4.19.1 — o login parou, e a culpa era de um nome
+
+Você disse que o login parou. Não era o login.
+
+Na V4.16 eu criei uma função chamada `somarColunas_`. **Já existia uma.**
+
+| | assinatura | devolve |
+|---|---|---|
+| a dos relatórios (linha 8975) | `(linhas, indices)` — várias linhas, índices numéricos | **array** de totais |
+| a que eu criei (linha 13375) | `(linha, colunas)` — uma linha, nomes de coluna | **número** |
+
+Em Apps Script todos os `.gs` viram **um escopo só**. Duas funções com o mesmo
+nome não dão erro: a última sobrescreve a primeira. E por causa do *hoisting*,
+a sobrescrita é total — vale até para o código que roda antes dela no arquivo.
+
+Então os **onze** pontos dos relatórios que faziam
+`somarColunas_(dados, [R_.IPVA])[0]` passaram a receber um número, e `[0]` de
+um número é `undefined`. Os relatórios estavam quebrados desde a V4.16, três
+versões atrás, e só apareceu agora como "não efetua login" porque é por ali
+que a tela inicial passa.
+
+### Por que nada pegou
+
+- **`node --check` não pega**: redefinir função é JavaScript válido.
+- **As 598 provas não pegaram**: cada suíte carrega o que precisa e nenhuma
+  exercitava os dois usos no mesmo lugar. Comportamento não vê colisão de
+  nome — o código roda, só roda a função errada.
+- **Eu não pegaria lendo**: o arquivo tem 15 mil linhas e as duas definições
+  estão a 4.400 linhas de distância.
+
+Só olhar o fonte inteiro pega. É o mesmo remédio das outras vezes: **regra
+estática que lê o código e confronta os lados**.
+
+### Conserto
+
+A minha virou `somarColunasDoResumo_`, com o porquê escrito em cima dela. A
+dos relatórios não foi tocada.
+
+`conferir_nomes_unicos.js` (7 provas) agora recusa qualquer nome definido duas
+vezes — função, constante de topo, e os dois nomes iguais entre si. Rodar
+primeiro, porque uma colisão invalida tudo o que vier depois.
+
+E o CLAUDE.md ganhou a regra: antes de criar uma função,
+`grep -n "^function nome_" Codigo.gs`.
+
+Total do projeto: **605 provas**.

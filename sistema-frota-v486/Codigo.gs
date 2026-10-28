@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.19.0';
+const VERSAO_SISTEMA = '4.19.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -13372,14 +13372,24 @@ const R_CUSTO_RODAGEM_ = R_CUSTO_VARIAVEL_.filter(function (n) {
   return R_CUSTO_MANUTENCAO_.indexOf(n) === -1;
 });
 
-function somarColunas_(linha, colunas) {
+/**
+ * Soma colunas de UMA linha do Resumo, pelos NOMES de R_.
+ *
+ * O nome tem de ser este, e nao "somarColunas_": ja existe uma
+ * `somarColunas_(linhas, indices)` nos relatorios, que recebe VARIAS linhas e
+ * indices numericos e devolve um ARRAY. Em Apps Script o arquivo inteiro e um
+ * escopo so, entao a segunda definicao sobrescreve a primeira em silencio —
+ * sem erro, sem aviso. Foi o que aconteceu na V4.16 e quebrou os relatorios
+ * e o login. Ver conferir_nomes_unicos.js.
+ */
+function somarColunasDoResumo_(linha, colunas) {
   let total = 0;
   colunas.forEach(function (nome) { total += Number(linha[R_[nome]]) || 0; });
   return total;
 }
 
-function custoRodagemResumo_(linha) { return somarColunas_(linha, R_CUSTO_RODAGEM_); }
-function custoManutencaoResumo_(linha) { return somarColunas_(linha, R_CUSTO_MANUTENCAO_); }
+function custoRodagemResumo_(linha) { return somarColunasDoResumo_(linha, R_CUSTO_RODAGEM_); }
+function custoManutencaoResumo_(linha) { return somarColunasDoResumo_(linha, R_CUSTO_MANUTENCAO_); }
 
 function custoVariavelResumo_(linha) {
   let total = 0;
