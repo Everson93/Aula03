@@ -27,6 +27,8 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, { htmlRateioPdf_, escHtml_, brlPdf_, numBR_, VERSAO_SISTEMA,
     compararCentroNatural_, htmlFechamentoPdf_, tabelaRelatorioPdf_, secaoRateioPdf_,
     relatorioDepreciacaoPorBem_, relatorioManutencaoPorVeiculo_,
+    relatorioDespesasPorVeiculo_, rubricasDeOutros_, R_DESPESA_FECHAMENTO_,
+    R_DESPESA_EM_COLUNA_, R_DESPESA_EM_OUTROS_, R_FORA_DA_DESPESA_, R_COMPOEM_TOTAL_,
     R_, TOTAL_COL_RESUMO, COL_VEIC, col_ });
   exigirExecucaoLeitura_ = function () {};
   exigirExecucaoMutacao_ = function () {};
@@ -363,11 +365,18 @@ console.log('\n10. O documento do fechamento');
 // manutenção veículo a veículo. Sem rateio e sem agrupamento por loja — o
 // veículo já é vinculado à loja no cadastro, e o que se confere aqui são os
 // valores, linha a linha.
-function veicR(placa, desc, cat, centro, dep, ofi, pneus) {
+function veicR(placa, desc, cat, centro, dep, ofi, pneus, extras) {
   const l = new Array(ctx.TOTAL_COL_RESUMO).fill(0);
   l[ctx.R_.PLACA] = placa; l[ctx.R_.DESCRICAO] = desc; l[ctx.R_.CATEGORIA] = cat;
   l[ctx.R_.CENTRO] = centro; l[ctx.R_.DEPRECIACAO] = dep;
   l[ctx.R_.OFICINA] = ofi || 0; l[ctx.R_.PNEUS] = pneus || 0;
+  // V4.28: a seção 2 passou a ser TODA a despesa menos a depreciação. Sem
+  // combustível, IPVA e uma rubrica de "Outros" na fixture, somar as onze
+  // rubricas e somar só oficina+pneus dariam o mesmo número.
+  const e = extras || {};
+  l[ctx.R_.COMBUSTIVEL] = e.combustivel || 0;
+  l[ctx.R_.IPVA] = e.ipva || 0;
+  l[ctx.R_.PEDAGIO] = e.pedagio || 0;
   return l;
 }
 function cadastro(placa, patrimonio) {
@@ -378,20 +387,23 @@ function cadastro(placa, patrimonio) {
 }
 ctx.__apuracao = apuracao();
 ctx.__resumo = [
-  veicR('AAA 0001', 'Fiorino', 'Leve', 'Loja 02', 300, 1000, 0),
-  veicR('BBB 0002', 'Saveiro', 'Leve', 'Loja 10', 400, 500, 200),
-  veicR('CCC 0003', 'Truck', 'Truck Normal', 'Loja 02', 1200, 4000, 1000),
+  veicR('AAA 0001', 'Fiorino', 'Leve', 'Loja 02', 300, 1000, 0,
+    { combustivel: 800, ipva: 120, pedagio: 50 }),
+  veicR('BBB 0002', 'Saveiro', 'Leve', 'Loja 10', 400, 500, 200,
+    { combustivel: 600, ipva: 90 }),
+  veicR('CCC 0003', 'Truck', 'Truck Normal', 'Loja 02', 1200, 4000, 1000,
+    { combustivel: 2000, ipva: 300, pedagio: 150 }),
 ];
 ctx.__veic = [cadastro('AAA 0001', '10000017'), cadastro('BBB 0002', '10001099'),
   cadastro('CCC 0003', '10002200')];
 const hf = ctx.htmlFechamentoPdf_('2026-10');
 
 ok('tem as duas seções, numeradas',
-  /1\. Depreciação/.test(hf) && /2\. Manutenção/.test(hf),
+  /1\. Depreciação/.test(hf) && /2\. Despesas da frota/.test(hf),
   'seções: ' + (hf.match(/<h2>[^<]*/g) || []).join(' | '));
 ok('e NÃO tem o rateio', hf.indexOf('Rateio por centro') === -1 &&
   hf.indexOf('% Rateio') === -1, 'o rateio saiu do documento a pedido');
-ok('a manutenção começa em página própria',
+ok('a seção 2 começa em página própria',
   (hf.match(/class="secao quebra"/g) || []).length === 1);
 ok('o título é do documento', /<h1>Fechamento da Frota<\/h1>/.test(hf));
 
@@ -415,8 +427,12 @@ ok('a capa traz só os dois totais',
   (hf.match(/<div class="rot">([^<]*)<\/div><div class="val">/g) || []).join(' | '));
 ok('depreciação na capa', /Depreciação<\/div><div class="val">R\$ 1\.900,00/.test(hf),
   (hf.match(/Depreciação<\/div><div class="val">[^<]*/) || [''])[0]);
-ok('manutenção na capa', /Manutenção<\/div><div class="val">R\$ 6\.700,00/.test(hf),
-  (hf.match(/Manutenção<\/div><div class="val">[^<]*/) || [''])[0]);
+ok('despesas na capa, com TODO o gasto menos a depreciação',
+  /Despesas<\/div><div class="val">R\$ 10\.300,00/.test(hf),
+  (hf.match(/Despesas<\/div><div class="val">[^<]*/) || [''])[0]);
+// 6.700 era oficina + pneus. Se esse número voltar, a seção encolheu de novo.
+ok('e não é mais só oficina e pneus', hf.indexOf('R$ 6.700,00') === -1,
+  'a seção 2 voltou a somar só oficina e pneus');
 ok('com a contagem de bens e de veículos', /3 bens/.test(hf) && /3 veículos/.test(hf));
 
 // Os dois números saem do Resumo, que só tem o período corrente.
@@ -497,6 +513,55 @@ ok('quem não deprecia fica de fora da lista', (function () {
 })());
 
 
+console.log('\n10c3. A seção 2 é toda a despesa, menos depreciação e IPVA');
+const rdesp = ctx.relatorioDespesasPorVeiculo_(null, null, null);
+ok('o total é a soma das rubricas, não só oficina e pneus',
+  rdesp.totais[rdesp.totais.length - 1] === 10300,
+  String(rdesp.totais[rdesp.totais.length - 1]));
+ok('o combustível entra', rdesp.totais[4] === 3400, String(rdesp.totais[4]));
+ok('a oficina entra', rdesp.totais[5] === 5500, String(rdesp.totais[5]));
+ok('os pneus entram', rdesp.totais[6] === 1200, String(rdesp.totais[6]));
+ok('o pedágio entra em "Outros"', rdesp.totais[7] === 200, String(rdesp.totais[7]));
+ok('as quatro colunas fecham o total',
+  rdesp.totais[4] + rdesp.totais[5] + rdesp.totais[6] + rdesp.totais[7] ===
+  rdesp.totais[rdesp.totais.length - 1]);
+// O contábil já embute o IPVA no valor da depreciação que manda. Somá-lo
+// aqui cobraria o mesmo imposto duas vezes no mesmo papel.
+ok('o IPVA NÃO entra', rdesp.totais[rdesp.totais.length - 1] !== 10300 + 510 &&
+  !rdesp.linhas.some(function (l) { return l[7] === 120 + 50; }),
+  'IPVA somado = ' + String(rdesp.totais[rdesp.totais.length - 1]));
+ok('a depreciação NÃO entra',
+  rdesp.totais[rdesp.totais.length - 1] !== 10300 + 1900);
+ok('a loja continua mandando na ordem',
+  rdesp.linhas.map(function (l) { return l[0]; }).join(',') === 'Loja 02,Loja 02,Loja 10',
+  rdesp.linhas.map(function (l) { return l[0]; }).join(','));
+ok('e dentro da loja, do maior gasto para o menor',
+  rdesp.linhas.filter(function (l) { return l[0] === 'Loja 02'; })
+    .map(function (l) { return l[8]; }).join(',') === '7150,1850',
+  rdesp.linhas.filter(function (l) { return l[0] === 'Loja 02'; })
+    .map(function (l) { return l[8]; }).join(','));
+
+// A lista de rubricas é DERIVADA da que compõe o TOTAL do Resumo: coluna de
+// custo nova entra sozinha. Uma segunda lista escrita à mão seria o caminho
+// curto para uma rubrica nova ficar de fora do que vai para a contabilidade.
+const fonteD = fs.readFileSync('Codigo.gs', 'utf8');
+ok('a lista de rubricas é derivada de R_COMPOEM_TOTAL_',
+  /const R_DESPESA_FECHAMENTO_ = R_COMPOEM_TOTAL_\.filter/.test(fonteD),
+  'lista escrita à mão deixa rubrica nova de fora em silêncio');
+ok('e "Outros" é o complemento das que têm coluna',
+  /const R_DESPESA_EM_OUTROS_ = R_DESPESA_FECHAMENTO_\.filter/.test(fonteD));
+ok('nenhuma rubrica fica sem destino',
+  ctx.R_DESPESA_EM_COLUNA_.concat(ctx.R_DESPESA_EM_OUTROS_).sort().join(',') ===
+  ctx.R_DESPESA_FECHAMENTO_.slice().sort().join(','),
+  ctx.R_DESPESA_EM_COLUNA_.concat(ctx.R_DESPESA_EM_OUTROS_).join(','));
+ok('e só depreciação e IPVA ficam fora do total do Resumo',
+  ctx.R_FORA_DA_DESPESA_.slice().sort().join(',') === 'DEPRECIACAO,IPVA',
+  ctx.R_FORA_DA_DESPESA_.join(','));
+ok('o rodapé diz o que há dentro de "Outros"',
+  ctx.rubricasDeOutros_().every(function (n) { return hf.indexOf(n) !== -1; }),
+  ctx.rubricasDeOutros_().join(', '));
+ok('e avisa por que o IPVA não está lá', /IPVA não aparece na seção 2/.test(hf));
+
 console.log('\n10d. A tabela genérica formata pelo tipo da coluna');
 // O PDF e a tela leem a MESMA função de relatório. Sem isso, um número no
 // papel e outro no app deixam de ser impossíveis.
@@ -532,7 +597,7 @@ const fonteF = fs.readFileSync('Codigo.gs', 'utf8');
 // os três lados: quem produz os dados, quem gera o PDF e quem gera a planilha.
 ok('os dados do fechamento saem das MESMAS funções da tela',
   /function dadosFechamento_[\s\S]{0,1400}relatorioDepreciacaoPorBem_\(null, null, null\)/.test(fonteF) &&
-  /function dadosFechamento_[\s\S]{0,1400}relatorioManutencaoPorVeiculo_\(null, null, null\)/.test(fonteF),
+  /function dadosFechamento_[\s\S]{0,1400}relatorioDespesasPorVeiculo_\(null, null, null\)/.test(fonteF),
   'duplicar a conta no documento faria o papel e a tela divergirem');
 ok('o PDF e a planilha leem de dadosFechamento_, cada um não refaz a conta',
   /function htmlFechamentoPdf_\(mesRef\) \{\s*const d = dadosFechamento_\(mesRef\);/.test(fonteF) &&
@@ -542,7 +607,8 @@ ok('nenhum dos dois chama o relatório direto',
   !/function htmlFechamentoPdf_[\s\S]{0,2500}?relatorioDepreciacaoPorBem_/.test(fonteF),
   'htmlFechamentoPdf_ voltou a montar os dados por conta própria');
 ok('e essas funções estão no catálogo, visíveis também na tela',
-  /'Depreciação por veículo': \{/.test(fonteF) && /'Manutenção por veículo': \{/.test(fonteF),
+  /'Depreciação por veículo': \{/.test(fonteF) &&
+  /'Despesas por veículo \(exceto depreciação\)': \{/.test(fonteF),
   'relatório que só o PDF enxerga não dá para conferir antes de enviar');
 ok('o estilo é um só para os dois documentos',
   /function estiloPdf_\(\)/.test(fonteF) &&

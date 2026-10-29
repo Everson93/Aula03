@@ -3408,3 +3408,62 @@ mais cara do Apps Script.
 
 `conferir_cadastro_loja.js` — **67 provas**.
 Total do projeto: 1.004 → **1.071** provas, em 31 suítes.
+
+## V4.28.0 — a seção 2 é toda a despesa, não só manutenção
+
+*"a manutenção tem que buscar todos os gasto que teve com a frota exceto a
+depreciação, o IPVA é embutido na depreciação"*.
+
+A seção 2 do documento somava **oficina + pneus**. Combustível, Arla,
+lavação, pedágio, multa, emplacamento, seguro e gás ficavam de fora — e o
+papel que vai para a contabilidade mostrava uma fração do custo com cara de
+total. Na frota de exemplo, R$ 56.506 onde o número é R$ 118.861.
+
+Agora a seção 2 é **todo o gasto da competência menos a depreciação**, e
+chama-se `2. Despesas da frota`.
+
+### O IPVA fica de fora
+
+Não por ser pequeno: porque o contábil **já embute o IPVA no valor da
+depreciação** que manda todo mês. Somá-lo também na seção 2 cobraria o mesmo
+imposto duas vezes no mesmo papel. O rodapé e a capa da planilha dizem isso
+por escrito — um número ausente sem explicação vira pergunta na mesa da
+contabilidade.
+
+### A lista é derivada, não escrita à mão
+
+```js
+const R_FORA_DA_DESPESA_   = ['DEPRECIACAO', 'IPVA'];
+const R_DESPESA_FECHAMENTO_ = R_COMPOEM_TOTAL_.filter(…);
+const R_DESPESA_EM_OUTROS_  = R_DESPESA_FECHAMENTO_.filter(…);
+```
+
+`R_COMPOEM_TOTAL_` já era a dona de "o que é despesa no Resumo". Escrever uma
+segunda lista à mão seria o caminho curto para uma rubrica nova entrar no
+Resumo e **não** entrar no documento da contabilidade — sem erro nenhum, só
+um total menor. Com a derivação, coluna de custo nova entra sozinha. Há prova
+estática de que as duas listas são `.filter` da primeira, e prova de que a
+soma das que têm coluna com as de "Outros" é exatamente o conjunto todo.
+
+### Onze rubricas não cabem num A4
+
+Combustível, oficina e pneus têm coluna própria — são o grosso. As outras
+oito somam em **Outros**, e o rodapé lista o que há lá dentro, gerado da
+própria lista. Um "Outros" sem legenda é um número que ninguém confere.
+
+### O relatório antigo continua
+
+`Manutenção por veículo` (oficina + pneus) não mudou: internamente é útil
+saber quanto foi manutenção de fato. O que mudou foi o documento que sai da
+empresa, que passou a ler um relatório novo,
+`Despesas por veículo (exceto depreciação)`, também visível na tela.
+
+### Fixture
+
+A fixture antiga tinha só oficina e pneus — somar onze rubricas e somar duas
+daria o mesmo número. Entraram combustível, IPVA e pedágio em cada veículo,
+e com isso as oito mutações são pegas, incluindo "o IPVA volta para a
+despesa" e "a depreciação entra na seção 2".
+
+`conferir_pdf_rateio.js` 126 → **143**; `conferir_planilha_fechamento.js`
+41 → **46**. Total do projeto: 1.071 → **1.093**.

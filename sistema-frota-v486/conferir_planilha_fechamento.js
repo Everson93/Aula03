@@ -209,19 +209,23 @@ ctx.__diario = diario;
 //
 // A loja 01 tem o MENOR gasto de manutenção: assim a ordem por loja e a ordem
 // por valor não coincidem, e a prova distingue as duas.
-function veic(placa, desc, cat, centro, dep, oficina, pneus) {
+function veic(placa, desc, cat, centro, dep, oficina, pneus, extras) {
   const l = new Array(ctx.TOTAL_COL_RESUMO).fill(0);
   l[ctx.R_.PLACA] = placa; l[ctx.R_.DESCRICAO] = desc; l[ctx.R_.CATEGORIA] = cat;
   l[ctx.R_.CENTRO] = centro; l[ctx.R_.DEPRECIACAO] = dep;
   l[ctx.R_.OFICINA] = oficina; l[ctx.R_.PNEUS] = pneus;
+  const e = extras || {};
+  l[ctx.R_.COMBUSTIVEL] = e.combustivel || 0;
+  l[ctx.R_.IPVA] = e.ipva || 0;
+  l[ctx.R_.PEDAGIO] = e.pedagio || 0;
   return l;
 }
 ctx.__resumo = [
-  veic('AAA 0001', 'Palio', 'Leve', 'Loja 02', 1000, 800, 200),
-  veic('BBB 0002', 'Scania', 'Carreta Normal', 'Loja 10', 700, 0, 0),
-  veic('CCC 0003', 'Gol', 'Leve', 'Loja 02', 5000, 3000, 0),
+  veic('AAA 0001', 'Palio', 'Leve', 'Loja 02', 1000, 800, 200, { combustivel: 400, ipva: 60 }),
+  veic('BBB 0002', 'Scania', 'Carreta Normal', 'Loja 10', 700, 0, 0, { pedagio: 150, ipva: 90 }),
+  veic('CCC 0003', 'Gol', 'Leve', 'Loja 02', 5000, 3000, 0, { combustivel: 900 }),
   veic('DDD 0004', 'Moto', 'Moto', 'Loja 01', 300, 100, 0),
-  veic('EEE 0005', 'Furgão', 'Leve', '', 0, 500, 0),   // sem loja no cadastro
+  veic('EEE 0005', 'Furgão', 'Leve', '', 0, 500, 0, { combustivel: 100 }),
 ];
 
 function gerar() {
@@ -234,8 +238,8 @@ console.log('\n1. As abas e a ordem delas');
 const arquivo = gerar();
 const planilha = diario.criadas[0];
 const nomes = planilha.getSheets().map(function (a) { return a.getName(); });
-ok('três abas: capa, depreciação e manutenção',
-  nomes.join(' | ') === '0_Informacoes | 1_Depreciacao | 2_Manutencao', nomes.join(' | '));
+ok('três abas: capa, depreciação e despesas',
+  nomes.join(' | ') === '0_Informacoes | 1_Depreciacao | 2_Despesas', nomes.join(' | '));
 ok('o arquivo sai com o nome da competência',
   arquivo.getName() === 'Frota_Fechamento_2026-10.xlsx', arquivo.getName());
 ok('e guardado na pasta de relatórios', diario.arquivos.length === 1);
@@ -264,19 +268,19 @@ ok('formatoPlanilha_ cobre os tipos declarados',
 
 console.log('\n3. A loja abre as duas abas');
 ok('Loja é o cabeçalho da coluna 1 na depreciação', dep.valor(4, 1) === 'Loja', String(dep.valor(4, 1)));
-ok('Loja é o cabeçalho da coluna 1 na manutenção', man.valor(4, 1) === 'Loja', String(man.valor(4, 1)));
+ok('Loja é o cabeçalho da coluna 1 nas despesas', man.valor(4, 1) === 'Loja', String(man.valor(4, 1)));
 ok('a primeira linha da depreciação é a Loja 01', dep.valor(5, 1) === 'Loja 01', String(dep.valor(5, 1)));
-ok('a primeira linha da manutenção é a Loja 01', man.valor(5, 1) === 'Loja 01', String(man.valor(5, 1)));
-ok('a manutenção não está ordenada só por valor: a Loja 01 gastou menos',
-  man.valor(5, 7) === 100, String(man.valor(5, 7)));
+ok('a primeira linha das despesas é a Loja 01', man.valor(5, 1) === 'Loja 01', String(man.valor(5, 1)));
+ok('as despesas não estão ordenadas só por valor: a Loja 01 gastou menos',
+  man.valor(5, 9) === 100, String(man.valor(5, 9)));
 // O aviso tem de aparecer, mas no FIM: um documento que vai para a
 // contabilidade não abre com uma linha de problema.
 ok('veículo sem centro de custo sai avisando, não em branco',
-  man.valor(8, 1) === '⚠ sem loja', String(man.valor(8, 1)));
+  man.valor(9, 1) === '⚠ sem loja', String(man.valor(9, 1)));
 ok('e sai depois das lojas de verdade, não na frente',
-  ['Loja 01', 'Loja 02', 'Loja 02'].join(',') ===
-  [man.valor(5, 1), man.valor(6, 1), man.valor(7, 1)].join(','),
-  [man.valor(5, 1), man.valor(6, 1), man.valor(7, 1), man.valor(8, 1)].join(','));
+  ['Loja 01', 'Loja 02', 'Loja 02', 'Loja 10'].join(',') ===
+  [man.valor(5, 1), man.valor(6, 1), man.valor(7, 1), man.valor(8, 1)].join(','),
+  [man.valor(5, 1), man.valor(6, 1), man.valor(7, 1), man.valor(8, 1), man.valor(9, 1)].join(','));
 
 console.log('\n4. O total');
 // O índice do total já andou uma casa quando a Loja entrou na frente. Aqui a
@@ -286,12 +290,19 @@ ok('a linha de total da depreciação diz TOTAL',
   dep.valor(linhaTotalDep, 1) === 'TOTAL', String(dep.valor(linhaTotalDep, 1)));
 ok('e soma os quatro valores', dep.valor(linhaTotalDep, 4) === 7000,
   String(dep.valor(linhaTotalDep, 4)));
-const linhaTotalMan = 4 + 4 + 1;
-ok('o total da manutenção fica sob o cabeçalho "Manutenção"',
-  man.valor(4, 7) === 'Manutenção' && man.valor(linhaTotalMan, 7) === 4600,
-  man.valor(4, 7) + ' = ' + man.valor(linhaTotalMan, 7));
+const linhaTotalMan = 4 + 5 + 1;
+// Toda a despesa menos depreciação e IPVA: 1400+150+3900+100+600 = 6150.
+ok('o total das despesas fica sob o cabeçalho "Despesa"',
+  man.valor(4, 9) === 'Despesa' && man.valor(linhaTotalMan, 9) === 6150,
+  man.valor(4, 9) + ' = ' + man.valor(linhaTotalMan, 9));
 ok('e não é o total dos pneus',
-  man.valor(linhaTotalMan, 6) === 200, String(man.valor(linhaTotalMan, 6)));
+  man.valor(linhaTotalMan, 7) === 200, String(man.valor(linhaTotalMan, 7)));
+ok('o IPVA não está em lugar nenhum da aba',
+  man.valor(linhaTotalMan, 9) !== 6150 + 150, String(man.valor(linhaTotalMan, 9)));
+ok('o combustível entra na soma', man.valor(linhaTotalMan, 5) === 1400,
+  String(man.valor(linhaTotalMan, 5)));
+ok('e o pedágio entra em "Outros"', man.valor(linhaTotalMan, 8) === 150,
+  String(man.valor(linhaTotalMan, 8)));
 ok('o total também é número', typeof dep.valor(linhaTotalDep, 4) === 'number');
 ok('a célula de total tem formato de moeda',
   dep.formato(linhaTotalDep, 4) === 'R$ #,##0.00');
@@ -304,10 +315,18 @@ function procurarNaCapa(rotulo) {
 }
 ok('a capa traz a competência', procurarNaCapa('Competência') === '2026-10');
 ok('a capa traz a depreciação como número', procurarNaCapa('Depreciação R$') === 7000);
-ok('a capa traz a manutenção como número', procurarNaCapa('Manutenção R$') === 4600);
+ok('a capa traz as despesas como número',
+  procurarNaCapa('Despesas R$ (exceto depreciação)') === 6150,
+  String(procurarNaCapa('Despesas R$ (exceto depreciação)')));
+ok('e diz o que ficou fora da seção 2',
+  /IPVA/.test(String(procurarNaCapa('Fora da seção 2'))),
+  String(procurarNaCapa('Fora da seção 2')));
+ok('e o que há dentro de "Outros"',
+  String(procurarNaCapa('Dentro de "Outros"')).indexOf('pedágio') !== -1,
+  String(procurarNaCapa('Dentro de \"Outros\"')));
 ok('os totais da capa batem com os das abas',
   procurarNaCapa('Depreciação R$') === dep.valor(linhaTotalDep, 4) &&
-  procurarNaCapa('Manutenção R$') === man.valor(linhaTotalMan, 7));
+  procurarNaCapa('Despesas R$ (exceto depreciação)') === man.valor(linhaTotalMan, 9));
 
 console.log('\n6. A exportação e a planilha temporária');
 ok('pede a exportação em xlsx',

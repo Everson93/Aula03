@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.27.0';
+const VERSAO_SISTEMA = '4.28.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -6691,6 +6691,26 @@ const CATALOGO_RELATORIOS = {
     ],
   },
 
+  'Despesas por veículo (exceto depreciação)': {
+    descricao: 'Todo o gasto do veículo na competência menos a depreciação. O IPVA ' +
+      'não entra: já vem embutido no valor da depreciação. É a seção 2 do documento ' +
+      'do fechamento.',
+    somenteApp: true,
+    fonte: 'resumo',
+    filtros: ['centro', 'categoria', 'veiculoResumo'],
+    colunas: [
+      ['Loja', '@', 150],
+      ['Placa / ID', '@', 110],
+      ['Veículo', '@', 180],
+      ['Categoria', '@', 130],
+      ['Combustível', 'R$ #,##0.00', 120],
+      ['Oficina', 'R$ #,##0.00', 115],
+      ['Pneus', 'R$ #,##0.00', 110],
+      ['Outros', 'R$ #,##0.00', 110],
+      ['Despesa', 'R$ #,##0.00', 125],
+    ],
+  },
+
   'Manutenção por veículo': {
     descricao: 'Oficina e pneus de cada veículo na competência, com a loja a que ele ' +
       'pertence. Ordenado por loja e, dentro dela, do maior gasto para o menor.',
@@ -8479,7 +8499,7 @@ function dadosFechamento_(mesRef) {
       'um mês e os valores de outro.');
   }
   const dep = relatorioDepreciacaoPorBem_(null, null, null);
-  const man = relatorioManutencaoPorVeiculo_(null, null, null);
+  const man = relatorioDespesasPorVeiculo_(null, null, null);
   return {
     competencia: alvo,
     periodo: periodoDoMes_(alvo),
@@ -8492,8 +8512,8 @@ function dadosFechamento_(mesRef) {
 
 const SUB_DEPRECIACAO_FECHAMENTO_ = 'Um veículo por linha, com a loja a que ele pertence. ' +
   'Valores lançados na competência.';
-const SUB_MANUTENCAO_FECHAMENTO_ = 'Oficina e pneus de cada veículo na competência, por ' +
-  'loja e, dentro dela, do maior gasto para o menor.';
+const SUB_MANUTENCAO_FECHAMENTO_ = 'Todo o gasto de cada veículo na competência, exceto a ' +
+  'depreciação. Por loja e, dentro dela, do maior gasto para o menor.';
 
 /**
  * Documento unico do fechamento em PDF, para a contabilidade.
@@ -8508,20 +8528,22 @@ function htmlFechamentoPdf_(mesRef) {
     '<table class="kpis"><tr>' +
       '<td><div class="rot">Depreciação</div><div class="val">' + brlPdf_(d.totalDep) + '</div>' +
         '<div class="rot">' + numBR_(d.dep.linhas.length, 0) + ' bens</div></td>' +
-      '<td><div class="rot">Manutenção</div><div class="val">' + brlPdf_(d.totalMan) + '</div>' +
-        '<div class="rot">' + numBR_(d.man.linhas.length, 0) + ' veículos • oficina e pneus</div></td>' +
+      '<td><div class="rot">Despesas</div><div class="val">' + brlPdf_(d.totalMan) + '</div>' +
+        '<div class="rot">' + numBR_(d.man.linhas.length, 0) + ' veículos • exceto depreciação</div></td>' +
     '</tr></table>' +
 
     '<div class="secao"><h2>1. Depreciação</h2>' +
       '<p class="sub" style="margin:0 0 8px">' + escHtml_(SUB_DEPRECIACAO_FECHAMENTO_) + '</p>' +
       tabelaRelatorioPdf_(d.dep) + '</div>' +
 
-    '<div class="secao quebra"><h2>2. Manutenção</h2>' +
+    '<div class="secao quebra"><h2>2. Despesas da frota</h2>' +
       '<p class="sub" style="margin:0 0 8px">' + escHtml_(SUB_MANUTENCAO_FECHAMENTO_) + '</p>' +
       tabelaRelatorioPdf_(d.man) + '</div>' +
 
     rodapePdf_('As duas seções são da mesma competência e do mesmo Resumo. ' +
-      'Cada veículo é vinculado à loja pelo centro de custo do cadastro.') +
+      'Cada veículo é vinculado à loja pelo centro de custo do cadastro. ' +
+      '"Outros" reúne ' + escHtml_(rubricasDeOutros_().join(', ')) + '. ' +
+      'O IPVA não aparece na seção 2 porque já está embutido no valor da depreciação.') +
     '</body></html>';
 }
 
@@ -8613,10 +8635,12 @@ function capaPlanilhaFechamento_(aba, d) {
     ['Versão do sistema', VERSAO_SISTEMA],
     ['Depreciação R$', d.totalDep],
     ['Veículos com depreciação', d.dep.linhas.length],
-    ['Manutenção R$', d.totalMan],
-    ['Veículos com manutenção', d.man.linhas.length],
+    ['Despesas R$ (exceto depreciação)', d.totalMan],
+    ['Veículos com despesa', d.man.linhas.length],
     ['Origem', 'Aba Resumo da competência aberta. As duas abas são do mesmo Resumo.'],
     ['Alocação', 'Cada veículo é vinculado à loja pelo centro de custo do cadastro.'],
+    ['Fora da seção 2', 'IPVA (já embutido na depreciação) e a própria depreciação.'],
+    ['Dentro de "Outros"', rubricasDeOutros_().join(', ')],
   ];
   prepararAbaExportacao_(aba, valores, 1);
   aba.getRange('A1:B1').setBackground(CORES.PRETO).setFontColor(CORES.BRANCO).setFontWeight('bold');
@@ -8646,8 +8670,10 @@ function gerarXlsxFechamento_(mesRef) {
     capaPlanilhaFechamento_(capa, d);
     escreverRelatorioNaAba_(temp.insertSheet('1_Depreciacao'), d.dep,
       '1. Depreciação — ' + d.competencia, SUB_DEPRECIACAO_FECHAMENTO_);
-    escreverRelatorioNaAba_(temp.insertSheet('2_Manutencao'), d.man,
-      '2. Manutenção — ' + d.competencia, SUB_MANUTENCAO_FECHAMENTO_);
+    escreverRelatorioNaAba_(temp.insertSheet('2_Despesas'), d.man,
+      '2. Despesas da frota — ' + d.competencia, SUB_MANUTENCAO_FECHAMENTO_ +
+      ' "Outros" reúne ' + rubricasDeOutros_().join(', ') + '. O IPVA não entra: já está ' +
+      'embutido no valor da depreciação.');
     temp.setActiveSheet(capa);
     SpreadsheetApp.flush();
 
@@ -9581,6 +9607,7 @@ function relatorioPorTipo_(tipo, centro, categoria, placa, termo) {
   switch (tipo) {
     case 'Gerencial por Centro de Custo': return relatorioGerencial_(centro, categoria, placa);
     case 'Depreciação por veículo': return relatorioDepreciacaoPorBem_(centro, categoria, placa);
+    case 'Despesas por veículo (exceto depreciação)': return relatorioDespesasPorVeiculo_(centro, categoria, placa);
     case 'Manutenção por veículo': return relatorioManutencaoPorVeiculo_(centro, categoria, placa);
     case 'Depreciação por loja': return relatorioDepreciacaoPorLoja_(centro, categoria, placa);
     case 'Manutenção por loja': return relatorioManutencaoPorLoja_(centro, categoria, placa);
@@ -9724,6 +9751,82 @@ function relatorioManutencaoPorVeiculo_(centro, categoria, placa) {
       itens.reduce(function (t, i) { return t + (Number(i.linha[R_.OFICINA]) || 0); }, 0),
       itens.reduce(function (t, i) { return t + (Number(i.linha[R_.PNEUS]) || 0); }, 0),
       itens.reduce(function (t, i) { return t + i.manutencao; }, 0)],
+  };
+}
+
+/**
+ * Rubricas que entram no documento do fechamento como DESPESA.
+ *
+ * Derivadas de `R_COMPOEM_TOTAL_`, nao escritas a mao: coluna de custo nova
+ * entra sozinha no documento. Uma segunda lista manual seria a maneira curta
+ * de uma rubrica nova ficar de fora do que vai para a contabilidade — sem
+ * erro nenhum, so um total menor.
+ *
+ * Fora ficam duas:
+ * - DEPRECIACAO, que e a secao 1 do documento;
+ * - IPVA, que o contabil ja embute no valor da depreciacao que manda. Soma-lo
+ *   aqui cobraria o mesmo imposto duas vezes no mesmo papel.
+ */
+const R_FORA_DA_DESPESA_ = ['DEPRECIACAO', 'IPVA'];
+const R_DESPESA_FECHAMENTO_ = R_COMPOEM_TOTAL_.filter(function (n) {
+  return R_FORA_DA_DESPESA_.indexOf(n) === -1;
+});
+
+/** As tres rubricas que ganham coluna propria; o resto vai em "Outros". */
+const R_DESPESA_EM_COLUNA_ = ['COMBUSTIVEL', 'OFICINA', 'PNEUS'];
+const R_DESPESA_EM_OUTROS_ = R_DESPESA_FECHAMENTO_.filter(function (n) {
+  return R_DESPESA_EM_COLUNA_.indexOf(n) === -1;
+});
+
+/** Rotulo de "Outros" por extenso, para o rodape do documento nao esconder nada. */
+function rubricasDeOutros_() {
+  const nomes = { LUBRIFICANTE: 'lubrificante', ARLA: 'Arla 32', LAVACAO: 'lavação/graxa',
+    MULTA: 'multas', EMPLACAMENTO: 'emplacamento', SEGURO: 'seguro',
+    PEDAGIO: 'diária/pedágio', GAS: 'gás' };
+  return R_DESPESA_EM_OUTROS_.map(function (n) { return nomes[n] || n.toLowerCase(); });
+}
+
+/**
+ * Despesa de cada veiculo na competencia, EXCETO depreciacao.
+ *
+ * E a secao 2 do documento da contabilidade. Combustivel, oficina e pneus tem
+ * coluna propria porque sao o grosso; o resto soma em "Outros", e o rodape
+ * diz o que ha dentro. Treze colunas de rubrica num A4 nao se leem, e quase
+ * todas sairiam zeradas.
+ */
+function relatorioDespesasPorVeiculo_(centro, categoria, placa) {
+  const itens = filtrarResumo_(centro, categoria, placa)
+    .map(function (l) {
+      return {
+        linha: l,
+        loja: lojaDaLinhaResumo_(l),
+        combustivel: Number(l[R_.COMBUSTIVEL]) || 0,
+        oficina: Number(l[R_.OFICINA]) || 0,
+        pneus: Number(l[R_.PNEUS]) || 0,
+        outros: somarColunasDoResumo_(l, R_DESPESA_EM_OUTROS_),
+        despesa: somarColunasDoResumo_(l, R_DESPESA_FECHAMENTO_),
+      };
+    })
+    .filter(function (i) { return i.despesa > 0; })
+    .sort(function (a, b) {
+      const porLoja = compararLojaResumo_(a.loja, b.loja);
+      return porLoja !== 0 ? porLoja : b.despesa - a.despesa;
+    });
+
+  function somar(campo) {
+    return itens.reduce(function (t, i) { return t + i[campo]; }, 0);
+  }
+
+  return {
+    colunas: [col_('Loja'), col_('Placa / ID'), col_('Veículo'), col_('Categoria'),
+      col_('Combustível', 'moeda'), col_('Oficina', 'moeda'), col_('Pneus', 'moeda'),
+      col_('Outros', 'moeda'), col_('Despesa', 'moeda')],
+    linhas: itens.map(function (i) {
+      return [i.loja, i.linha[R_.PLACA], i.linha[R_.DESCRICAO], i.linha[R_.CATEGORIA],
+        i.combustivel, i.oficina, i.pneus, i.outros, i.despesa];
+    }),
+    totais: [null, null, null, null, somar('combustivel'), somar('oficina'),
+      somar('pneus'), somar('outros'), somar('despesa')],
   };
 }
 
