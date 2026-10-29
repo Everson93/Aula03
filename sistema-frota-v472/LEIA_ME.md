@@ -3329,3 +3329,82 @@ não salva, o original volta com o mesmo ID e a leitura de KM é recolocada) e
 `webGerarDepreciacao`. São os dois restantes da lista de seis.
 
 Total do projeto: 953 → **1.004** provas, em 30 suítes.
+
+## V4.27.0 — cadastro de loja
+
+A tela de Centros de custo sempre soube editar o percentual e dizia, no
+rodapé: *"Centros novos são criados na aba Centros de Custo da planilha."*
+Ou seja: para abrir uma loja era preciso sair do app. Agora não.
+
+No alto da tela, para ADMIN: **Cadastrar loja**. E em cada linha,
+**renomear** e **excluir**.
+
+### O nome da loja é chave em cinco lugares
+
+Essa é a dificuldade real, e é por isso que o cadastro é mais que um
+`appendRow`. O nome aparece em:
+
+1. a aba **Centros de Custo** — quem existe;
+2. o **cadastro do veículo** — a que loja ele pertence;
+3. o **snapshot de centro de cada lançamento** — a loja no momento do gasto;
+4. o **bloco de percentual da competência** — quanto ela recebe de rateio;
+5. o parâmetro **BASE_RATEIO** — quem é base, e não recebe.
+
+Renomear e esquecer um deles não dá erro: cria uma **segunda loja fantasma**,
+com parte dos veículos ou parte do rateio, e a soma dos percentuais deixa de
+fechar. É o mesmo padrão de defeito que mais voltou neste projeto. Cada um
+dos cinco tem prova própria, e tirar qualquer um deixa provas vermelhas.
+
+### Duplicidade é por chave, não por string
+
+`chaveCentro_` compara sem acento, sem maiúscula e sem espaço duplicado. Sem
+isso, "Loja 01", "loja 01" e "Loja  01" viram três lojas na tela e uma soma
+de rateio que não fecha — sem erro nenhum. Vírgula e ponto e vírgula no nome
+são recusados: `BASE_RATEIO` guarda os centros separados por vírgula, e um
+nome com vírgula partiria o parâmetro em dois centros inexistentes.
+
+### Renomear tem o mesmo lacre do histórico
+
+Loja com lançamento em **período fechado** não é renomeada. Esses registros
+são histórico lacrado e ficariam com o nome antigo — exatamente a loja
+fantasma. A mensagem diz o caminho: cadastrar a nova, trocar o centro dos
+veículos e deixar a antiga sem uso. É a mesma regra que impede excluir um
+veículo com passado.
+
+E o bloco de percentual de **competência encerrada** também não muda.
+
+### Excluir não tem cascata, de propósito
+
+Só sai a loja que ninguém usa: sem veículo, sem lançamento nenhum e fora da
+base de rateio. A `ADM Central` é do sistema e não sai. Apagar a loja de um
+veículo deixaria o custo sem dono, e o rateio passaria a distribuir sobre uma
+base diferente da do mês anterior sem ninguém pedir.
+
+### A regra de desempenho pegou — e com ela um defeito de verdade
+
+O primeiro rascunho renomeava célula a célula dentro de um laço sobre a
+frota, e `conferir_desempenho.js` reprovou. Virou `trocarNaColuna_`: uma
+leitura e uma escrita por aba.
+
+O conserto trouxe junto um acerto que eu não tinha visto. O rascunho
+regravava a competência inteira pelo `gravarPercentuaisCompetencia_` — o que
+**carimba data e responsável em todas as lojas**, inclusive as que ninguém
+tocou. Agora só a célula do nome muda, e há prova de que a linha da outra
+loja fica byte a byte igual.
+
+### Mutação: 19 pegas, 1 equivalente
+
+Honestamente: **"passar a lista de linhas do período aberto" é um mutante
+equivalente** pelo caminho de cima. A guarda do lacre já garante que não
+existe linha fechada quando se chega à troca, então filtrar ou não filtrar dá
+o mesmo resultado. Mantive o filtro como segunda tranca — se a guarda um dia
+afrouxar, o histórico continua intocado — e provei `trocarNaColuna_`
+**direto**, onde o parâmetro é alcançável. Registrar isso como equivalente é
+melhor que inventar uma prova que não prova nada.
+
+Também entrou prova de que a troca **não escreve** quando nada casou:
+reescrever a coluna com os mesmos valores não muda nada e custa a operação
+mais cara do Apps Script.
+
+`conferir_cadastro_loja.js` — **67 provas**.
+Total do projeto: 1.004 → **1.071** provas, em 31 suítes.

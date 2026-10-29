@@ -2606,7 +2606,11 @@
 
     var linhas = dados.itens.map(function (item, i) {
       return '<tr><td>' + esc(item.centro) +
-        (item.novo ? ' <span class="sub2">(novo nesta competência)</span>' : '') + '</td>' +
+        (item.novo ? ' <span class="sub2">(novo nesta competência)</span>' : '') +
+        (admin ? ' <button class="acao secundaria" style="padding:2px 8px;font-size:12px" ' +
+          'onclick="renomearLoja(' + i + ')">renomear</button> ' +
+          '<button class="acao secundaria" style="padding:2px 8px;font-size:12px" ' +
+          'onclick="excluirLoja(' + i + ')">excluir</button>' : '') + '</td>' +
         '<td class="num">' + (editavel
           ? '<input type="number" id="pc' + i + '" step="0.001" min="0" max="100" ' +
             'inputmode="decimal" style="width:110px;text-align:right" value="' +
@@ -2624,6 +2628,18 @@
       '<div class="barra"><div>' +
         seletorCompetencia('ccMes', dados.competencias, dados.competencia, 'recarregarCentros()') +
       '</div></div>' + origem +
+      (admin
+        ? '<div class="cartao" style="max-width:620px"><b>Cadastrar loja</b>' +
+            '<p class="sub" style="margin:6px 0 10px">Entra com 0% de rateio. Defina o ' +
+            'percentual na tabela abaixo e salve a competência.</p>' +
+            '<div class="linha"><div style="flex:2">' +
+              '<label for="ccNova">Nome da loja</label>' +
+              '<input type="text" id="ccNova" maxlength="60" placeholder="ex.: Loja 19 — Tubarão" ' +
+                'onkeydown="if(event.key===\'Enter\'){event.preventDefault();criarLoja();}"></div>' +
+              '<div style="align-self:end"><button class="acao" id="btnNovaLoja" ' +
+                'onclick="criarLoja()">Cadastrar</button></div>' +
+            '</div><div id="msgNovaLoja" style="margin-top:10px"></div></div>'
+        : '') +
       '<div class="cartao" style="padding:0;overflow:hidden"><div class="rolagem">' +
         '<table><thead><tr><th>Centro de custo</th><th class="num">% de rateio</th>' +
         '<th class="num">Recebe rateio</th></tr></thead><tbody>' + linhas + '</tbody></table>' +
@@ -2632,11 +2648,68 @@
       (editavel
         ? '<button class="acao" id="btnCentros" style="width:100%;margin-top:14px" ' +
           'onclick="salvarCentros()">Salvar rateio de ' + esc(dados.competencia) + '</button>' +
-          '<div class="sub2" style="margin-top:6px">Centros novos são criados na aba ' +
-          '“Centros de Custo” da planilha.</div>'
+          '<div class="sub2" style="margin-top:6px">A soma dos percentuais das lojas que ' +
+          'recebem rateio deve fechar em 100%.</div>'
         : (admin ? '' : '<div class="sub2" style="margin-top:10px">Somente ADMIN altera o rateio.</div>')) +
       '<div id="msgCentros" style="margin-top:10px"></div>';
     atualizarSomaCentros();
+  }
+
+  /**
+   * Cadastro de loja: criar, renomear e excluir.
+   *
+   * O nome da loja é CHAVE — aparece no cadastro do veículo, no snapshot de
+   * cada lançamento, no bloco de percentual da competência e na base do
+   * rateio. Quem decide se dá para mexer é o servidor, que conhece os quatro
+   * lugares; a tela só pergunta e mostra a resposta.
+   */
+  function respostaLoja(r, onde) {
+    el(onde).innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+      esc(r.mensagem) + '</div>';
+    if (r.ok) recarregarCentros();
+  }
+
+  function criarLoja() {
+    var campo = el('ccNova');
+    var nome = String(campo.value || '').trim();
+    if (!nome) { el('msgNovaLoja').innerHTML = '<div class="erro-caixa">Escreva o nome da loja.</div>'; return; }
+    var botao = el('btnNovaLoja');
+    botao.disabled = true; botao.textContent = 'Cadastrando…';
+    el('msgNovaLoja').innerHTML = '<div class="carregando">cadastrando…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      botao.disabled = false; botao.textContent = 'Cadastrar';
+      if (r.ok) campo.value = '';
+      respostaLoja(r, 'msgNovaLoja');
+    }).withFailureHandler(function (e) {
+      botao.disabled = false; botao.textContent = 'Cadastrar';
+      el('msgNovaLoja').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webCriarCentro(TOKEN, nome);
+  }
+
+  function renomearLoja(i) {
+    var atual = CENTROS_DADOS.itens[i].centro;
+    var novo = prompt('Novo nome para a loja "' + atual + '":', atual);
+    if (novo === null) return;
+    novo = String(novo).trim();
+    if (!novo || novo === atual) return;
+    el('msgCentros').innerHTML = '<div class="carregando">renomeando…</div>';
+    google.script.run
+      .withSuccessHandler(function (r) { respostaLoja(r, 'msgCentros'); })
+      .withFailureHandler(function (e) {
+        el('msgCentros').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      }).webRenomearCentro(TOKEN, atual, novo);
+  }
+
+  function excluirLoja(i) {
+    var atual = CENTROS_DADOS.itens[i].centro;
+    if (!confirm('Excluir a loja "' + atual + '" do cadastro?\n\nSó sai se nenhum veículo e ' +
+      'nenhum lançamento apontarem para ela.')) return;
+    el('msgCentros').innerHTML = '<div class="carregando">excluindo…</div>';
+    google.script.run
+      .withSuccessHandler(function (r) { respostaLoja(r, 'msgCentros'); })
+      .withFailureHandler(function (e) {
+        el('msgCentros').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      }).webExcluirCentro(TOKEN, atual);
   }
 
   function salvarCentros() {

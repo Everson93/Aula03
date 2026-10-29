@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.26.0';
+const VERSAO_SISTEMA = '4.27.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11036,6 +11036,289 @@ function webCentros(token, mesRef) {
   };
 }
 
+const LIMITE_NOME_CENTRO_ = 60;
+
+/**
+ * Nome de loja aceito pelo cadastro. Devolve { nome } ou { erro }.
+ *
+ * O nome e CHAVE: ele aparece no cadastro do veiculo, no snapshot de cada
+ * lancamento, no bloco de percentual da competencia e no parametro
+ * BASE_RATEIO. Dois nomes que so diferem por espaco ou maiuscula viram duas
+ * lojas na tela e uma soma de rateio que nao fecha — sem erro nenhum.
+ */
+function validarNomeCentro_(bruto) {
+  const nome = normalizarCentroCusto_(String(bruto == null ? '' : bruto).replace(/\s+/g, ' ').trim());
+  if (!nome) return { erro: 'Escreva o nome da loja.' };
+  if (nome.length > LIMITE_NOME_CENTRO_) {
+    return { erro: 'O nome da loja tem no máximo ' + LIMITE_NOME_CENTRO_ + ' caracteres.' };
+  }
+  if (/[,;]/.test(nome)) {
+    // BASE_RATEIO guarda os centros-base separados por virgula: uma virgula
+    // no nome partiria o parametro em dois centros inexistentes.
+    return { erro: 'O nome da loja não pode ter vírgula nem ponto e vírgula.' };
+  }
+  return { nome: nome };
+}
+
+/** A loja ja existe no cadastro? Compara sem acento e sem maiuscula. */
+function centroJaCadastrado_(nome) {
+  const chave = chaveCentro_(nome);
+  return listaCentros_().filter(function (c) { return chaveCentro_(c) === chave; })[0] || null;
+}
+
+function chaveCentro_(valor) {
+  return String(valor == null ? '' : valor).normalize('NFD')
+    .replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
+/** Lancamentos de uma loja, separados entre periodo aberto e fechado. */
+function lancamentosDoCentro_(nome) {
+  const chave = chaveCentro_(nome);
+  const inicio = periodoAtual_().inicio;
+  const abertos = [], fechados = [];
+  lerLancamentos_().forEach(function (l, i) {
+    if (chaveCentro_(l[L_.CENTRO]) !== chave) return;
+    const data = l[L_.DATA];
+    if (Object.prototype.toString.call(data) === '[object Date]' && data >= inicio) abertos.push(i + 2);
+    else fechados.push(i + 2);
+  });
+  return { abertos: abertos, fechados: fechados };
+}
+
+/** Veiculos do cadastro que apontam para a loja. Devolve as linhas da aba. */
+function veiculosDoCentro_(nome) {
+  const chave = chaveCentro_(nome);
+  const linhas = [];
+  dadosVeiculosExecucao_().forEach(function (v, i) {
+    if (chaveCentro_(v[COL_VEIC.CENTRO - 1]) === chave) linhas.push(i + 2);
+  });
+  return linhas;
+}
+
+function centroEstaNaBaseDeRateio_(nome) {
+  const chave = chaveCentro_(nome);
+  return String(param_('BASE_RATEIO')).split(',').some(function (n) {
+    return chaveCentro_(n) === chave;
+  });
+}
+
+/** Cria a loja na aba Centros, com 0% e recebendo rateio. */
+function criarCentro_(nomeBruto) {
+  exigirExecucaoMutacao_();
+  const v = validarNomeCentro_(nomeBruto);
+  if (v.erro) return { ok: false, mensagem: v.erro };
+  const existente = centroJaCadastrado_(v.nome);
+  if (existente) {
+    return { ok: false, mensagem: 'A loja "' + existente + '" já está cadastrada.' };
+  }
+  const sheet = aba_(ABAS.CENTROS);
+  const linha = Math.max(sheet.getLastRow() + 1, 2);
+  garantirLinhas_(sheet, linha);
+  sheet.getRange(linha, 1, 1, 3).setValues([[v.nome, 0, 'SIM']]);
+  sheet.getRange(linha, 2).setNumberFormat('0.000%');
+  CENTROS_EXEC_CACHE_ = null;
+  invalidarCacheInicio_();
+  registrarLog_('Criar loja', v.nome);
+  return { ok: true, centro: v.nome, mensagem: 'Loja "' + v.nome + '" cadastrada com 0% de rateio. ' +
+    'Defina o percentual na tabela abaixo e salve.' };
+}
+
+/**
+ * Renomeia a loja em TODOS os lugares onde o nome e chave.
+ *
+ * Sao quatro: a aba Centros, o cadastro de Veiculos, o snapshot de centro dos
+ * lancamentos do periodo aberto e os blocos de percentual das competencias
+ * ainda abertas. Esquecer um deles nao da erro: cria uma segunda loja
+ * fantasma, com parte dos veiculos ou parte do rateio.
+ *
+ * Lancamento de periodo fechado NAO e tocado — e historico lacrado, igual ao
+ * que impede excluir um veiculo com passado. Por isso a loja com historico
+ * nao pode ser renomeada: metade dos registros ficaria com o nome velho.
+ */
+function renomearCentro_(deBruto, paraBruto) {
+  exigirExecucaoMutacao_();
+  const origem = centroJaCadastrado_(normalizarCentroCusto_(String(deBruto || '').trim()));
+  if (!origem) return { ok: false, mensagem: 'Loja não encontrada: ' + deBruto + '.' };
+  const v = validarNomeCentro_(paraBruto);
+  if (v.erro) return { ok: false, mensagem: v.erro };
+  if (chaveCentro_(v.nome) === chaveCentro_(origem) && v.nome === origem) {
+    return { ok: false, mensagem: 'O nome novo é igual ao atual.' };
+  }
+  const colisao = centroJaCadastrado_(v.nome);
+  if (colisao && chaveCentro_(colisao) !== chaveCentro_(origem)) {
+    return { ok: false, mensagem: 'Já existe a loja "' + colisao + '".' };
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    return { ok: false, mensagem: 'Outra operação está em andamento. Tente novamente.' };
+  }
+  try {
+    const lanc = lancamentosDoCentro_(origem);
+    if (lanc.fechados.length) {
+      return { ok: false, temHistorico: true, mensagem: 'A loja "' + origem + '" tem ' +
+        lanc.fechados.length + ' lançamento(s) em períodos já fechados. Esses registros são ' +
+        'histórico lacrado e ficariam com o nome antigo, criando duas lojas na mesma frota. ' +
+        'Cadastre a loja nova, troque o centro de custo dos veículos e deixe a antiga sem uso.' };
+    }
+
+    // Uma leitura e uma escrita por aba, em bloco. Escrita celula a celula
+    // dentro de laco e o custo mais caro do Apps Script, e aqui o laco anda
+    // sobre a frota inteira: `conferir_desempenho.js` reprova quem volta a
+    // fazer isso.
+    trocarNaColuna_(aba_(ABAS.CENTROS), 1, dadosCentrosExecucao_().length, origem, v.nome);
+    const veiculos = veiculosDoCentro_(origem);
+    trocarNaColuna_(aba_(ABAS.VEICULOS), COL_VEIC.CENTRO,
+      dadosVeiculosExecucao_().length, origem, v.nome);
+    trocarNaColuna_(aba_(ABAS.LANCAMENTOS), COL_LANC.CENTRO,
+      quantidadeLancamentosReais_(), origem, v.nome, lanc.abertos);
+
+    // O bloco de percentual da competencia encerrada NAO muda: e historico.
+    // E as linhas das outras lojas ficam como estao — regravar a competencia
+    // inteira carimbaria data e responsavel em quem nao foi tocado.
+    const corrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+    const rm = aba_(ABAS.RATEIO_MENSAL, true);
+    const linhasRm = lerRateioMensal_().length;
+    const blocos = {};
+    if (linhasRm) {
+      const coluna = rm.getRange(2, COL_RM.CENTRO, linhasRm, 1).getValues();
+      const comps = rm.getRange(2, COL_RM.COMPETENCIA, linhasRm, 1).getValues();
+      let mudou = false;
+      for (let i = 0; i < linhasRm; i++) {
+        const comp = normalizarMesReferencia_(comps[i][0]);
+        if (comp < corrente) continue;
+        if (chaveCentro_(coluna[i][0]) !== chaveCentro_(origem)) continue;
+        coluna[i][0] = v.nome;
+        blocos[comp] = true;
+        mudou = true;
+      }
+      if (mudou) rm.getRange(2, COL_RM.CENTRO, linhasRm, 1).setValues(coluna);
+    }
+
+    let base = '';
+    if (centroEstaNaBaseDeRateio_(origem)) {
+      base = String(param_('BASE_RATEIO')).split(',')
+        .map(function (n) { return chaveCentro_(n) === chaveCentro_(origem) ? v.nome : n.trim(); })
+        .filter(function (n) { return n; }).join(',');
+      gravarParam_('BASE_RATEIO', base);
+    }
+
+    CENTROS_EXEC_CACHE_ = null;
+    VEICULOS_EXEC_CACHE_ = null;
+    invalidarCacheLancamentos_();
+    RATEIO_MENSAL_EXEC_CACHE_ = null;
+    invalidarCacheInicio_();
+    registrarLog_('Renomear loja', origem + ' → ' + v.nome + ' • ' + veiculos.length +
+      ' veículo(s), ' + lanc.abertos.length + ' lançamento(s) do período aberto, ' +
+      Object.keys(blocos).length + ' competência(s)' + (base ? ', base de rateio' : ''));
+    return { ok: true, centro: v.nome, mensagem: 'Loja "' + origem + '" renomeada para "' + v.nome +
+      '". Atualizados: ' + veiculos.length + ' veículo(s), ' + lanc.abertos.length +
+      ' lançamento(s) do período aberto e ' + Object.keys(blocos).length + ' competência(s) de rateio.' +
+      (base ? ' A base de rateio também foi ajustada.' : '') +
+      ' Rode "Atualizar relatórios" para o Resumo acompanhar.' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Troca um nome de centro numa coluna inteira, numa leitura e uma escrita.
+ *
+ * `linhasPermitidas` limita a troca a linhas especificas (os lancamentos do
+ * periodo aberto); sem ela, troca em todas que casarem. Hoje a guarda do
+ * lacre ja impede que exista linha fechada quando se chega aqui — o filtro e
+ * a segunda tranca: se um dia a guarda afrouxar, o historico continua
+ * intocado em vez de ser reescrito em silencio.
+ */
+function trocarNaColuna_(sheet, coluna, quantidade, de, para, linhasPermitidas) {
+  if (!sheet || quantidade < 1) return 0;
+  const permitidas = linhasPermitidas
+    ? linhasPermitidas.reduce(function (m, n) { m['#' + n] = true; return m; }, {})
+    : null;
+  const valores = sheet.getRange(2, coluna, quantidade, 1).getValues();
+  const chave = chaveCentro_(de);
+  let trocadas = 0;
+  for (let i = 0; i < quantidade; i++) {
+    if (permitidas && !permitidas['#' + (i + 2)]) continue;
+    if (chaveCentro_(valores[i][0]) !== chave) continue;
+    valores[i][0] = para;
+    trocadas++;
+  }
+  if (trocadas) sheet.getRange(2, coluna, quantidade, 1).setValues(valores);
+  return trocadas;
+}
+
+/**
+ * Exclui a loja do cadastro — so quando nada aponta para ela.
+ *
+ * Nao ha "excluir em cascata" aqui de proposito: apagar a loja de um veiculo
+ * ou de um lancamento deixaria o custo sem dono, e o rateio passaria a
+ * distribuir sobre uma base diferente da do mes anterior sem ninguem pedir.
+ */
+function excluirCentro_(nomeBruto) {
+  exigirExecucaoMutacao_();
+  const alvo = centroJaCadastrado_(normalizarCentroCusto_(String(nomeBruto || '').trim()));
+  if (!alvo) return { ok: false, mensagem: 'Loja não encontrada: ' + nomeBruto + '.' };
+  if (chaveCentro_(alvo) === chaveCentro_(CENTRO_ADM_CENTRAL_)) {
+    return { ok: false, mensagem: 'A loja "' + CENTRO_ADM_CENTRAL_ + '" é do próprio sistema e ' +
+      'não pode ser excluída.' };
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    return { ok: false, mensagem: 'Outra operação está em andamento. Tente novamente.' };
+  }
+  try {
+    const veiculos = veiculosDoCentro_(alvo);
+    if (veiculos.length) {
+      return { ok: false, emUso: true, mensagem: 'A loja "' + alvo + '" é o centro de custo de ' +
+        veiculos.length + ' veículo(s). Troque o centro deles antes de excluí-la.' };
+    }
+    const lanc = lancamentosDoCentro_(alvo);
+    const total = lanc.abertos.length + lanc.fechados.length;
+    if (total) {
+      return { ok: false, emUso: true, mensagem: 'A loja "' + alvo + '" aparece em ' + total +
+        ' lançamento(s). Esses registros ficariam com um centro de custo que não existe mais.' };
+    }
+    if (centroEstaNaBaseDeRateio_(alvo)) {
+      return { ok: false, emUso: true, mensagem: 'A loja "' + alvo + '" é base do rateio ' +
+        '(parâmetro BASE_RATEIO). Tire-a da base antes de excluí-la.' };
+    }
+
+    const sheet = aba_(ABAS.CENTROS);
+    let removidas = 0;
+    const linhas = dadosCentrosExecucao_();
+    for (let i = linhas.length - 1; i >= 0; i--) {
+      if (chaveCentro_(linhas[i][0]) === chaveCentro_(alvo)) { sheet.deleteRow(i + 2); removidas++; }
+    }
+    if (!removidas) return { ok: false, mensagem: 'Loja não encontrada na aba ' + ABAS.CENTROS + '.' };
+    garantirLinhas_(sheet, LINHAS_MINIMAS[ABAS.CENTROS] || 2);
+
+    CENTROS_EXEC_CACHE_ = null;
+    invalidarCacheInicio_();
+    registrarLog_('Excluir loja', alvo);
+    return { ok: true, mensagem: 'Loja "' + alvo + '" excluída do cadastro. Os percentuais dela ' +
+      'nas competências já encerradas continuam no histórico.' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function webCriarCentro(token, nome) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  return criarCentro_(nome);
+}
+
+function webRenomearCentro(token, de, para) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  return renomearCentro_(de, para);
+}
+
+function webExcluirCentro(token, nome) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  return excluirCentro_(nome);
+}
+
 /**
  * Grava de uma vez todos os percentuais editados na tela.
  *
@@ -11065,7 +11348,7 @@ function webSalvarRateioLote(token, dados) {
     if (!nome) return { ok: false, mensagem: 'Linha ' + (i + 1) + ': centro de custo em branco.' };
     if (!cadastrados[nome]) {
       return { ok: false, mensagem: 'Centro não encontrado: ' + nome +
-        '. Centros novos são criados na aba "' + ABAS.CENTROS + '".' };
+        '. Cadastre a loja em "Cadastrar loja", no alto da tela de Centros de custo.' };
     }
     const bruto = String(itens[i].percentual === undefined ? '' : itens[i].percentual)
       .trim().replace(',', '.');
@@ -11315,7 +11598,7 @@ function webSalvarOrcamento(token, dados) {
     if (!nome) return { ok: false, mensagem: 'Linha ' + (i + 1) + ': centro de custo em branco.' };
     if (!cadastrados[nome]) {
       return { ok: false, mensagem: 'Centro não encontrado: ' + nome +
-        '. Centros novos são criados na aba "' + ABAS.CENTROS + '".' };
+        '. Cadastre a loja em "Cadastrar loja", no alto da tela de Centros de custo.' };
     }
     const bruto = String(itens[i].valor === undefined ? '' : itens[i].valor).trim()
       .replace(/\./g, '').replace(',', '.');
