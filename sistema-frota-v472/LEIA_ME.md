@@ -3183,3 +3183,86 @@ bloco inteiro, em duas chamadas. A regra foi escrita na V4.17 para outro
 defeito e pegou este sozinha.
 
 Total do projeto: 851 → **894**.
+
+## V4.26.0 — alterar e excluir a leitura de KM pelo relatório
+
+A tela mostrava o problema e não deixava resolver. A leitura de 150.583 em
+20/10 era um dedo a mais no teclado: fazia o veículo "rodar" −88.605 km,
+marcava ⚠ retrocedeu e sujava o consumo do mês. Para acertar, era preciso
+abrir a aba Odômetro e procurar a linha à mão.
+
+Agora cada linha de leitura tem **alterar** e **excluir**, só para OPERADOR e
+ADMIN. A coluna é montada na tela, não no servidor: o mesmo relatório vai
+para o PDF e para a aba, e botão não faz sentido no papel.
+
+### A aba Odômetro não tem ID
+
+São três colunas desde a primeira versão: Data, Placa, KM. Então a identidade
+da leitura é **placa + dia + valor**, e o servidor confere os três antes de
+escrever.
+
+Número de linha não serve, e isso não é teoria: é o mesmo defeito da V4.15,
+quando a correção de pendência mirava pela linha e gravava no vizinho depois
+de uma exclusão. Entre desenhar o relatório e clicar no botão, outra pessoa
+pode excluir uma linha acima e o alvo desce sozinho. Tem prova disso.
+
+Leitura que não está mais lá: **recusa e manda atualizar**, em vez de gravar
+em qualquer linha. Duas leituras idênticas — mesma placa, mesmo dia, mesmo KM
+— já são, elas próprias, uma duplicidade: age-se numa e a mensagem diz
+quantas eram.
+
+### O lacre do período
+
+Leitura de mês fechado não se mexe por aqui, pelo mesmo motivo dos
+lançamentos: o KM entra no consumo e no R$/km do mês, e alterá-lo depois faria
+o Histórico divergir do que foi assinado. A mensagem manda reabrir o mês.
+
+### O que o botão NÃO faz
+
+Não recalcula o Resumo. Ele lê o odômetro e é remontado por "Atualizar
+relatórios", que leva minutos numa frota inteira — fazer isso dentro do
+clique arriscaria o limite de 6 minutos, que é o que travou o botão de
+divergências na V4.20. A mensagem avisa o que falta fazer.
+
+### De quebra: o NaN da linha do veículo
+
+A linha de resumo de cada veículo punha `"6 leitura(s)"` na coluna
+**Leitura (KM)** e o aviso de retrocesso na coluna **KM/dia** — as duas
+numéricas. Na tela saía **NaN**, e o total rodado ia parar em Observação. Era
+visível na imagem que o usuário mandou e passou doze versões sem ninguém
+reparar. Agora o total rodado cai em "Rodou desde a anterior", que é
+exatamente o que ele é, e o texto vai para Observação.
+
+### A confirmação que sumia
+
+Primeira versão escrevia o "pronto, alterado" direto no `saidaRel` e logo em
+seguida mandava recalcular o relatório — que substitui o conteúdo inteiro. A
+mensagem sumia antes de ser lida e a ação parecia não ter acontecido. Fica
+guardada numa variável e quem desenha a tabela a põe por cima.
+
+### Suíte
+
+`conferir_odometro_edicao.js` — **59 provas**. Mutação: **18 de 18 pegas**.
+
+Três armadilhas de fixture nesta:
+
+1. `Date` criado **fora do vm** não passa no `instanceof Date` de dentro: o
+   relatório descartava toda a fixture em silêncio e as provas passavam sem
+   provar nada. A fábrica de datas passou a rodar dentro do vm.
+2. **"não confere a placa" e "não confere o dia" sobreviveram** porque a
+   fixture tinha um veículo só e nenhum KM repetido — conferir ou não
+   conferir dava no mesmo. Entrou um sósia de cada: outro veículo com a mesma
+   leitura no mesmo dia, e o mesmo veículo com o mesmo KM em outro dia.
+3. A prova do lacre usava **29/09, que está aberto** — a competência 2026-10
+   vai de 26/09 a 25/10. Passava sem o lacre existir.
+
+É a sétima vez nesta sessão. **Uma fixture em que a entrada e a saída
+coincidem não distingue a transformação da ausência dela.**
+
+### E a regra estática de novo
+
+`conferir_funcoes_html.js` pegou uma `avisoLeitura()` que sobrou de um
+rascunho e teria dado `ReferenceError` no primeiro clique em "KM inválido" —
+derrubando a tela inteira, sem mensagem útil.
+
+Total do projeto: 894 → **953**.

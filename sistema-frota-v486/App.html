@@ -1693,11 +1693,15 @@
             mensagem: 'Consolidado por veículo, do que mais consumiu para o que menos.',
           });
         }
-        el('saidaRel').innerHTML = resumo +
-          tabela(dados, (dados && dados.mensagem) || 'Nenhum resultado para os filtros escolhidos.', { destacarBloco: true });
+        var aviso = AVISO_LEITURA; AVISO_LEITURA = '';
+        el('saidaRel').innerHTML = aviso + resumo +
+          tabela(comAcoesDeLeitura(dados),
+            (dados && dados.mensagem) || 'Nenhum resultado para os filtros escolhidos.',
+            { destacarBloco: true, html: true });
       })
       .withFailureHandler(function (erro) {
-        el('saidaRel').innerHTML = '<div class="erro-caixa">' + esc(erro.message) + '</div>';
+        var aviso = AVISO_LEITURA; AVISO_LEITURA = '';
+        el('saidaRel').innerHTML = aviso + '<div class="erro-caixa">' + esc(erro.message) + '</div>';
       })
       .webRelatorio(TOKEN, tipo, {
         centro: el('relCentro').value, categoria: el('relCategoria').value,
@@ -1705,6 +1709,94 @@
         veiculo: String(el('relVeiculo').value || '').trim() || 'TODOS',
         termo: el('relTermo') ? el('relTermo').value : ''
       });
+  }
+
+  /**
+   * Acrescenta "alterar" e "excluir" nas linhas de leitura de odômetro.
+   *
+   * A coluna é montada aqui, não no servidor: o mesmo relatório vai para o
+   * PDF e para a aba, e uma coluna de botão não faz sentido no papel. O
+   * servidor manda `refs` — uma referência por linha, nula na linha de
+   * resumo do veículo — e é por ela que o botão sabe qual leitura é.
+   *
+   * Só para quem pode gravar. Quem não pode não ganha um botão que vai
+   * falhar no servidor.
+   */
+  var REFS_LEITURA = [];
+
+  function comAcoesDeLeitura(dados) {
+    if (!dados || !dados.refs || !dados.linhas || !dados.linhas.length) return dados;
+    if (!SESSAO || ['OPERADOR', 'ADMIN'].indexOf(SESSAO.perfil) === -1) return dados;
+    REFS_LEITURA = dados.refs;
+    return {
+      colunas: dados.colunas.concat([{ titulo: '' }]),
+      linhas: dados.linhas.map(function (l, i) {
+        if (!dados.refs[i]) return l.concat(['']);
+        return l.concat([
+          '<button class="acao secundaria" style="padding:4px 10px" ' +
+            'onclick="alterarLeitura(' + i + ')">alterar</button> ' +
+          '<button class="acao secundaria" style="padding:4px 10px" ' +
+            'onclick="excluirLeitura(' + i + ')">excluir</button>']);
+      }),
+      totais: dados.totais ? dados.totais.concat([null]) : null,
+      mensagem: dados.mensagem,
+      refs: dados.refs,
+    };
+  }
+
+  /**
+   * O resultado da ação tem de sobreviver ao recarregamento do relatório.
+   *
+   * Escrever direto no `saidaRel` não servia: logo em seguida o relatório é
+   * recalculado e substitui o conteúdo inteiro — a confirmação sumia antes de
+   * ser lida, e a ação parecia não ter acontecido. Fica guardada aqui e quem
+   * desenha a tabela a coloca por cima.
+   */
+  var AVISO_LEITURA = '';
+
+  function avisarEDesenhar(html) {
+    AVISO_LEITURA = html;
+    var sel = el('relTipo');
+    if (sel) sel.dispatchEvent(new Event('change'));
+    else el('saidaRel').innerHTML = html;
+  }
+
+  function caixaLeitura(r) {
+    return r.ok ? '<div class="ok-caixa">' + esc(r.mensagem) + '</div>'
+                : '<div class="erro-caixa">' + esc(r.mensagem) + '</div>';
+  }
+
+  function alterarLeitura(i) {
+    var ref = REFS_LEITURA[i];
+    if (!ref) return;
+    var atual = String(ref.km);
+    var novo = prompt('Leitura de ' + ref.placa + ' em ' + ref.data +
+      '.\n\nKM correto:', atual);
+    if (novo === null) return;
+    novo = String(novo).replace(/\./g, '').replace(',', '.').trim();
+    if (!novo || isNaN(Number(novo))) {
+      avisarEDesenhar('<div class="erro-caixa">KM inválido.</div>');
+      return;
+    }
+    el('saidaRel').innerHTML = '<div class="carregando">alterando a leitura…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      avisarEDesenhar(caixaLeitura(r));
+    }).withFailureHandler(function (e) {
+      avisarEDesenhar('<div class="erro-caixa">' + esc(e.message) + '</div>');
+    }).webAjustarOdometro(TOKEN, ref, Number(novo));
+  }
+
+  function excluirLeitura(i) {
+    var ref = REFS_LEITURA[i];
+    if (!ref) return;
+    if (!confirm('Excluir a leitura de ' + ref.placa + ' em ' + ref.data +
+      ' (' + ref.km + ' KM)?\n\nFica registrada no Log, mas não volta pela tela.')) return;
+    el('saidaRel').innerHTML = '<div class="carregando">excluindo a leitura…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      avisarEDesenhar(caixaLeitura(r));
+    }).withFailureHandler(function (e) {
+      avisarEDesenhar('<div class="erro-caixa">' + esc(e.message) + '</div>');
+    }).webExcluirOdometro(TOKEN, ref);
   }
 
   function telaResumo() {

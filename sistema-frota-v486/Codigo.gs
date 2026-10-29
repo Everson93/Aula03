@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.25.0';
+const VERSAO_SISTEMA = '4.26.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -10169,16 +10169,26 @@ function relatorioHistoricoKm_(centro, categoria, placa) {
   }).sort(function (a, b) { return b.total - a.total; });
 
   const linhas = [];
+  const refs = [];
   let quebrasTotais = 0;
   ordenados.forEach(function (v) {
     quebrasTotais += v.quebras;
+    // A linha do veiculo e um RESUMO, e cada celula tem de cair na coluna do
+    // tipo certo: texto em coluna numerica vira NaN na tela. O total rodado
+    // vai para "Rodou desde a anterior", que e exatamente o que ele e.
     linhas.push([
       (v.placa + (v.descricao ? ' — ' + v.descricao : '')).toUpperCase(),
-      '', v.leituras.length + ' leitura(s)', '', '',
-      v.quebras ? '⚠ ' + v.quebras + ' leitura(s) menor(es) que a anterior' : '',
-      v.total,
+      '', '', v.total, '', '',
+      v.leituras.length + ' leitura(s)' +
+        (v.quebras ? ' • ⚠ ' + v.quebras + ' menor(es) que a anterior' : ''),
     ]);
+    refs.push(null);
     v.leituras.slice().reverse().forEach(function (r) {
+      // A referencia acompanha a linha: e por ela que a tela pede para
+      // alterar ou excluir ESTA leitura. A aba Odometro nao tem ID, entao a
+      // identidade e placa + dia + valor — conferida de novo no servidor
+      // antes de escrever, porque numero de linha envelhece.
+      refs.push({ placa: v.placa, data: isoDoDia_(r.data), km: r.km });
       linhas.push([
         '', formatarData_(r.data), r.km,
         r.rodou === null ? '' : r.rodou,
@@ -10194,6 +10204,7 @@ function relatorioHistoricoKm_(centro, categoria, placa) {
       col_('Rodou desde a anterior', 'numero'), col_('Dias', 'numero'),
       col_('KM/dia', 'decimal'), col_('Observação')],
     linhas: linhas,
+    refs: refs,
     mensagem: ordenados.length + ' veículo(s) • ' +
       ordenados.reduce(function (t, v) { return t + v.leituras.length; }, 0) +
       ' leitura(s) em toda a base' +
@@ -10202,6 +10213,149 @@ function relatorioHistoricoKm_(centro, categoria, placa) {
   };
 }
 
+
+/** aaaa-mm-dd de um Date, no fuso da planilha. */
+function isoDoDia_(data) {
+  if (!(data instanceof Date) || isNaN(data.getTime())) return '';
+  return Utilities.formatDate(data, timezone_(), 'yyyy-MM-dd');
+}
+
+/**
+ * Acha a linha de UMA leitura de odometro.
+ *
+ * A aba Odometro nao tem coluna de ID — sao tres colunas desde a primeira
+ * versao. Entao a identidade da leitura e placa + dia + valor, e e isso que a
+ * tela devolve. Numero de linha NAO serve: entre desenhar o relatorio e
+ * clicar no botao, outra pessoa pode ter excluido uma linha acima, e o alvo
+ * desce sozinho. Esse defeito ja aconteceu neste projeto, com pendencia.
+ *
+ * Devolve { linha, iguais } ou { erro }. Leituras identicas (mesma placa,
+ * mesmo dia, mesmo KM) sao, elas proprias, uma duplicidade: age-se na
+ * primeira e diz-se quantas eram, em vez de recusar e deixar o usuario sem
+ * saida.
+ */
+function localizarLeituraOdometro_(ref) {
+  const placa = normalizaPlaca_(ref && ref.placa);
+  const dia = String((ref && ref.data) || '').trim();
+  const km = Number(ref && ref.km);
+  if (!placa || !/^\d{4}-\d{2}-\d{2}$/.test(dia) || !isFinite(km)) {
+    return { erro: 'Leitura não identificada. Atualize o relatório e tente de novo.' };
+  }
+  const achadas = [];
+  lerOdometro_().forEach(function (l, i) {
+    if (normalizaPlaca_(l[1]) !== placa) return;
+    if (isoDoDia_(l[0]) !== dia) return;
+    if (Number(l[2]) !== km) return;
+    achadas.push(i + 2);   // a leitura comeca na linha 2 da aba
+  });
+  if (!achadas.length) {
+    return { erro: 'Esta leitura não está mais na base — alguém pode tê-la alterado ou ' +
+      'excluído enquanto o relatório estava aberto. Atualize o relatório.' };
+  }
+  return { linha: achadas[0], iguais: achadas.length };
+}
+
+/**
+ * Leitura de periodo ja fechado nao se mexe por aqui.
+ *
+ * O mesmo lacre dos lancamentos: o KM entra no consumo e no R$/km do mes, e
+ * mexer nele depois do fechamento faria o Historico divergir do que foi
+ * assinado. Reabrir o mes e o caminho, e a mensagem diz isso.
+ */
+function recusarLeituraDePeriodoFechado_(dia) {
+  const data = parseDataIsoEstrita_(dia);
+  if (!data) return null;
+  const periodo = periodoAtual_();
+  if (data >= periodo.inicio) return null;
+  return 'Esta leitura é de ' + formatarData_(data) + ', de um período já fechado (' +
+    mesCompetenciaDaData_(data) + '). Reabra o mês (Fechamento → Reabrir mês anterior) ' +
+    'antes de alterar o KM.';
+}
+
+/**
+ * Altera o KM de uma leitura.
+ *
+ * Nao recalcula o Resumo: ele le o odometro e e remontado por "Atualizar
+ * relatorios", que leva minutos numa frota inteira. Fazer isso dentro do
+ * clique arriscaria o limite de 6 minutos — o mesmo que travou o botao de
+ * divergencias na V4.20. A mensagem avisa o que falta.
+ */
+function ajustarLeituraOdometro_(ref, novoKm) {
+  exigirExecucaoMutacao_();
+  const km = Number(novoKm);
+  if (!isFinite(km) || km <= 0) {
+    return { ok: false, mensagem: 'Informe um KM maior que zero.' };
+  }
+  if (km === Number(ref && ref.km)) {
+    return { ok: false, mensagem: 'O KM informado é igual ao que já está gravado.' };
+  }
+  const travado = recusarLeituraDePeriodoFechado_(ref && ref.data);
+  if (travado) return { ok: false, mensagem: travado };
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return { ok: false, mensagem: 'Outra operação está em andamento. Tente novamente em alguns segundos.' };
+  }
+  try {
+    const achado = localizarLeituraOdometro_(ref);
+    if (achado.erro) return { ok: false, mensagem: achado.erro };
+    aba_(ABAS.ODOMETRO).getRange(achado.linha, 3).setValue(km);
+    // Sem isto, tudo que ler o odometro nesta mesma execucao — inclusive a
+    // releitura do proprio relatorio — continuaria com o valor antigo.
+    invalidarCacheOdometro_();
+    registrarLog_('Odômetro alterado', ref.placa + ' • ' + ref.data + ' • ' +
+      numBR_(Number(ref.km), 0) + ' → ' + numBR_(km, 0) + ' KM');
+    return {
+      ok: true,
+      mensagem: 'Leitura de ' + formatarData_(parseDataIsoEstrita_(ref.data)) + ' alterada de ' +
+        numBR_(Number(ref.km), 0) + ' para ' + numBR_(km, 0) + ' KM.' +
+        (achado.iguais > 1 ? ' Havia ' + achado.iguais + ' leituras idênticas; alterei uma delas.' : '') +
+        ' O consumo do mês só muda depois de "Atualizar relatórios".',
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Exclui uma leitura de odometro. O de-para fica no Log. */
+function excluirLeituraOdometro_(ref) {
+  exigirExecucaoMutacao_();
+  const travado = recusarLeituraDePeriodoFechado_(ref && ref.data);
+  if (travado) {
+    return { ok: false, mensagem: travado.replace('alterar o KM', 'excluir a leitura') };
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    return { ok: false, mensagem: 'Outra operação está em andamento. Tente novamente em alguns segundos.' };
+  }
+  try {
+    const achado = localizarLeituraOdometro_(ref);
+    if (achado.erro) return { ok: false, mensagem: achado.erro };
+    aba_(ABAS.ODOMETRO).deleteRow(achado.linha);
+    invalidarCacheOdometro_();
+    registrarLog_('Odômetro excluído', ref.placa + ' • ' + ref.data + ' • ' +
+      numBR_(Number(ref.km), 0) + ' KM');
+    return {
+      ok: true,
+      mensagem: 'Leitura de ' + formatarData_(parseDataIsoEstrita_(ref.data)) + ' (' +
+        numBR_(Number(ref.km), 0) + ' KM) excluída.' +
+        (achado.iguais > 1 ? ' Havia ' + achado.iguais + ' leituras idênticas; excluí uma delas.' : '') +
+        ' O consumo do mês só muda depois de "Atualizar relatórios".',
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function webAjustarOdometro(token, ref, novoKm) {
+  autorizarContextoWeb_(token, ['OPERADOR', 'ADMIN']);
+  return ajustarLeituraOdometro_(ref, novoKm);
+}
+
+function webExcluirOdometro(token, ref) {
+  autorizarContextoWeb_(token, ['OPERADOR', 'ADMIN']);
+  return excluirLeituraOdometro_(ref);
+}
 
 function relatorioRanking_(centro, categoria, placa) {
   const dados = filtrarResumo_(centro, categoria, placa)
