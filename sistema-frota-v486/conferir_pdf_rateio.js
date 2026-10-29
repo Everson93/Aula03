@@ -87,12 +87,27 @@ ok('o maior centro é o de maior TOTAL, não o primeiro da lista',
   /Maior centro<\/div><div class="val">Loja 03/.test(h),
   (h.match(/Maior centro<\/div><div class="val">[^<]*/) || [''])[0]);
 ok('a soma das fatias dá 100%', h.indexOf('100,00%') !== -1);
-ok('o distribuído aparece negativo', /R\$ -50\.000,00/.test(h), 'o total distribuído');
-// Conta a CLASSE aplicada na linha, não a palavra solta: `tag-base` também
-// aparece na folha de estilo, e contá-la lá dava 3 em vez de 2.
-ok('cada centro-base é marcado como quem distribui',
-  (h.match(/class="tag tag-base"/g) || []).length === 2,
-  String((h.match(/class="tag tag-base"/g) || []).length));
+// V4.22.2: a tabela passou a listar SÓ quem recebe rateio. Os centros-base
+// ficam com total zero depois de distribuir, e linha de zeros no meio da
+// lista é ruído. A coluna "Distribuído" saiu junto: para loja era sempre
+// travessão.
+// Só o CORPO da tabela: o cabeçalho cita a base do rateio de propósito
+// ("base do rateio: DEPÓSITO, EMPILHADEIRAS"), e procurar o nome no documento
+// inteiro reprovava por causa dele.
+function corpoTabela(html) {
+  const m = /<tbody>([\s\S]*?)<\/tbody>/.exec(html);
+  return m ? m[1] : '';
+}
+ok('os centros-base NÃO aparecem nas linhas da tabela',
+  corpoTabela(h).indexOf('DEPÓSITO') === -1 &&
+  corpoTabela(h).indexOf('EMPILHADEIRAS') === -1,
+  corpoTabela(h).slice(0, 160));
+ok('mas o cabeçalho continua dizendo qual é a base',
+  /base do rateio: DEPÓSITO, EMPILHADEIRAS/.test(h),
+  'quem lê precisa saber de onde veio o rateio');
+ok('a coluna Distribuído saiu', h.indexOf('>Distribuído<') === -1);
+ok('e o total da tabela é o das lojas', /TOTAL<\/td>[\s\S]{0,400}R\$ 60\.000,00/.test(h),
+  'sem centro fora, o total das lojas é o total da frota');
 
 console.log('\n1b. O número de cima é o TOTAL');
 // Trocar o indicador principal do total para o valor redistribuído (ou o
@@ -105,7 +120,7 @@ function kpi(html, rotulo) {
   const m = re.exec(html);
   return m ? { valor: m[1], sub: m[2] || '' } : null;
 }
-const principal = kpi(h, 'Custo total rateado');
+const principal = kpi(h, 'Custo total da frota');
 ok('o indicador principal existe', !!principal, 'rótulos dos indicadores: ' +
   JSON.stringify((h.match(/<div class="rot">[^<]*<\/div><div class="val">/g) || [])));
 ok('e mostra o TOTAL, não o valor redistribuído',
@@ -122,9 +137,11 @@ const centros = kpi(h, 'Centros que recebem');
 ok('com todo o custo alocado, o indicador diz isso',
   centros && /todo o custo alocado/.test(centros.sub), centros ? centros.sub : '');
 
-const media = kpi(h, 'Média por centro');
-ok('a média é o total dividido pelos que recebem',
-  media && media.valor === 'R$ 15.000,00', media ? media.valor : '');
+ok('não há mais indicador de média', !kpi(h, 'Média por centro'),
+  'num rateio por percentual a média não diz nada que o percentual já não diga');
+ok('sobraram três indicadores',
+  (h.match(/<div class="rot">[^<]*<\/div><div class="val">/g) || []).length === 3,
+  String((h.match(/<div class="rot">[^<]*<\/div><div class="val">/g) || []).length));
 
 // Centro que não recebe e tem custo: o dinheiro não chegou a loja nenhuma.
 const comSobra = apuracao();
@@ -136,9 +153,34 @@ const centros2 = kpi(h2, 'Centros que recebem');
 ok('custo que ficou fora das lojas é dito no indicador',
   centros2 && /R\$ 5\.000,00 fora das lojas/.test(centros2.sub),
   centros2 ? centros2.sub : '');
-ok('e a média desconta esse valor',
-  (kpi(h2, 'Média por centro') || {}).valor === 'R$ 15.000,00',
-  (kpi(h2, 'Média por centro') || {}).valor + ' — (65.000 - 5.000) / 4');
+// O dinheiro fora da lista NÃO pode sumir: sem esta linha o PDF fecharia num
+// número diferente do Resumo e ninguém saberia por quê.
+ok('o custo fora das lojas é dito abaixo da tabela',
+  /class="fora"[\s\S]{0,300}R\$ 5\.000,00/.test(h2), 'faltou a linha de conferência');
+ok('com o total da frota ao lado, para fechar com o Resumo',
+  /class="fora"[\s\S]{0,400}R\$ 65\.000,00/.test(h2), '60.000 das lojas + 5.000 fora');
+ok('e o centro que não recebe fica fora da tabela',
+  !/ADM CENTRAL<\/td>/.test(h2) && !/>ADM CENTRAL</.test(h2.split('class="fora"')[0]),
+  'ele é citado na linha de conferência, não na lista');
+
+// Com dinheiro fora, "total das lojas" e "total da frota" deixam de ser o
+// mesmo número — e é só aí que dá para provar qual dos dois a tabela usa.
+// Na fixture sem sobra os dois coincidem, e trocar um pelo outro passava.
+// Escopado na PRÓPRIA linha de total: a versão anterior olhava 400
+// caracteres à frente e pegava junto o R$ 65.000,00 da linha de conferência,
+// que vem logo depois da tabela. Reprovava por vizinhança, não por defeito.
+function linhaTotal(html) {
+  const m = /<tr class="total">([\s\S]*?)<\/tr>/.exec(html);
+  return m ? m[1] : '';
+}
+ok('o TOTAL da tabela é o das lojas, não o da frota',
+  linhaTotal(h2).indexOf('R$ 60.000,00') !== -1 &&
+  linhaTotal(h2).indexOf('R$ 65.000,00') === -1,
+  linhaTotal(h2).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '));
+// A maior loja tem 23.000 de 60.000 = 38,33%. Sobre 65.000 daria 35,38%.
+ok('a fatia da maior loja é sobre o total das lojas',
+  /38,33%/.test(h2) && !/35,38%/.test(h2),
+  (h2.match(/>[0-9]+,[0-9]{2}%</g) || []).join(' '));
 ctx.__apuracao = apuracao();
 h = ctx.htmlRateioPdf_('2026-10');
 
@@ -189,8 +231,10 @@ comOrfao.linhas.push({ centro: 'SEM CADASTRO', direto: 500, percentual: 0, receb
 comOrfao.orfaos = ['SEM CADASTRO'];
 ctx.__apuracao = comOrfao;
 h = ctx.htmlRateioPdf_('2026-10');
-ok('centro órfão é dito', /não estão cadastrados.*SEM CADASTRO/.test(h));
-ok('e marcado na linha', /class="orfao"/.test(h));
+ok('centro órfão é dito nas observações', /não estão cadastrados.*SEM CADASTRO/.test(h));
+ok('e o valor dele aparece na linha de conferência',
+  /class="fora"[\s\S]{0,300}R\$ 500,00/.test(h),
+  'órfão não recebe rateio, então sai da tabela — mas o custo dele não some');
 
 console.log('\n4. Apuração limpa não inventa ressalva');
 ctx.__apuracao = apuracao();

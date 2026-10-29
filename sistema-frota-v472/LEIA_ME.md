@@ -2766,3 +2766,50 @@ de baixo, e de que **não existe** um indicador separado repetindo o mesmo
 número. Cinco mutações cobrem os cinco comportamentos.
 
 `conferir_pdf_rateio.js`: 45 → **53**. Total do projeto: **738**.
+
+## V4.22.2 — só as lojas no relatório
+
+Três coisas, a partir do que você viu na amostra.
+
+**Era só um exemplo.** Os dados eram inventados — por isso faltavam lojas e
+aparecia um "ADM Central" de R$ 424.943 que eu criei para o total bater. Na
+planilha ele lê os centros de verdade.
+
+**Saiu a média por centro.** Num rateio por percentual ela não diz nada que o
+percentual já não diga. Ficaram três indicadores.
+
+**Saiu quem não recebe rateio.** DEPÓSITO e EMPILHADEIRAS ficam com total zero
+depois de distribuir, e linha de zeros no meio da lista é ruído. A coluna
+*Distribuído* saiu junto: para loja era sempre travessão.
+
+### O dinheiro que sai da lista não pode sair da conta
+
+Tirar quem não recebe tem uma consequência: se houver centro **com custo** que
+não recebe rateio — um que aparece nos veículos mas não está cadastrado —, o
+total da tabela deixaria de bater com o Resumo, e ninguém saberia por quê.
+
+Por isso, logo abaixo da tabela, quando isso acontece:
+
+> Além desta lista, **R$ 3.200,50** ficaram em centros que não recebem rateio
+> (aparecem nos veículos mas não estão cadastrados). Custo total da frota na
+> competência: **R$ 898.059,61**.
+
+Quando não há sobra, a linha nem aparece — e o indicador diz *"todo o custo
+alocado"*.
+
+O indicador principal também passou a se chamar **Custo total da frota**, não
+"rateado": com sobra, o total inclui dinheiro que justamente **não** foi
+rateado, e o rótulo mentiria. Quanto se moveu de fato está na linha de baixo.
+
+### Três provas minhas reprovando por vizinhança
+
+1. `h.indexOf('DEPÓSITO') === -1` reprovava porque o **cabeçalho** cita a base
+   do rateio, de propósito. Passou a olhar só o corpo da tabela.
+2. A prova do total olhava 400 caracteres à frente e pegava junto o
+   R$ 65.000,00 da linha de conferência, que vem logo depois. Escopada na
+   própria linha de total.
+3. Duas mutações sobreviveram porque na fixture sem sobra *total das lojas* e
+   *total da frota* são o mesmo número. Só com dinheiro fora dá para provar
+   qual dos dois a tabela usa.
+
+`conferir_pdf_rateio.js`: 53 → **60**, 7 mutações. Total do projeto: **745**.

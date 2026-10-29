@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.22.1';
+const VERSAO_SISTEMA = '4.22.2';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8158,7 +8158,8 @@ function htmlRateioPdf_(mesRef) {
   const naoAlocado = a.linhas
     .filter(function (l) { return !l.recebe && l.total > 0; })
     .reduce(function (t, l) { return t + l.total; }, 0);
-  const mediaPorCentro = recebem > 0 ? (totalGeral - naoAlocado) / recebem : 0;
+  // A média por centro saiu a pedido: num rateio por percentual ela não diz
+  // nada que o percentual já não diga.
 
   // Ressalvas: o rateio tem condicoes que mudam a leitura do numero, e um PDF
   // que sai da mesa sem elas vira um numero sem contexto.
@@ -8183,18 +8184,25 @@ function htmlRateioPdf_(mesRef) {
       'não recebem rateio: ' + a.orfaos.join(', ') + '.');
   }
 
-  const linhas = a.linhas.map(function (l) {
-    const fatia = totalGeral > 0 ? (l.total / totalGeral) * 100 : 0;
-    const ehBase = baseNomes.indexOf(l.centro) !== -1;
-    const classe = l.orfao ? ' class="orfao"' : (ehBase ? ' class="base"' : '');
+  // Só quem recebe rateio entra na tabela. Os centros-base ficam com total
+  // zero depois de distribuir — linha de zeros no meio da lista é ruído — e
+  // quem não recebe não é destino de custo.
+  //
+  // MAS o dinheiro que ficou fora não pode sumir: se houver centro sem
+  // cadastro com custo, ele aparece numa linha única logo antes do total,
+  // senão o PDF fecharia num número diferente do Resumo e ninguém saberia por quê.
+  const recebedores = a.linhas.filter(function (l) { return l.recebe; });
+  const totalLojas = recebedores.reduce(function (t, l) { return t + l.total; }, 0);
+
+  const linhas = recebedores.map(function (l) {
+    const fatia = totalLojas > 0 ? (l.total / totalLojas) * 100 : 0;
+    const classe = l.orfao ? ' class="orfao"' : '';
     return '<tr' + classe + '>' +
       '<td class="centro">' + escHtml_(l.centro) +
-        (l.orfao ? '<span class="tag">não cadastrado</span>' : '') +
-        (ehBase ? '<span class="tag tag-base">distribui</span>' : '') + '</td>' +
+        (l.orfao ? '<span class="tag">não cadastrado</span>' : '') + '</td>' +
       '<td class="n">' + brlPdf_(l.direto) + '</td>' +
       '<td class="n">' + (l.recebe ? numBR_(l.percentual * 100, 2) + '%' : '—') + '</td>' +
       '<td class="n">' + (l.rateio ? brlPdf_(l.rateio) : '—') + '</td>' +
-      '<td class="n neg">' + (l.distribuido ? brlPdf_(l.distribuido) : '—') + '</td>' +
       '<td class="n forte">' + brlPdf_(l.total) + '</td>' +
       '<td class="n">' + numBR_(fatia, 2) + '%</td>' +
       '</tr>';
@@ -8213,7 +8221,7 @@ function htmlRateioPdf_(mesRef) {
     // Sem margem negativa: ela puxava a primeira célula para fora da página e
     // comia a barra laranja dela. O espaçamento entre células já basta.
     '.kpis { width: 100%; border-collapse: separate; border-spacing: 7px 0; margin: 0 0 12px 0; }' +
-    '.kpis td { background: ' + CORES.CINZA + '; padding: 8px 11px; width: 25%; ' +
+    '.kpis td { background: ' + CORES.CINZA + '; padding: 8px 11px; width: 33.33%; ' +
       'border-left: 3px solid ' + CORES.LARANJA + '; }' +
     '.kpis .rot { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .7px; color: ' + CORES.GRAFITE + '; }' +
     '.kpis .val { font-size: 14pt; font-weight: bold; padding-top: 2px; line-height: 1.15; }' +
@@ -8224,12 +8232,11 @@ function htmlRateioPdf_(mesRef) {
     'table.dados th.n, table.dados td.n { text-align: right; }' +
     'table.dados td { padding: 5px 8px; border-bottom: 1px solid #e3e0de; }' +
     'table.dados tbody tr:nth-child(even) td { background: #faf9f8; }' +
-    'tr.base td { background: ' + CORES.LARANJA_CLARO + ' !important; }' +
+    '.fora { margin-top: 8px; background: ' + CORES.AMARELO + '; padding: 7px 11px; font-size: 8pt; }' +
     'tr.orfao td { background: ' + CORES.VERMELHO + ' !important; }' +
     '.centro { font-weight: bold; }' +
     '.tag { font-size: 6.5pt; font-weight: normal; text-transform: uppercase; letter-spacing: .5px; ' +
       'background: ' + CORES.VERMELHO + '; color: #8a1c1c; padding: 1px 5px; margin-left: 6px; border-radius: 2px; }' +
-    '.tag-base { background: ' + CORES.LARANJA + '; color: ' + CORES.TEXTO_CLARO + '; }' +
     '.neg { color: #8a1c1c; }' +
     '.forte { font-weight: bold; }' +
     'tr.total td { border-top: 2.5px solid ' + CORES.PRETO + '; border-bottom: none; ' +
@@ -8256,14 +8263,15 @@ function htmlRateioPdf_(mesRef) {
       // redistribuído entra como linha menor embaixo dele. Separar os dois em
       // indicadores diferentes faria os dois primeiros mostrarem o MESMO
       // número, porque o que sai do depósito volta inteiro para as lojas.
-      '<td><div class="rot">Custo total rateado</div><div class="val">' + brlPdf_(totalGeral) + '</div>' +
+      // "Custo total da frota", não "rateado": quando sobra custo em centro que
+      // não recebe, o total inclui dinheiro que NÃO foi rateado, e o rótulo
+      // mentiria. A linha de baixo diz quanto de fato se moveu.
+      '<td><div class="rot">Custo total da frota</div><div class="val">' + brlPdf_(totalGeral) + '</div>' +
         '<div class="rot">sendo ' + brlPdf_(totalRateio) + ' redistribuídos</div></td>' +
       '<td><div class="rot">Centros que recebem</div><div class="val">' + numBR_(recebem, 0) + '</div>' +
         '<div class="rot">' + (naoAlocado > 0
           ? brlPdf_(naoAlocado) + ' fora das lojas'
           : 'todo o custo alocado') + '</div></td>' +
-      '<td><div class="rot">Média por centro</div><div class="val">' + brlPdf_(mediaPorCentro) + '</div>' +
-        '<div class="rot">entre os que recebem</div></td>' +
       '<td><div class="rot">Maior centro</div><div class="val">' +
         escHtml_(maior ? maior.centro : '—') + '</div>' +
         '<div class="rot">' + (maior && totalGeral > 0
@@ -8273,18 +8281,24 @@ function htmlRateioPdf_(mesRef) {
 
     '<table class="dados"><thead><tr>' +
       '<th>Centro de Custo</th><th class="n">Custo Direto</th><th class="n">% Rateio</th>' +
-      '<th class="n">Rateio Recebido</th><th class="n">Distribuído</th>' +
+      '<th class="n">Rateio Recebido</th>' +
       '<th class="n">Total</th><th class="n">% do Total</th>' +
     '</tr></thead><tbody>' + linhas +
     '<tr class="total">' +
-      '<td>TOTAL GERAL</td>' +
-      '<td class="n">' + brlPdf_(totalDireto) + '</td>' +
+      '<td>TOTAL</td>' +
+      '<td class="n">' + brlPdf_(recebedores.reduce(function (t, l) { return t + l.direto; }, 0)) + '</td>' +
       '<td class="n">—</td>' +
       '<td class="n">' + brlPdf_(totalRateio) + '</td>' +
-      '<td class="n neg">' + brlPdf_(-totalRateio) + '</td>' +
-      '<td class="n">' + brlPdf_(totalGeral) + '</td>' +
+      '<td class="n">' + brlPdf_(totalLojas) + '</td>' +
       '<td class="n">100,00%</td>' +
     '</tr></tbody></table>' +
+    // A conferência com o Resumo: o que não está na tabela acima fica DITO,
+    // em vez de o total simplesmente não bater.
+    (naoAlocado > 0
+      ? '<div class="fora">Além desta lista, <b>' + brlPdf_(naoAlocado) + '</b> ficaram em ' +
+        'centros que não recebem rateio (aparecem nos veículos mas não estão cadastrados). ' +
+        'Custo total da frota na competência: <b>' + brlPdf_(totalGeral) + '</b>.</div>'
+      : '') +
 
     (notas.length
       ? '<div class="notas"><b>Observações desta apuração</b><ul>' +
