@@ -2880,3 +2880,60 @@ trecho numérico como texto, inverter o caso do nome curto, e tirar a
 maiusculização.
 
 `conferir_pdf_rateio.js`: 62 → **75**. Total do projeto: **760**.
+
+## V4.23.0 — depreciação e manutenção por loja
+
+Eu tinha dito que o sistema não sabe o setor que usou o veículo. Você
+corrigiu: **o veículo já é vinculado à loja**, pelo centro de custo do
+cadastro. Está certo — o que eu descrevi como limitação (não saber *quem
+dirigiu num dia*) não é a pergunta que vocês fazem. A pergunta é *quanto cada
+loja carrega*, e para isso o vínculo já existe.
+
+Dois relatórios novos, os dois só no app.
+
+### Depreciação por loja
+
+Uma linha **por loja**, não por veículo: a depreciação de cada bem é um valor
+fixo mensal, e o que se quer saber é quanto cada loja carrega.
+
+| Centro de Custo | Veículos | Depreciação | % do total |
+
+### Manutenção por loja
+
+Uma linha **por veículo**, com a loja na primeira coluna — aqui o detalhe
+importa, porque manutenção varia e a pergunta seguinte é sempre *qual veículo
+puxou a conta desta loja*.
+
+| Centro de Custo | Placa | Veículo | Categoria | Oficina | Pneus | Manutenção | % da loja |
+
+A coluna **% da loja** é sobre o total **daquela loja**, não sobre o geral:
+responde "qual veículo dominou a manutenção aqui" sem somar na mão. Dentro de
+cada loja, o maior gasto vem primeiro.
+
+Os dois saem em **ordem numérica de loja**, com a mesma
+`compararCentroNatural_` do PDF do rateio.
+
+### O que não pode sumir num agrupamento
+
+Agrupar é onde linha some sem ninguém ver, e linha que some é dinheiro que
+ninguém cobra. Veículo **sem centro de custo** não desaparece: vira
+`(sem centro)` e entra no total. Há prova para isso.
+
+Veículo com depreciação zero não conta como veículo da loja — a coluna
+*Veículos* conta quem deprecia, não quem existe.
+
+### Três pontas, uma prova estática
+
+Um relatório precisa estar em três lugares: o **catálogo** (que gera a lista
+da tela), o **despacho** (que chama a função) e a **função**. Faltar uma não
+dá erro — dá item de menu que abre vazio, ou função morta.
+
+A prova confere as três, e mais uma coisa: que as colunas declaradas no
+catálogo são **as mesmas**, na mesma ordem, que as devolvidas pela função. É
+o tipo de divergência que só aparece quando alguém exporta o relatório e as
+colunas saem trocadas.
+
+### Provas
+
+`conferir_relatorios_loja.js`, **42 provas**, 7 mutações. Total do projeto:
+**802**.

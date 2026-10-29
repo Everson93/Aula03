@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.22.4';
+const VERSAO_SISTEMA = '4.23.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -6677,6 +6677,38 @@ const CATALOGO_RELATORIOS = {
     ],
   },
 
+  'Depreciação por loja': {
+    descricao: 'Quanto de depreciação cada loja carrega no período. O veículo já é ' +
+      'vinculado à loja pelo centro de custo do cadastro.',
+    somenteApp: true,
+    fonte: 'resumo',
+    filtros: ['centro', 'categoria', 'veiculoResumo'],
+    colunas: [
+      ['Centro de Custo', '@', 180],
+      ['Veículos', '#,##0', 90],
+      ['Depreciação', 'R$ #,##0.00', 130],
+      ['% do total', '0.00"%"', 100],
+    ],
+  },
+
+  'Manutenção por loja': {
+    descricao: 'Oficina e pneus de cada veículo, agrupados pela loja a que ele pertence. ' +
+      'Mostra qual veículo puxa a manutenção de cada loja.',
+    somenteApp: true,
+    fonte: 'resumo',
+    filtros: ['centro', 'categoria', 'veiculoResumo'],
+    colunas: [
+      ['Centro de Custo', '@', 160],
+      ['Placa / ID', '@', 105],
+      ['Veículo', '@', 175],
+      ['Categoria', '@', 140],
+      ['Oficina', 'R$ #,##0.00', 115],
+      ['Pneus', 'R$ #,##0.00', 110],
+      ['Manutenção', 'R$ #,##0.00', 125],
+      ['% da loja', '0.00"%"', 100],
+    ],
+  },
+
   'Manutenção — oficina e pneus': {
     descricao: 'Quem está consumindo manutenção, do maior para o menor.',
     fonte: 'resumo',
@@ -9218,6 +9250,8 @@ function webRelatorio(token, tipo, filtros) {
 function relatorioPorTipo_(tipo, centro, categoria, placa, termo) {
   switch (tipo) {
     case 'Gerencial por Centro de Custo': return relatorioGerencial_(centro, categoria, placa);
+    case 'Depreciação por loja': return relatorioDepreciacaoPorLoja_(centro, categoria, placa);
+    case 'Manutenção por loja': return relatorioManutencaoPorLoja_(centro, categoria, placa);
     case 'Manutenção — oficina e pneus': return relatorioManutencao_(centro, categoria, placa);
     case 'Detalhamento de oficina por veículo': return relatorioDetalhamentoOficina_(centro, categoria, placa);
     case 'Abastecimento e consumo': return relatorioAbastecimento_(centro, categoria, placa);
@@ -9274,6 +9308,89 @@ function relatorioGerencial_(centro, categoria, placa) {
     totais: [null, null, null, null].concat(
       somarColunas_(dados, [R_.COMBUSTIVEL, R_.OFICINA, R_.PNEUS, R_.ARLA, R_.GAS, R_.PEDAGIO,
         R_.IPVA, R_.DEPRECIACAO, R_.KM, R_.TOTAL])),
+  };
+}
+
+/**
+ * Depreciacao somada por loja.
+ *
+ * O veiculo ja e vinculado a loja pelo centro de custo do cadastro, entao
+ * "por loja" e agrupar por R_.CENTRO. Uma linha por loja, nao por veiculo:
+ * a depreciacao de cada bem e um valor fixo mensal, e o que se quer saber e
+ * quanto cada loja carrega.
+ *
+ * Ordem NUMERICA de loja, nao por valor: e assim que se procura uma loja
+ * numa lista. Ver compararCentroNatural_.
+ */
+function relatorioDepreciacaoPorLoja_(centro, categoria, placa) {
+  const porCentro = {};
+  filtrarResumo_(centro, categoria, placa).forEach(function (l) {
+    const valor = Number(l[R_.DEPRECIACAO]) || 0;
+    if (valor <= 0) return;
+    const nome = String(l[R_.CENTRO] || '').trim() || '(sem centro)';
+    const g = porCentro['#' + nome] || (porCentro['#' + nome] = { centro: nome, veiculos: 0, valor: 0 });
+    g.veiculos++;
+    g.valor += valor;
+  });
+
+  const grupos = Object.keys(porCentro).map(function (k) { return porCentro[k]; })
+    .sort(function (a, b) { return compararCentroNatural_(a.centro, b.centro); });
+  const total = grupos.reduce(function (t, g) { return t + g.valor; }, 0);
+
+  return {
+    colunas: [col_('Centro de Custo'), col_('Veículos', 'numero'),
+      col_('Depreciação', 'moeda'), col_('% do total', 'decimal')],
+    linhas: grupos.map(function (g) {
+      return [g.centro, g.veiculos, g.valor, total > 0 ? (g.valor / total) * 100 : 0];
+    }),
+    totais: [null, grupos.reduce(function (t, g) { return t + g.veiculos; }, 0), total, null],
+  };
+}
+
+/**
+ * Manutencao por loja, com o veiculo.
+ *
+ * Uma linha por VEICULO — aqui o detalhe importa: manutencao varia, e saber
+ * qual veiculo puxou a conta da loja e a pergunta seguinte. A coluna
+ * "% da loja" responde isso sem precisar somar na mao.
+ */
+function relatorioManutencaoPorLoja_(centro, categoria, placa) {
+  const itens = filtrarResumo_(centro, categoria, placa)
+    .map(function (l) {
+      return { linha: l,
+        centro: String(l[R_.CENTRO] || '').trim() || '(sem centro)',
+        manutencao: (Number(l[R_.OFICINA]) || 0) + (Number(l[R_.PNEUS]) || 0) };
+    })
+    .filter(function (i) { return i.manutencao > 0; });
+
+  const totalPorCentro = {};
+  itens.forEach(function (i) {
+    totalPorCentro['#' + i.centro] = (totalPorCentro['#' + i.centro] || 0) + i.manutencao;
+  });
+
+  // Loja em ordem numerica; dentro da loja, o maior gasto primeiro — e ali
+  // que esta a resposta de "o que aconteceu nesta loja".
+  itens.sort(function (a, b) {
+    const porNome = compararCentroNatural_(a.centro, b.centro);
+    return porNome !== 0 ? porNome : b.manutencao - a.manutencao;
+  });
+
+  return {
+    colunas: [col_('Centro de Custo'), col_('Placa / ID'), col_('Veículo'), col_('Categoria'),
+      col_('Oficina', 'moeda'), col_('Pneus', 'moeda'), col_('Manutenção', 'moeda'),
+      col_('% da loja', 'decimal')],
+    linhas: itens.map(function (i) {
+      const l = i.linha;
+      const daLoja = totalPorCentro['#' + i.centro] || 0;
+      return [i.centro, l[R_.PLACA], l[R_.DESCRICAO], l[R_.CATEGORIA],
+        l[R_.OFICINA], l[R_.PNEUS], i.manutencao,
+        daLoja > 0 ? (i.manutencao / daLoja) * 100 : 0];
+    }),
+    totais: [null, null, null, null,
+      itens.reduce(function (t, i) { return t + (Number(i.linha[R_.OFICINA]) || 0); }, 0),
+      itens.reduce(function (t, i) { return t + (Number(i.linha[R_.PNEUS]) || 0); }, 0),
+      itens.reduce(function (t, i) { return t + i.manutencao; }, 0),
+      null],
   };
 }
 
