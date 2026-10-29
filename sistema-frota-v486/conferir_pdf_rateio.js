@@ -94,6 +94,54 @@ ok('cada centro-base é marcado como quem distribui',
   (h.match(/class="tag tag-base"/g) || []).length === 2,
   String((h.match(/class="tag tag-base"/g) || []).length));
 
+console.log('\n1b. O número de cima é o TOTAL');
+// Trocar o indicador principal do total para o valor redistribuído (ou o
+// contrário) não quebrava nenhuma prova: elas conferiam que o número aparecia
+// em ALGUM lugar do documento, não em qual. O indicador de cima é o que a
+// pessoa lê primeiro e repete na reunião — ele tem contrato próprio.
+function kpi(html, rotulo) {
+  const re = new RegExp('<div class="rot">' + rotulo +
+    '</div><div class="val">([^<]*)</div>(?:<div class="rot">([^<]*)</div>)?');
+  const m = re.exec(html);
+  return m ? { valor: m[1], sub: m[2] || '' } : null;
+}
+const principal = kpi(h, 'Custo total rateado');
+ok('o indicador principal existe', !!principal, 'rótulos dos indicadores: ' +
+  JSON.stringify((h.match(/<div class="rot">[^<]*<\/div><div class="val">/g) || [])));
+ok('e mostra o TOTAL, não o valor redistribuído',
+  principal && principal.valor === 'R$ 60.000,00',
+  principal ? principal.valor : '(sem indicador)');
+ok('o redistribuído vai na linha de baixo',
+  principal && /sendo R\$ 50\.000,00 redistribuídos/.test(principal.sub),
+  principal ? principal.sub : '');
+ok('e NÃO como indicador separado, que repetiria o mesmo número',
+  !kpi(h, 'Valor rateado'),
+  'o que sai dos centros-base volta inteiro: dois indicadores mostrariam 60.000 duas vezes');
+
+const centros = kpi(h, 'Centros que recebem');
+ok('com todo o custo alocado, o indicador diz isso',
+  centros && /todo o custo alocado/.test(centros.sub), centros ? centros.sub : '');
+
+const media = kpi(h, 'Média por centro');
+ok('a média é o total dividido pelos que recebem',
+  media && media.valor === 'R$ 15.000,00', media ? media.valor : '');
+
+// Centro que não recebe e tem custo: o dinheiro não chegou a loja nenhuma.
+const comSobra = apuracao();
+comSobra.linhas.push({ centro: 'ADM CENTRAL', direto: 5000, percentual: 0, recebe: false,
+  rateio: 0, distribuido: 0, total: 5000, orfao: false });
+ctx.__apuracao = comSobra;
+const h2 = ctx.htmlRateioPdf_('2026-10');
+const centros2 = kpi(h2, 'Centros que recebem');
+ok('custo que ficou fora das lojas é dito no indicador',
+  centros2 && /R\$ 5\.000,00 fora das lojas/.test(centros2.sub),
+  centros2 ? centros2.sub : '');
+ok('e a média desconta esse valor',
+  (kpi(h2, 'Média por centro') || {}).valor === 'R$ 15.000,00',
+  (kpi(h2, 'Média por centro') || {}).valor + ' — (65.000 - 5.000) / 4');
+ctx.__apuracao = apuracao();
+h = ctx.htmlRateioPdf_('2026-10');
+
 console.log('\n2. Números em pt-BR, nunca com ponto decimal');
 ok('vírgula decimal', /R\$ 60\.000,00/.test(h));
 ok('ponto no milhar', !/R\$ 60000\.00/.test(h));

@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.22.0';
+const VERSAO_SISTEMA = '4.22.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8151,7 +8151,14 @@ function htmlRateioPdf_(mesRef) {
   const maior = a.linhas.reduce(function (m, l) {
     return (!m || l.total > m.total) ? l : m;
   }, null);
-  const fracaoRateada = totalGeral > 0 ? (totalRateio / totalGeral) * 100 : 0;
+  // O que sobra fora das lojas: centro que aparece nos veículos mas não está
+  // cadastrado não recebe rateio, então o custo dele não chega a loja nenhuma.
+  // Quase sempre é zero — e quando não é, precisa estar dito no indicador, não
+  // só no rodapé.
+  const naoAlocado = a.linhas
+    .filter(function (l) { return !l.recebe && l.total > 0; })
+    .reduce(function (t, l) { return t + l.total; }, 0);
+  const mediaPorCentro = recebem > 0 ? (totalGeral - naoAlocado) / recebem : 0;
 
   // Ressalvas: o rateio tem condicoes que mudam a leitura do numero, e um PDF
   // que sai da mesa sem elas vira um numero sem contexto.
@@ -8245,10 +8252,18 @@ function htmlRateioPdf_(mesRef) {
     '</div>' +
 
     '<table class="kpis"><tr>' +
-      '<td><div class="rot">Custo total da frota</div><div class="val">' + brlPdf_(totalGeral) + '</div></td>' +
-      '<td><div class="rot">Valor rateado</div><div class="val">' + brlPdf_(totalRateio) + '</div>' +
-        '<div class="rot">' + numBR_(fracaoRateada, 1) + '% do total</div></td>' +
-      '<td><div class="rot">Centros que recebem</div><div class="val">' + numBR_(recebem, 0) + '</div></td>' +
+      // O total é o número do relatório: vai em destaque, e o valor
+      // redistribuído entra como linha menor embaixo dele. Separar os dois em
+      // indicadores diferentes faria os dois primeiros mostrarem o MESMO
+      // número, porque o que sai do depósito volta inteiro para as lojas.
+      '<td><div class="rot">Custo total rateado</div><div class="val">' + brlPdf_(totalGeral) + '</div>' +
+        '<div class="rot">sendo ' + brlPdf_(totalRateio) + ' redistribuídos</div></td>' +
+      '<td><div class="rot">Centros que recebem</div><div class="val">' + numBR_(recebem, 0) + '</div>' +
+        '<div class="rot">' + (naoAlocado > 0
+          ? brlPdf_(naoAlocado) + ' fora das lojas'
+          : 'todo o custo alocado') + '</div></td>' +
+      '<td><div class="rot">Média por centro</div><div class="val">' + brlPdf_(mediaPorCentro) + '</div>' +
+        '<div class="rot">entre os que recebem</div></td>' +
       '<td><div class="rot">Maior centro</div><div class="val">' +
         escHtml_(maior ? maior.centro : '—') + '</div>' +
         '<div class="rot">' + (maior && totalGeral > 0

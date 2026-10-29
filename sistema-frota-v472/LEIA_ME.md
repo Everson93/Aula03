@@ -2721,3 +2721,48 @@ o link.
 
 `conferir_pdf_rateio.js`, **45 provas**, 12 mutações cobertas. Total do
 projeto: **730**.
+
+## V4.22.1 — o número do relatório é o total
+
+Você apontou o **R$ 894.859,11**: é esse o número do rateio, não o
+R$ 418.819,48 que eu tinha posto como "Valor rateado".
+
+Você tem razão sobre o que o relatório é. O R$ 418.819,48 é o custo do
+depósito e das empilhadeiras que *se move*; o R$ 894.859,11 é o custo que
+*acaba alocado* nos centros — e é esse que alguém repete na reunião.
+
+### Só trocar o rótulo não resolvia
+
+Se eu renomeasse "Valor rateado" para mostrar o total, os **dois primeiros
+indicadores mostrariam o mesmo R$ 894.859,11** — exatamente a redundância que
+a V4.22.0 tinha acabado de tirar. O que sai dos centros-base volta inteiro
+para os que recebem, então total e "rateado entre as lojas" são o mesmo
+número.
+
+Então os dois viraram um, e sobraram dois lugares:
+
+| | |
+|---|---|
+| **Custo total rateado** | R$ 894.859,11 · *sendo R$ 418.819,48 redistribuídos* |
+| **Centros que recebem** | 15 · *todo o custo alocado* |
+| **Média por centro** | entre os que recebem |
+| **Maior centro** | nome, valor e participação |
+
+O segundo indicador ganhou uma função nova: quando existe centro que **não
+recebe** rateio e tem custo — um centro que aparece nos veículos mas não está
+cadastrado —, ele diz *"R$ X fora das lojas"*. Esse dinheiro não chegou a loja
+nenhuma, e antes isso só aparecia no rodapé. A média desconta esse valor.
+
+### As provas não viram a troca
+
+Trocar o indicador principal do total para o valor redistribuído **não quebrou
+nenhuma prova**. Elas conferiam que o número aparecia em *algum lugar* do
+documento, não em qual.
+
+O indicador de cima é o que se lê primeiro e se repete fora da sala — ele
+merece contrato próprio. Agora há um: um leitor de indicadores por rótulo, e
+provas de que o principal traz o total, de que o redistribuído fica na linha
+de baixo, e de que **não existe** um indicador separado repetindo o mesmo
+número. Cinco mutações cobrem os cinco comportamentos.
+
+`conferir_pdf_rateio.js`: 45 → **53**. Total do projeto: **738**.
