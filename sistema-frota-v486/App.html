@@ -3446,7 +3446,13 @@
           '<p class="sub" style="margin:6px 0 10px">Cria uma nova Planilha Google independente com Resumo, lançamentos, odômetro, rateio, veículos, centros, pendências e hash de integridade.</p>' +
           '<button class="acao secundaria" onclick="rodarExportacaoPeriodo(this, \'' + esc(p.mes) + '\')">📦 Exportar período agora</button>' +
           '<div id="saidaExportPeriodo" style="margin-top:10px"></div></div>' +
-        '<div class="cartao"><b>5. Fechar ' + esc(p.mesExtenso) + '</b>' +
+        '<div class="cartao"><b>5. Documento do fechamento (PDF para a contabilidade)</b>' +
+          '<p class="sub" style="margin:6px 0 10px">Um documento só, com três seções: rateio por ' +
+            'centro, depreciação por loja e manutenção por loja com os veículos. ' +
+            'Sai na pasta "Relatórios Frota" do Drive.</p>' +
+          '<button class="acao secundaria" onclick="gerarFechamentoPdf(this)">📄 Gerar o PDF do fechamento</button>' +
+          '<div id="saidaFechPdf" style="margin-top:10px"></div></div>' +
+        '<div class="cartao"><b>6. Fechar ' + esc(p.mesExtenso) + '</b>' +
           '<p class="sub" style="margin:6px 0 10px">O fechamento cria automaticamente outra exportação independente antes de avançar para ' + esc(p.proximo) + '.</p>' +
           '<label for="confirma">Para confirmar, digite <b>' + esc(p.mes) + '</b></label>' +
           '<input type="text" id="confirma" placeholder="' + esc(p.mes) + '" style="max-width:220px">' +
@@ -3454,6 +3460,28 @@
             '🔒 Fechar período</button></div>' +
           '<div id="saidaFechamento" style="margin-top:10px"></div></div>';
     }).withFailureHandler(falha).webPreviaFechamento(TOKEN);
+  }
+
+  /**
+   * O PDF que vai para a contabilidade: as três seções num documento só.
+   *
+   * Só sai para a competência aberta — a depreciação e a manutenção vêm do
+   * Resumo, que tem apenas o período corrente. O servidor recusa qualquer
+   * outra e explica por quê.
+   */
+  function gerarFechamentoPdf(botao) {
+    el('saidaFechPdf').innerHTML = '<div class="carregando">montando o documento…</div>';
+    comVigia(botao, 'Gerando…', function (pronto, erro) {
+      google.script.run.withSuccessHandler(function (r) {
+        pronto();
+        el('saidaFechPdf').innerHTML = '<div class="ok-caixa"><b>' + esc(r.nome) + '</b> gerado.<br>' +
+          '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">abrir o PDF</a> ' +
+          '<span class="sub2">— salvo na pasta "' + esc(r.pasta) + '" do Drive</span></div>';
+      }).withFailureHandler(function (e) {
+        erro(e);
+        el('saidaFechPdf').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      }).webFechamentoPdf(TOKEN, '');
+    });
   }
 
   function rodarValidacao() {

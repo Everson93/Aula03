@@ -25,7 +25,8 @@ ctx.globalThis = ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, { htmlRateioPdf_, escHtml_, brlPdf_, numBR_, VERSAO_SISTEMA,
-    compararCentroNatural_ });
+    compararCentroNatural_, htmlFechamentoPdf_, tabelaRelatorioPdf_, secaoRateioPdf_,
+    R_, TOTAL_COL_RESUMO, col_ });
   exigirExecucaoLeitura_ = function () {};
   exigirExecucaoMutacao_ = function () {};
   param_ = function (n) {
@@ -42,6 +43,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   timezone_ = function () { return 'America/Sao_Paulo'; };
   emailContextoAtual_ = function () { return 'fulano@giassi.com.br'; };
   apurarRateio_ = function () { return __apuracao; };
+  lerResumo_ = function () { return __resumo || []; };
 `, ctx);
 
 let provas = 0, falhas = 0;
@@ -353,6 +355,118 @@ ok('mistura de "Loja 2" e "Loja 09" sai na ordem certa',
 ok('e a de maior valor não vai para o topo só por isso',
   ordem[1] === 'Loja 2', 'Loja 2 tem o maior total e está em segundo, pelo número');
 ctx.__apuracao = apuracao();
+
+console.log('\n10. O documento unificado do fechamento');
+// A contabilidade recebe UM documento, não três. Três seções: rateio,
+// depreciação por loja e manutenção por loja com os veículos.
+function veicR(placa, desc, cat, centro, dep, ofi, pneus) {
+  const l = new Array(ctx.TOTAL_COL_RESUMO).fill(0);
+  l[ctx.R_.PLACA] = placa; l[ctx.R_.DESCRICAO] = desc; l[ctx.R_.CATEGORIA] = cat;
+  l[ctx.R_.CENTRO] = centro; l[ctx.R_.DEPRECIACAO] = dep;
+  l[ctx.R_.OFICINA] = ofi || 0; l[ctx.R_.PNEUS] = pneus || 0;
+  return l;
+}
+ctx.__apuracao = apuracao();
+ctx.__resumo = [
+  veicR('AAA 0001', 'Fiorino', 'Leve', 'Loja 02', 300, 1000, 0),
+  veicR('BBB 0002', 'Saveiro', 'Leve', 'Loja 10', 400, 500, 200),
+  veicR('CCC 0003', 'Truck', 'Truck Normal', 'Loja 02', 1200, 4000, 1000),
+];
+const hf = ctx.htmlFechamentoPdf_('2026-10');
+
+ok('tem as três seções, numeradas',
+  /1\. Rateio por centro de custo/.test(hf) &&
+  /2\. Depreciação por loja/.test(hf) &&
+  /3\. Manutenção por loja/.test(hf), 'seções: ' + (hf.match(/<h2>[^<]*/g) || []).join(' | '));
+ok('na ordem certa',
+  hf.indexOf('1. Rateio') < hf.indexOf('2. Depreciação') &&
+  hf.indexOf('2. Depreciação') < hf.indexOf('3. Manutenção'));
+ok('cada seção nova começa em página própria',
+  (hf.match(/class="secao quebra"/g) || []).length === 2,
+  'a contabilidade imprime: seção cortada no meio da página fica ilegível');
+ok('o título é do documento, não de uma seção', /<h1>Fechamento da Frota<\/h1>/.test(hf));
+
+console.log('\n10b. A capa não repete o que está nas seções');
+ok('o indicador do custo total aparece UMA vez',
+  (hf.match(/Custo total da frota<\/div>/g) || []).length === 1,
+  String((hf.match(/Custo total da frota<\/div>/g) || []).length) +
+  ' — a primeira versão repetia na capa e dentro da seção do rateio');
+// A regra que impede a repetição: a SEÇÃO devolve o indicador à parte, e cada
+// documento decide onde pôr. Se a seção voltar a embutir, o unificado mostra
+// dois. É isso que está sendo proibido.
+const secao = ctx.secaoRateioPdf_(apuracao());
+ok('a seção do rateio NÃO embute indicador no html dela',
+  secao.html.indexOf('class="kpis"') === -1 &&
+  secao.html.indexOf('Custo total da frota') === -1,
+  secao.html.slice(0, 140));
+ok('ela devolve o indicador separado', /Custo total da frota/.test(secao.kpi || ''),
+  'sem isso o documento de uma seção só ficaria sem indicador');
+ok('e o PDF do rateio sozinho mostra exatamente um',
+  (ctx.htmlRateioPdf_('2026-10').match(/Custo total da frota<\/div>/g) || []).length === 1);
+ok('a capa traz depreciação', /Depreciação<\/div><div class="val">R\$ 1\.900,00/.test(hf),
+  (hf.match(/Depreciação<\/div><div class="val">[^<]*/) || [''])[0]);
+ok('e manutenção', /Manutenção<\/div><div class="val">R\$ 6\.700,00/.test(hf),
+  (hf.match(/Manutenção<\/div><div class="val">[^<]*/) || [''])[0]);
+ok('com a contagem de bens', /3 bens/.test(hf));
+
+console.log('\n10c. Nunca misturar competências');
+// O rateio sabe apurar mês fechado; a depreciação e a manutenção saem do
+// Resumo, que só tem o período corrente. Um documento com o rateio de um mês
+// e o detalhe de outro é o tipo de erro que ninguém percebe e que vai
+// assinado para fora.
+let erroMes = '';
+try { ctx.htmlFechamentoPdf_('2026-09'); } catch (e) { erroMes = e.message; }
+ok('competência diferente da aberta é RECUSADA', erroMes !== '', 'gerou sem reclamar');
+ok('e o motivo é explicado', /só sai para a competência aberta/.test(erroMes) &&
+  /vêm do Resumo/.test(erroMes), erroMes);
+ok('com a saída: o PDF do rateio isolado', /use o PDF do rateio/.test(erroMes), erroMes);
+ok('a competência aberta passa', ctx.htmlFechamentoPdf_('2026-10').length > 1000);
+ok('e sem argumento também', ctx.htmlFechamentoPdf_('').length > 1000);
+
+console.log('\n10d. A tabela genérica formata pelo tipo da coluna');
+// O PDF e a tela leem a MESMA função de relatório. Sem isso, um número no
+// papel e outro no app deixam de ser impossíveis.
+const rel = {
+  colunas: [ctx.col_('Nome'), ctx.col_('Qtd', 'numero'), ctx.col_('Valor', 'moeda'),
+    ctx.col_('Preço', 'moeda3'), ctx.col_('Fatia', 'decimal')],
+  linhas: [['Loja 01', 3, 1234.5, 4.6049, 12.345], ['Vazio', null, null, null, null]],
+  totais: [null, 3, 1234.5, null, null],
+};
+const tg = ctx.tabelaRelatorioPdf_(rel);
+ok('moeda com vírgula e milhar', /R\$ 1\.234,50/.test(tg));
+ok('moeda de três casas', /R\$ 4,605/.test(tg), (tg.match(/R\$ 4[^<]*/) || [''])[0]);
+ok('número inteiro sem casas', />3</.test(tg));
+ok('decimal com o símbolo de porcento', /12,35%/.test(tg));
+ok('célula vazia vira travessão em coluna numérica',
+  (tg.match(/<td class="n">—<\/td>/g) || []).length >= 3,
+  String((tg.match(/<td class="n">—<\/td>/g) || []).length));
+ok('a coluna numérica alinha à direita no cabeçalho',
+  (tg.match(/<th class="n">/g) || []).length === 4);
+ok('a primeira coluna de texto sai em negrito', /<td class="centro /.test(tg));
+ok('a linha de total é marcada', /<tr class="total">/.test(tg));
+ok('e começa com TOTAL quando o primeiro total é nulo', /<tr class="total"><td>TOTAL<\/td>/.test(tg));
+ok('texto da planilha é escapado também aqui',
+  ctx.tabelaRelatorioPdf_({ colunas: [ctx.col_('A')], linhas: [['<b>x</b>']], totais: [] })
+    .indexOf('<b>x</b>') === -1);
+ok('relatório sem linhas diz isso, não sai em branco',
+  /Nenhum lançamento no período/.test(
+    ctx.tabelaRelatorioPdf_({ colunas: [ctx.col_('A')], linhas: [], totais: [] })));
+
+console.log('\n10e. As duas pontas do documento');
+const fonteF = fs.readFileSync('Codigo.gs', 'utf8');
+ok('o PDF usa a MESMA função de relatório da tela',
+  /htmlFechamentoPdf_[\s\S]{0,900}relatorioDepreciacaoPorLoja_\(null, null, null\)/.test(fonteF) &&
+  /htmlFechamentoPdf_[\s\S]{0,900}relatorioManutencaoPorLoja_\(null, null, null\)/.test(fonteF),
+  'duplicar a conta no PDF faria o papel e a tela divergirem');
+ok('o estilo é um só para os dois documentos',
+  /function estiloPdf_\(\)/.test(fonteF) &&
+  (fonteF.match(/estiloPdf_\(\)/g) || []).length >= 3);
+ok('o PDF do rateio sozinho continua existindo',
+  /function htmlRateioPdf_\(mesRef\)/.test(fonteF), 'uso interno, por competência qualquer');
+const appF = fs.readFileSync('App.html', 'utf8');
+ok('o botão está no fechamento', /gerarFechamentoPdf\(this\)/.test(appF));
+ok('e chama webFechamentoPdf', /\.webFechamentoPdf\(TOKEN/.test(appF));
+ok('com vigia de tempo', /comVigia\(botao, 'Gerando…'/.test(appF));
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

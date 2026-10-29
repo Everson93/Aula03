@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.23.0';
+const VERSAO_SISTEMA = '4.24.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8194,34 +8194,76 @@ function compararCentroNatural_(a, b) {
   return 0;
 }
 
-function htmlRateioPdf_(mesRef) {
-  const a = apurarRateio_(mesRef);
-  const empresa = String(param_('EMPRESA'));
-  const periodo = periodoDoMes_(a.competencia);
-  const baseNomes = String(param_('BASE_RATEIO')).split(',')
-    .map(function (n) { return normalizarCentroCusto_(n.trim()); })
-    .filter(function (n) { return n; });
+/** Folha de estilo dos PDFs montados. Uma so, para os documentos combinarem. */
+function estiloPdf_() {
+  return '@page { size: A4 landscape; margin: 12mm 10mm; }' +
+    'body { font-family: Arial, Helvetica, sans-serif; color: ' + CORES.PRETO + '; font-size: 9pt; margin:0; }' +
+    '.faixa { border-bottom: 3px solid ' + CORES.LARANJA + '; padding-bottom: 7px; margin-bottom: 12px; }' +
+    '.empresa { font-size: 8pt; letter-spacing: 1.4px; text-transform: uppercase; color: ' + CORES.GRAFITE + '; }' +
+    'h1 { font-size: 17pt; margin: 3px 0 2px; font-weight: bold; }' +
+    'h2 { font-size: 12pt; margin: 0 0 8px; padding-bottom: 4px; ' +
+      'border-bottom: 2px solid ' + CORES.LARANJA + '; }' +
+    '.sub { font-size: 9pt; color: ' + CORES.GRAFITE + '; }' +
+    '.secao { margin-top: 18px; }' +
+    '.quebra { page-break-before: always; }' +
+    '.kpis { border-collapse: separate; border-spacing: 0; margin: 0 0 12px 0; table-layout: auto; }' +
+    '.kpis td { background: ' + CORES.CINZA + '; padding: 9px 22px 9px 13px; ' +
+      'border-left: 3px solid ' + CORES.LARANJA + '; white-space: nowrap; }' +
+    '.kpis .rot { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .7px; color: ' + CORES.GRAFITE + '; }' +
+    '.kpis .val { font-size: 14pt; font-weight: bold; padding-top: 2px; line-height: 1.15; }' +
+    '.kpis .val + .rot { padding-top: 2px; }' +
+    'table.dados { width: 100%; border-collapse: collapse; }' +
+    'table.dados th { background: ' + CORES.PRETO + '; color: #fff; font-size: 7.5pt; ' +
+      'text-transform: uppercase; letter-spacing: .5px; padding: 7px 8px; text-align: left; }' +
+    'table.dados th.n, table.dados td.n { text-align: right; }' +
+    'table.dados td { padding: 5px 8px; border-bottom: 1px solid #e3e0de; }' +
+    'table.dados tbody tr:nth-child(even) td { background: #faf9f8; }' +
+    'tr.orfao td { background: ' + CORES.VERMELHO + ' !important; }' +
+    'tr.loja td { background: ' + CORES.LARANJA_CLARO + ' !important; font-weight: bold; }' +
+    '.centro { font-weight: bold; }' +
+    '.tag { font-size: 6.5pt; font-weight: normal; text-transform: uppercase; letter-spacing: .5px; ' +
+      'background: ' + CORES.VERMELHO + '; color: #8a1c1c; padding: 1px 5px; margin-left: 6px; border-radius: 2px; }' +
+    '.neg { color: #8a1c1c; }' +
+    '.forte { font-weight: bold; }' +
+    'tr.total td { border-top: 2.5px solid ' + CORES.PRETO + '; border-bottom: none; ' +
+      'font-weight: bold; font-size: 10pt; padding-top: 8px; background: #fff !important; }' +
+    '.notas { margin-top: 14px; border-left: 3px solid ' + CORES.LARANJA + '; ' +
+      'background: ' + CORES.CINZA + '; padding: 9px 12px; font-size: 8pt; }' +
+    '.notas b { text-transform: uppercase; font-size: 7.5pt; letter-spacing: .7px; }' +
+    '.notas li { margin: 4px 0; }' +
+    '.fora { margin-top: 8px; background: ' + CORES.AMARELO + '; padding: 7px 11px; font-size: 8pt; }' +
+    '.rodape { margin-top: 14px; border-top: 1px solid #ddd; padding-top: 6px; ' +
+      'font-size: 7.5pt; color: ' + CORES.GRAFITE + '; }';
+}
 
-  const totalGeral = a.linhas.reduce(function (t, l) { return t + l.total; }, 0);
-  const totalDireto = a.linhas.reduce(function (t, l) { return t + l.direto; }, 0);
-  const totalRateio = a.linhas.reduce(function (t, l) { return t + l.rateio; }, 0);
-  const recebem = a.linhas.filter(function (l) { return l.recebe; }).length;
-  // `totalDireto` e `totalGeral` sao SEMPRE iguais: o que sai dos centros-base
-  // volta inteiro para os que recebem. Mostrar os dois gastaria um quarto do
-  // cabecalho repetindo o mesmo numero. No lugar vao a parcela rateada e o
-  // maior centro, que e o que alguem procura primeiro.
-  // O que sobra fora das lojas: centro que aparece nos veículos mas não está
-  // cadastrado não recebe rateio, então o custo dele não chega a loja nenhuma.
-  // Quase sempre é zero — e quando não é, precisa estar dito no indicador, não
-  // só no rodapé.
-  const naoAlocado = a.linhas
-    .filter(function (l) { return !l.recebe && l.total > 0; })
-    .reduce(function (t, l) { return t + l.total; }, 0);
-  // A média por centro saiu a pedido: num rateio por percentual ela não diz
-  // nada que o percentual já não diga.
+/** Faixa de topo: empresa, titulo e a linha de contexto. */
+function cabecalhoPdf_(titulo, competencia, periodo, contextoExtra) {
+  return '<div class="faixa">' +
+    '<div class="empresa">' + escHtml_(String(param_('EMPRESA'))) + '</div>' +
+    '<h1>' + escHtml_(titulo) + '</h1>' +
+    '<div class="sub">Competência <b>' + escHtml_(nomeDoMes_(competencia)) + '</b> (' +
+      escHtml_(competencia) + ') &nbsp;•&nbsp; período de ' +
+      escHtml_(formatarData_(periodo.inicio)) + ' a ' + escHtml_(formatarData_(periodo.fim)) +
+      (contextoExtra ? ' &nbsp;•&nbsp; ' + contextoExtra : '') + '</div></div>';
+}
 
-  // Ressalvas: o rateio tem condicoes que mudam a leitura do numero, e um PDF
-  // que sai da mesa sem elas vira um numero sem contexto.
+function rodapePdf_(complemento) {
+  return '<div class="rodape">Gerado em ' +
+    escHtml_(Utilities.formatDate(new Date(), timezone_(), 'dd/MM/yyyy HH:mm')) +
+    ' por ' + escHtml_(String(emailContextoAtual_() || 'sistema')) +
+    ' &nbsp;•&nbsp; Sistema de Controle de Custos de Frota v' + escHtml_(VERSAO_SISTEMA) +
+    (complemento ? ' &nbsp;•&nbsp; ' + complemento : '') + '</div>';
+}
+
+function notasPdf_(notas) {
+  if (!notas.length) return '';
+  return '<div class="notas"><b>Observações desta apuração</b><ul>' +
+    notas.map(function (n) { return '<li>' + escHtml_(n) + '</li>'; }).join('') +
+    '</ul></div>';
+}
+
+/** As ressalvas da apuracao do rateio, em texto. */
+function notasRateio_(a) {
   const notas = [];
   if (Math.abs(a.somaPercentual - 1) > 0.0001) {
     notas.push('Os percentuais cadastrados somam ' + numBR_(a.somaPercentual * 100, 3) +
@@ -8242,17 +8284,22 @@ function htmlRateioPdf_(mesRef) {
     notas.push('Centros que aparecem nos veículos mas não estão cadastrados, e por isso ' +
       'não recebem rateio: ' + a.orfaos.join(', ') + '.');
   }
+  return notas;
+}
 
-  // Só quem recebe rateio entra na tabela. Os centros-base ficam com total
-  // zero depois de distribuir — linha de zeros no meio da lista é ruído — e
-  // quem não recebe não é destino de custo.
-  //
-  // MAS o dinheiro que ficou fora não pode sumir: se houver centro sem
-  // cadastro com custo, ele aparece numa linha única logo antes do total,
-  // senão o PDF fecharia num número diferente do Resumo e ninguém saberia por quê.
-  // Ordem NUMERICA pelo nome do centro: e assim que alguem procura uma loja
-  // na lista. `apurarRateio_` devolve ordenado por valor, que serve para a
-  // tela mas nao para um papel que se percorre com o dedo.
+/**
+ * A secao do rateio: indicador, tabela e a linha de conferencia.
+ *
+ * Devolve o HTML e os numeros, porque o documento unificado precisa dos
+ * totais na capa sem reapurar.
+ */
+function secaoRateioPdf_(a) {
+  const totalGeral = a.linhas.reduce(function (t, l) { return t + l.total; }, 0);
+  const totalRateio = a.linhas.reduce(function (t, l) { return t + l.rateio; }, 0);
+  const naoAlocado = a.linhas
+    .filter(function (l) { return !l.recebe && l.total > 0; })
+    .reduce(function (t, l) { return t + l.total; }, 0);
+
   const recebedores = a.linhas
     .filter(function (l) { return l.recebe; })
     .slice()
@@ -8261,117 +8308,200 @@ function htmlRateioPdf_(mesRef) {
 
   const linhas = recebedores.map(function (l) {
     const fatia = totalLojas > 0 ? (l.total / totalLojas) * 100 : 0;
-    const classe = l.orfao ? ' class="orfao"' : '';
-    return '<tr' + classe + '>' +
+    return '<tr' + (l.orfao ? ' class="orfao"' : '') + '>' +
       '<td class="centro">' + escHtml_(l.centro) +
         (l.orfao ? '<span class="tag">não cadastrado</span>' : '') + '</td>' +
       '<td class="n">' + brlPdf_(l.direto) + '</td>' +
       '<td class="n">' + (l.recebe ? numBR_(l.percentual * 100, 2) + '%' : '—') + '</td>' +
       '<td class="n">' + (l.rateio ? brlPdf_(l.rateio) : '—') + '</td>' +
       '<td class="n forte">' + brlPdf_(l.total) + '</td>' +
-      '<td class="n">' + numBR_(fatia, 2) + '%</td>' +
-      '</tr>';
+      '<td class="n">' + numBR_(fatia, 2) + '%</td></tr>';
   }).join('');
 
-  const agora = Utilities.formatDate(new Date(), timezone_(), 'dd/MM/yyyy HH:mm');
-  const quem = String(emailContextoAtual_() || 'sistema');
+  // O indicador vai SEPARADO da tabela: no documento de uma seção só ele
+  // encabeça a página, no unificado ele já está na capa e repeti-lo logo
+  // abaixo do título da seção fica redundante.
+  const kpi = '<td><div class="rot">Custo total da frota</div>' +
+    '<div class="val">' + brlPdf_(totalGeral) + '</div>' +
+    '<div class="rot">sendo ' + brlPdf_(totalRateio) + ' redistribuídos</div></td>';
 
-  return '<!doctype html><html><head><meta charset="utf-8"><style>' +
-    '@page { size: A4 landscape; margin: 12mm 10mm; }' +
-    'body { font-family: Arial, Helvetica, sans-serif; color: ' + CORES.PRETO + '; font-size: 9pt; margin:0; }' +
-    '.faixa { border-bottom: 3px solid ' + CORES.LARANJA + '; padding-bottom: 7px; margin-bottom: 12px; }' +
-    '.empresa { font-size: 8pt; letter-spacing: 1.4px; text-transform: uppercase; color: ' + CORES.GRAFITE + '; }' +
-    'h1 { font-size: 17pt; margin: 3px 0 2px; font-weight: bold; }' +
-    '.sub { font-size: 9pt; color: ' + CORES.GRAFITE + '; }' +
-    // Sem margem negativa: ela puxava a primeira célula para fora da página e
-    // comia a barra laranja dela. O espaçamento entre células já basta.
-    '.kpis { border-collapse: separate; border-spacing: 0; margin: 0 0 12px 0; }' +
-    '.kpis { table-layout: auto; }' +
-    '.kpis td { background: ' + CORES.CINZA + '; padding: 9px 22px 9px 13px; ' +
-      'border-left: 3px solid ' + CORES.LARANJA + '; white-space: nowrap; }' +
-    '.kpis .rot { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .7px; color: ' + CORES.GRAFITE + '; }' +
-    '.kpis .val { font-size: 14pt; font-weight: bold; padding-top: 2px; line-height: 1.15; }' +
-    '.kpis .val + .rot { padding-top: 2px; }' +
-    'table.dados { width: 100%; border-collapse: collapse; }' +
-    'table.dados th { background: ' + CORES.PRETO + '; color: #fff; font-size: 7.5pt; ' +
-      'text-transform: uppercase; letter-spacing: .5px; padding: 7px 8px; text-align: left; }' +
-    'table.dados th.n, table.dados td.n { text-align: right; }' +
-    'table.dados td { padding: 5px 8px; border-bottom: 1px solid #e3e0de; }' +
-    'table.dados tbody tr:nth-child(even) td { background: #faf9f8; }' +
-    '.fora { margin-top: 8px; background: ' + CORES.AMARELO + '; padding: 7px 11px; font-size: 8pt; }' +
-    'tr.orfao td { background: ' + CORES.VERMELHO + ' !important; }' +
-    '.centro { font-weight: bold; }' +
-    '.tag { font-size: 6.5pt; font-weight: normal; text-transform: uppercase; letter-spacing: .5px; ' +
-      'background: ' + CORES.VERMELHO + '; color: #8a1c1c; padding: 1px 5px; margin-left: 6px; border-radius: 2px; }' +
-    '.neg { color: #8a1c1c; }' +
-    '.forte { font-weight: bold; }' +
-    'tr.total td { border-top: 2.5px solid ' + CORES.PRETO + '; border-bottom: none; ' +
-      'font-weight: bold; font-size: 10pt; padding-top: 8px; background: #fff !important; }' +
-    '.notas { margin-top: 14px; border-left: 3px solid ' + CORES.LARANJA + '; ' +
-      'background: ' + CORES.CINZA + '; padding: 9px 12px; font-size: 8pt; }' +
-    '.notas b { text-transform: uppercase; font-size: 7.5pt; letter-spacing: .7px; }' +
-    '.notas li { margin: 4px 0; }' +
-    '.rodape { margin-top: 14px; border-top: 1px solid #ddd; padding-top: 6px; ' +
-      'font-size: 7.5pt; color: ' + CORES.GRAFITE + '; }' +
-    '</style></head><body>' +
-
-    '<div class="faixa">' +
-      '<div class="empresa">' + escHtml_(empresa) + '</div>' +
-      '<h1>Rateio por Centro de Custo</h1>' +
-      '<div class="sub">Competência <b>' + escHtml_(nomeDoMes_(a.competencia)) + '</b> (' +
-        escHtml_(a.competencia) + ') &nbsp;•&nbsp; período de ' +
-        escHtml_(formatarData_(periodo.inicio)) + ' a ' + escHtml_(formatarData_(periodo.fim)) +
-        ' &nbsp;•&nbsp; base do rateio: ' + escHtml_(baseNomes.join(', ') || '—') + '</div>' +
-    '</div>' +
-
-    '<table class="kpis"><tr>' +
-      // O total é o número do relatório: vai em destaque, e o valor
-      // redistribuído entra como linha menor embaixo dele. Separar os dois em
-      // indicadores diferentes faria os dois primeiros mostrarem o MESMO
-      // número, porque o que sai do depósito volta inteiro para as lojas.
-      // "Custo total da frota", não "rateado": quando sobra custo em centro que
-      // não recebe, o total inclui dinheiro que NÃO foi rateado, e o rótulo
-      // mentiria. A linha de baixo diz quanto de fato se moveu.
-      '<td><div class="rot">Custo total da frota</div><div class="val">' + brlPdf_(totalGeral) + '</div>' +
-        '<div class="rot">sendo ' + brlPdf_(totalRateio) + ' redistribuídos</div></td>' +
-    '</tr></table>' +
-
+  const html =
     '<table class="dados"><thead><tr>' +
       '<th>Centro de Custo</th><th class="n">Custo Direto</th><th class="n">% Rateio</th>' +
-      '<th class="n">Rateio Recebido</th>' +
-      '<th class="n">Total</th><th class="n">% do Total</th>' +
+      '<th class="n">Rateio Recebido</th><th class="n">Total</th><th class="n">% do Total</th>' +
     '</tr></thead><tbody>' + linhas +
-    '<tr class="total">' +
-      '<td>TOTAL</td>' +
+    '<tr class="total"><td>TOTAL</td>' +
       '<td class="n">' + brlPdf_(recebedores.reduce(function (t, l) { return t + l.direto; }, 0)) + '</td>' +
       '<td class="n">—</td>' +
       '<td class="n">' + brlPdf_(totalRateio) + '</td>' +
       '<td class="n">' + brlPdf_(totalLojas) + '</td>' +
-      '<td class="n">100,00%</td>' +
-    '</tr></tbody></table>' +
-    // A conferência com o Resumo: o que não está na tabela acima fica DITO,
-    // em vez de o total simplesmente não bater.
+      '<td class="n">100,00%</td></tr></tbody></table>' +
     (naoAlocado > 0
       ? '<div class="fora">Além desta lista, <b>' + brlPdf_(naoAlocado) + '</b> ficaram em ' +
         'centros que não recebem rateio (aparecem nos veículos mas não estão cadastrados). ' +
         'Custo total da frota na competência: <b>' + brlPdf_(totalGeral) + '</b>.</div>'
-      : '') +
+      : '');
 
-    (notas.length
-      ? '<div class="notas"><b>Observações desta apuração</b><ul>' +
-        notas.map(function (n) { return '<li>' + escHtml_(n) + '</li>'; }).join('') +
-        '</ul></div>'
-      : '') +
+  return { html: html, kpi: kpi, totalGeral: totalGeral, totalRateio: totalRateio,
+    totalLojas: totalLojas, naoAlocado: naoAlocado, lojas: recebedores.length };
+}
 
-    '<div class="rodape">' +
-      'Gerado em ' + escHtml_(agora) + ' por ' + escHtml_(quem) +
-      ' &nbsp;•&nbsp; Sistema de Controle de Custos de Frota v' + escHtml_(VERSAO_SISTEMA) +
-      ' &nbsp;•&nbsp; O rateio distribui o custo dos centros-base entre os que recebem; ' +
-      'o total geral é igual ao do Resumo da competência.' +
-    '</div></body></html>';
+function htmlRateioPdf_(mesRef) {
+  const a = apurarRateio_(mesRef);
+  const periodo = periodoDoMes_(a.competencia);
+  const baseNomes = String(param_('BASE_RATEIO')).split(',')
+    .map(function (n) { return normalizarCentroCusto_(n.trim()); })
+    .filter(function (n) { return n; });
+  const secao = secaoRateioPdf_(a);
+
+  return '<!doctype html><html><head><meta charset="utf-8"><style>' + estiloPdf_() +
+    '</style></head><body>' +
+    cabecalhoPdf_('Rateio por Centro de Custo', a.competencia, periodo,
+      'base do rateio: ' + escHtml_(baseNomes.join(', ') || '—')) +
+    '<table class="kpis"><tr>' + secao.kpi + '</tr></table>' +
+    secao.html +
+    notasPdf_(notasRateio_(a)) +
+    rodapePdf_('O rateio distribui o custo dos centros-base entre os que recebem; ' +
+      'o total geral é igual ao do Resumo da competência.') +
+    '</body></html>';
 }
 
 /** Gera o PDF do rateio e devolve o arquivo no Drive. */
+/**
+ * Desenha qualquer relatorio {colunas, linhas, totais} como tabela do PDF.
+ *
+ * Generico de proposito: assim o PDF e a tela leem a MESMA funcao de
+ * relatorio, e um numero diferente no papel e no app deixa de ser possivel.
+ * Formata pelo tipo declarado na coluna, para nao haver um formatador no
+ * servidor e outro no cliente.
+ */
+function tabelaRelatorioPdf_(rel) {
+  function celula(valor, tipo, forte) {
+    const numerico = ['moeda', 'moeda3', 'numero', 'decimal'].indexOf(tipo) !== -1;
+    let texto;
+    if (valor === null || valor === undefined || valor === '') texto = numerico ? '—' : '';
+    else if (tipo === 'moeda') texto = brlPdf_(valor);
+    else if (tipo === 'moeda3') texto = 'R$ ' + numBR_(valor, 3);
+    else if (tipo === 'numero') texto = numBR_(valor, 0);
+    else if (tipo === 'decimal') texto = numBR_(valor, 2) + '%';
+    else texto = escHtml_(valor);
+    return '<td class="' + (numerico ? 'n' : '') + (forte ? ' forte' : '') + '">' + texto + '</td>';
+  }
+
+  const cabecalho = rel.colunas.map(function (c) {
+    const n = ['moeda', 'moeda3', 'numero', 'decimal'].indexOf(c.tipo) !== -1;
+    return '<th' + (n ? ' class="n"' : '') + '>' + escHtml_(c.titulo) + '</th>';
+  }).join('');
+
+  // A primeira coluna de texto sai em negrito, como na seção do rateio: é o
+  // identificador da linha, e o olho procura por ela.
+  const corpo = rel.linhas.map(function (linha) {
+    return '<tr>' + linha.map(function (v, i) {
+      const tipo = rel.colunas[i] ? rel.colunas[i].tipo : 'texto';
+      const td = celula(v, tipo, false);
+      return (i === 0 && tipo === 'texto') ? td.replace('<td class="', '<td class="centro ') : td;
+    }).join('') + '</tr>';
+  }).join('');
+
+  const totais = (rel.totais && rel.totais.length)
+    ? '<tr class="total">' + rel.totais.map(function (v, i) {
+        if (i === 0 && (v === null || v === undefined)) return '<td>TOTAL</td>';
+        return celula(v, rel.colunas[i] ? rel.colunas[i].tipo : 'texto', true);
+      }).join('') + '</tr>'
+    : '';
+
+  return '<table class="dados"><thead><tr>' + cabecalho + '</tr></thead><tbody>' +
+    (corpo || '<tr><td colspan="' + rel.colunas.length + '">Nenhum lançamento no período.</td></tr>') +
+    totais + '</tbody></table>';
+}
+
+/**
+ * Documento unico do fechamento, para a contabilidade.
+ *
+ * Tres secoes: rateio por centro, depreciacao por loja e manutencao por loja
+ * com os veiculos. A contabilidade recebe um documento, nao tres.
+ *
+ * SO a competencia aberta. O rateio sabe apurar mes fechado, mas a
+ * depreciacao e a manutencao saem do RESUMO, que so tem o periodo corrente —
+ * juntar os dois produziria um documento com o rateio de um mes e o detalhe
+ * de outro, que e o tipo de erro que ninguem percebe e que vai assinado para
+ * fora. Melhor recusar e dizer por que.
+ */
+function htmlFechamentoPdf_(mesRef) {
+  const aberta = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const alvo = normalizarMesReferencia_(mesRef || aberta);
+  if (alvo !== aberta) {
+    throw new Error('O documento do fechamento só sai para a competência aberta (' + aberta +
+      '). A depreciação e a manutenção por loja vêm do Resumo, que tem apenas o período ' +
+      'corrente — misturá-las com o rateio de ' + alvo + ' geraria um documento com meses ' +
+      'diferentes. Para o rateio de ' + alvo + ' isolado, use o PDF do rateio.');
+  }
+
+  const a = apurarRateio_(alvo);
+  const periodo = periodoDoMes_(alvo);
+  const baseNomes = String(param_('BASE_RATEIO')).split(',')
+    .map(function (n) { return normalizarCentroCusto_(n.trim()); })
+    .filter(function (n) { return n; });
+
+  const rateio = secaoRateioPdf_(a);
+  const dep = relatorioDepreciacaoPorLoja_(null, null, null);
+  const man = relatorioManutencaoPorLoja_(null, null, null);
+  const totalDep = Number(dep.totais[2]) || 0;
+  const totalMan = Number(man.totais[6]) || 0;
+
+  return '<!doctype html><html><head><meta charset="utf-8"><style>' + estiloPdf_() +
+    '</style></head><body>' +
+    cabecalhoPdf_('Fechamento da Frota', alvo, periodo,
+      'base do rateio: ' + escHtml_(baseNomes.join(', ') || '—')) +
+
+    '<table class="kpis"><tr>' +
+      rateio.kpi +
+      '<td><div class="rot">Depreciação</div><div class="val">' + brlPdf_(totalDep) + '</div>' +
+        '<div class="rot">' + numBR_(Number(dep.totais[1]) || 0, 0) + ' bens</div></td>' +
+      '<td><div class="rot">Manutenção</div><div class="val">' + brlPdf_(totalMan) + '</div>' +
+        '<div class="rot">oficina e pneus</div></td>' +
+    '</tr></table>' +
+
+    '<div class="secao"><h2>1. Rateio por centro de custo</h2>' + rateio.html + '</div>' +
+
+    '<div class="secao quebra"><h2>2. Depreciação por loja</h2>' +
+      '<p class="sub" style="margin:0 0 8px">Cada veículo pertence a uma loja pelo centro de ' +
+      'custo do cadastro. Valores da competência.</p>' +
+      tabelaRelatorioPdf_(dep) + '</div>' +
+
+    '<div class="secao quebra"><h2>3. Manutenção por loja</h2>' +
+      '<p class="sub" style="margin:0 0 8px">Oficina e pneus de cada veículo, agrupados pela ' +
+      'loja a que ele pertence. A coluna <b>% da loja</b> é sobre o total daquela loja.</p>' +
+      tabelaRelatorioPdf_(man) + '</div>' +
+
+    notasPdf_(notasRateio_(a)) +
+    rodapePdf_('As três seções são da mesma competência e do mesmo Resumo.') +
+    '</body></html>';
+}
+
+function gerarPdfFechamento_(mesRef) {
+  exigirExecucaoMutacao_();
+  const alvo = normalizarMesReferencia_(mesRef || param_('MES_REFERENCIA'));
+  const html = htmlFechamentoPdf_(alvo);
+  const nome = 'Frota_Fechamento_' + alvo + '.pdf';
+  const pdf = Utilities.newBlob(html, MimeType.HTML, nome).getAs(MimeType.PDF).setName(nome);
+  const arquivo = pastaDeRelatorios_().createFile(pdf);
+  registrarLog_('PDF do fechamento', alvo + ' • ' + arquivo.getName());
+  return arquivo;
+}
+
+function webFechamentoPdf(token, mesRef) {
+  autorizarContextoWeb_(token, PERFIS_ACESSO);
+  const arquivo = gerarPdfFechamento_(mesRef);
+  return {
+    ok: true,
+    nome: arquivo.getName(),
+    url: arquivo.getUrl(),
+    pasta: PASTA_RELATORIOS,
+    mensagem: 'Documento do fechamento gerado na pasta "' + PASTA_RELATORIOS + '" do Drive.',
+  };
+}
+
 function gerarPdfRateio_(mesRef) {
   exigirExecucaoMutacao_();
   const alvo = normalizarMesReferencia_(mesRef || param_('MES_REFERENCIA'));

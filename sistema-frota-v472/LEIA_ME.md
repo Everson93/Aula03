@@ -2937,3 +2937,60 @@ colunas saem trocadas.
 
 `conferir_relatorios_loja.js`, **42 provas**, 7 mutações. Total do projeto:
 **802**.
+
+## V4.24.0 — o documento do fechamento, para a contabilidade
+
+Um PDF só, com três seções, cada uma começando em página própria:
+
+1. **Rateio por centro de custo**
+2. **Depreciação por loja** — total por loja
+3. **Manutenção por loja** — com os veículos e a coluna *% da loja*
+
+Capa com os três totais do mês, as ressalvas da apuração por escrito e o
+rodapé de rastreabilidade. O botão fica no **Fechamento**, passo 5.
+
+### Só a competência aberta, e isso é recusa explícita
+
+O rateio sabe apurar mês fechado. A depreciação e a manutenção saem do
+**Resumo**, que tem apenas o período corrente.
+
+Juntar os dois produziria um documento com o rateio de um mês e o detalhe de
+outro — o tipo de erro que ninguém percebe e que vai **assinado para fora**.
+O sistema recusa e diz por quê:
+
+> O documento do fechamento só sai para a competência aberta (2026-10). A
+> depreciação e a manutenção por loja vêm do Resumo, que tem apenas o período
+> corrente — misturá-las com o rateio de 2026-09 geraria um documento com
+> meses diferentes. Para o rateio de 2026-09 isolado, use o PDF do rateio.
+
+### Uma conta, dois lugares, nunca duas contas
+
+O PDF chama `relatorioDepreciacaoPorLoja_` e `relatorioManutencaoPorLoja_` —
+**as mesmas funções que a tela usa**. Duplicar a conta no documento faria o
+papel e o app divergirem, e o papel é o que a contabilidade guarda.
+
+Para isso existe `tabelaRelatorioPdf_`, que desenha qualquer
+`{colunas, linhas, totais}` formatando pelo **tipo declarado na coluna**.
+Qualquer relatório futuro entra num PDF de graça.
+
+### O refactor que a suíte protegeu
+
+O PDF do rateio foi quebrado em peças — `estiloPdf_`, `cabecalhoPdf_`,
+`rodapePdf_`, `notasRateio_`, `secaoRateioPdf_` — para o documento unificado
+reusar em vez de copiar. As 75 provas existentes passaram sem alteração
+nenhuma durante o refactor inteiro. É para isso que elas servem.
+
+### A repetição que apareceu ao olhar
+
+A primeira versão mostrava **"Custo total da frota" duas vezes**: na capa e
+dentro da seção do rateio, porque a seção trazia o próprio indicador. Só
+aparece olhando o documento montado.
+
+A seção passou a devolver o indicador **separado** do html, e cada documento
+decide onde pôr. Há prova de que o html da seção não contém indicador —
+senão o unificado volta a mostrar dois.
+
+### Provas
+
+`conferir_pdf_rateio.js`: 75 → **108**, 9 mutações nas partes novas. Total do
+projeto: **835**.
