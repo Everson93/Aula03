@@ -83,9 +83,12 @@ ok('o total geral é a soma dos diretos', h.indexOf('R$ 60.000,00') !== -1,
   '1000+2000+3000+4000+30000+20000 = 60.000');
 ok('o valor rateado é a base inteira', h.indexOf('R$ 50.000,00') !== -1,
   'o que sai dos centros-base volta inteiro para os que recebem');
-ok('o maior centro é o de maior TOTAL, não o primeiro da lista',
-  /Maior centro<\/div><div class="val">Loja 03/.test(h),
-  (h.match(/Maior centro<\/div><div class="val">[^<]*/) || [''])[0]);
+// V4.22.3: o indicador de maior centro saiu a pedido. A tabela já está
+// ordenada por total decrescente, então o maior é a primeira linha.
+ok('não há mais indicador de maior centro', h.indexOf('Maior centro') === -1);
+ok('mas a tabela continua ordenada pelo maior',
+  corpoTabela(h).indexOf('Loja 03') < corpoTabela(h).indexOf('Loja 02'),
+  'quem procura o maior olha a primeira linha');
 ok('a soma das fatias dá 100%', h.indexOf('100,00%') !== -1);
 // V4.22.2: a tabela passou a listar SÓ quem recebe rateio. Os centros-base
 // ficam com total zero depois de distribuir, e linha de zeros no meio da
@@ -133,15 +136,15 @@ ok('e NÃO como indicador separado, que repetiria o mesmo número',
   !kpi(h, 'Valor rateado'),
   'o que sai dos centros-base volta inteiro: dois indicadores mostrariam 60.000 duas vezes');
 
-const centros = kpi(h, 'Centros que recebem');
-ok('com todo o custo alocado, o indicador diz isso',
-  centros && /todo o custo alocado/.test(centros.sub), centros ? centros.sub : '');
+ok('não há mais indicador de centros que recebem',
+  !kpi(h, 'Centros que recebem'),
+  'a contagem está na própria tabela');
 
 ok('não há mais indicador de média', !kpi(h, 'Média por centro'),
   'num rateio por percentual a média não diz nada que o percentual já não diga');
-ok('sobraram três indicadores',
-  (h.match(/<div class="rot">[^<]*<\/div><div class="val">/g) || []).length === 3,
-  String((h.match(/<div class="rot">[^<]*<\/div><div class="val">/g) || []).length));
+ok('sobrou UM indicador, o do custo total',
+  (h.match(/<div class="rot">[^<]*<\/div><div class="val">/g) || []).length === 1,
+  (h.match(/<div class="rot">([^<]*)<\/div><div class="val">/g) || []).join(' | '));
 
 // Centro que não recebe e tem custo: o dinheiro não chegou a loja nenhuma.
 const comSobra = apuracao();
@@ -149,10 +152,17 @@ comSobra.linhas.push({ centro: 'ADM CENTRAL', direto: 5000, percentual: 0, receb
   rateio: 0, distribuido: 0, total: 5000, orfao: false });
 ctx.__apuracao = comSobra;
 const h2 = ctx.htmlRateioPdf_('2026-10');
-const centros2 = kpi(h2, 'Centros que recebem');
-ok('custo que ficou fora das lojas é dito no indicador',
-  centros2 && /R\$ 5\.000,00 fora das lojas/.test(centros2.sub),
-  centros2 ? centros2.sub : '');
+// Com o indicador de centros fora, a linha abaixo da tabela passou a ser o
+// ÚNICO lugar que diz quanto ficou fora das lojas. Ela vale ainda mais.
+//
+// E é aqui que dá para provar que o indicador mostra o total da FROTA: na
+// fixture sem sobra ele coincide com o total das lojas, e trocar um pelo
+// outro passava despercebido.
+ok('o indicador mostra o total da frota, não o das lojas',
+  (kpi(h2, 'Custo total da frota') || {}).valor === 'R$ 65.000,00',
+  (kpi(h2, 'Custo total da frota') || {}).valor + ' — 60.000 das lojas + 5.000 fora');
+ok('e o rótulo é "da frota", não "rateado": parte não foi rateada',
+  h2.indexOf('Custo total rateado') === -1);
 // O dinheiro fora da lista NÃO pode sumir: sem esta linha o PDF fecharia num
 // número diferente do Resumo e ninguém saberia por quê.
 ok('o custo fora das lojas é dito abaixo da tabela',
@@ -273,7 +283,9 @@ ctx.__apuracao = { competencia: '2026-10', linhas: [], orfaos: [], valorBase: 0,
 let erroVazio = '';
 try { h = ctx.htmlRateioPdf_('2026-10'); } catch (e) { erroVazio = e.message; }
 ok('competência sem nenhum centro não quebra', erroVazio === '', erroVazio);
-ok('e o maior centro vira travessão', /Maior centro<\/div><div class="val">—/.test(h), h.slice(0, 100));
+ok('e o indicador do total mostra zero, sem quebrar',
+  (kpi(h, 'Custo total da frota') || {}).valor === 'R$ 0,00',
+  (kpi(h, 'Custo total da frota') || {}).valor);
 ok('sem divisão por zero', !/NaN|Infinity/.test(h));
 // Quem de fato impede o NaN de chegar ao papel é `numBR_`: ele faz
 // `Number(valor || 0)`, e NaN é falsy. A guarda `totalGeral > 0` é reforço.

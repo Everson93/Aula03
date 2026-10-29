@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.22.2';
+const VERSAO_SISTEMA = '4.22.3';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8148,9 +8148,6 @@ function htmlRateioPdf_(mesRef) {
   // volta inteiro para os que recebem. Mostrar os dois gastaria um quarto do
   // cabecalho repetindo o mesmo numero. No lugar vao a parcela rateada e o
   // maior centro, que e o que alguem procura primeiro.
-  const maior = a.linhas.reduce(function (m, l) {
-    return (!m || l.total > m.total) ? l : m;
-  }, null);
   // O que sobra fora das lojas: centro que aparece nos veículos mas não está
   // cadastrado não recebe rateio, então o custo dele não chega a loja nenhuma.
   // Quase sempre é zero — e quando não é, precisa estar dito no indicador, não
@@ -8191,7 +8188,14 @@ function htmlRateioPdf_(mesRef) {
   // MAS o dinheiro que ficou fora não pode sumir: se houver centro sem
   // cadastro com custo, ele aparece numa linha única logo antes do total,
   // senão o PDF fecharia num número diferente do Resumo e ninguém saberia por quê.
-  const recebedores = a.linhas.filter(function (l) { return l.recebe; });
+  // Ordena aqui também. `apurarRateio_` já devolve ordenado, mas a ordem das
+  // linhas é contrato DO DOCUMENTO: quem procura o maior centro olha a
+  // primeira linha, e depender de o chamador ter ordenado quebra calado no
+  // dia em que alguém mudar a apuração.
+  const recebedores = a.linhas
+    .filter(function (l) { return l.recebe; })
+    .slice()
+    .sort(function (x, y) { return y.total - x.total; });
   const totalLojas = recebedores.reduce(function (t, l) { return t + l.total; }, 0);
 
   const linhas = recebedores.map(function (l) {
@@ -8220,9 +8224,10 @@ function htmlRateioPdf_(mesRef) {
     '.sub { font-size: 9pt; color: ' + CORES.GRAFITE + '; }' +
     // Sem margem negativa: ela puxava a primeira célula para fora da página e
     // comia a barra laranja dela. O espaçamento entre células já basta.
-    '.kpis { width: 100%; border-collapse: separate; border-spacing: 7px 0; margin: 0 0 12px 0; }' +
-    '.kpis td { background: ' + CORES.CINZA + '; padding: 8px 11px; width: 33.33%; ' +
-      'border-left: 3px solid ' + CORES.LARANJA + '; }' +
+    '.kpis { border-collapse: separate; border-spacing: 0; margin: 0 0 12px 0; }' +
+    '.kpis { table-layout: auto; }' +
+    '.kpis td { background: ' + CORES.CINZA + '; padding: 9px 22px 9px 13px; ' +
+      'border-left: 3px solid ' + CORES.LARANJA + '; white-space: nowrap; }' +
     '.kpis .rot { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .7px; color: ' + CORES.GRAFITE + '; }' +
     '.kpis .val { font-size: 14pt; font-weight: bold; padding-top: 2px; line-height: 1.15; }' +
     '.kpis .val + .rot { padding-top: 2px; }' +
@@ -8268,15 +8273,6 @@ function htmlRateioPdf_(mesRef) {
       // mentiria. A linha de baixo diz quanto de fato se moveu.
       '<td><div class="rot">Custo total da frota</div><div class="val">' + brlPdf_(totalGeral) + '</div>' +
         '<div class="rot">sendo ' + brlPdf_(totalRateio) + ' redistribuídos</div></td>' +
-      '<td><div class="rot">Centros que recebem</div><div class="val">' + numBR_(recebem, 0) + '</div>' +
-        '<div class="rot">' + (naoAlocado > 0
-          ? brlPdf_(naoAlocado) + ' fora das lojas'
-          : 'todo o custo alocado') + '</div></td>' +
-      '<td><div class="rot">Maior centro</div><div class="val">' +
-        escHtml_(maior ? maior.centro : '—') + '</div>' +
-        '<div class="rot">' + (maior && totalGeral > 0
-          ? brlPdf_(maior.total) + ' &nbsp;•&nbsp; ' + numBR_((maior.total / totalGeral) * 100, 1) + '%'
-          : '') + '</div></td>' +
     '</tr></table>' +
 
     '<table class="dados"><thead><tr>' +

@@ -2813,3 +2813,36 @@ rateado, e o rótulo mentiria. Quanto se moveu de fato está na linha de baixo.
    qual dos dois a tabela usa.
 
 `conferir_pdf_rateio.js`: 53 → **60**, 7 mutações. Total do projeto: **745**.
+
+## V4.22.3 — um indicador só
+
+Saiu o **maior centro de custo**. Ficou apenas o **custo total da frota**, com
+a linha menor dizendo quanto foi redistribuído.
+
+A caixa também deixou de ocupar a largura toda: um retângulo cinza de ponta a
+ponta com um número só fica vazio. Agora é compacta, à esquerda.
+
+Nada se perdeu com os indicadores que saíram:
+
+- **maior centro** — a tabela está ordenada por total decrescente, então é a
+  primeira linha;
+- **centros que recebem** — é a contagem de linhas da tabela;
+- **custo fora das lojas** — continua na linha de conferência abaixo da
+  tabela, que agora é o único lugar onde isso aparece, e por isso vale ainda
+  mais.
+
+### A ordem virou contrato do documento
+
+Como "o maior é a primeira linha" passou a ser a forma de achar o maior
+centro, o PDF deixou de depender de o chamador ter ordenado:
+`htmlRateioPdf_` ordena por conta própria. `apurarRateio_` já ordenava, mas
+depender disso quebraria calado no dia em que alguém mudasse a apuração.
+
+### A fixture sem sobra escondia uma troca
+
+Trocar o indicador do **total da frota** pelo **total das lojas** sobrevivia:
+na fixture principal os dois são o mesmo número. Só na fixture com centro
+não cadastrado dá para distinguir — 65.000 contra 60.000. É o terceiro caso
+nesta sessão em que uma fixture "normal" demais deixa passar uma troca.
+
+`conferir_pdf_rateio.js`: 60 → **62**. Total do projeto: **747**.
