@@ -1756,10 +1756,11 @@ delas gravando no vizinho.
   origem na migração das 170 abas, e **nada no código atual lê ou escreve nela**.
   Pode já conter um agrupamento útil da planilha antiga; vale olhar antes de
   descartar.
-- **Suíte do fechamento** — `webFecharPeriodo`, `webExcluirLancamento`,
-  `webCorrigirLancamento`, `webGerarDepreciacao`, `webExcluirVeiculo` e
-  `webAjustarEstoqueBomba` continuam sem teste. São os seis caminhos
-  irreversíveis do sistema. Ver a auditoria.
+- **Suíte do fechamento** — coberta em parte pela V4.26.1
+  (`conferir_irreversiveis.js`): `webFecharPeriodo`, `webExcluirVeiculo` e
+  `webAjustarEstoqueBomba` têm provas. Faltam **`webCorrigirLancamento`** (o
+  desfazer: o original tem de voltar com o mesmo ID quando o novo não salva)
+  e **`webGerarDepreciacao`**.
 - **Formatação condicional do Resumo** ainda usa a regra antiga (2× a média da
   frota no R$/km) e segue pintando todo caminhão. Ver V4.9.5.
 - **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo
@@ -3266,3 +3267,65 @@ rascunho e teria dado `ReferenceError` no primeiro clique em "KM inválido" —
 derrubando a tela inteira, sem mensagem útil.
 
 Total do projeto: 894 → **953**.
+
+## V4.26.1 — provas para os caminhos sem volta
+
+Nenhuma linha de produção mudou aqui. O que entrou foi a suíte que a
+auditoria pedia desde a V4.12: fechar o período, excluir um veículo e
+ajustar o estoque da bomba são operações **sem desfazer pela tela**, e não
+tinham teste nenhum.
+
+### O que se prova não é o resultado, é a ordem
+
+Um fechamento que grava a competência nova e falha na exportação é pior que
+um fechamento que não acontece: ninguém percebe, e o mês seguinte abre sobre
+uma base que nunca foi fotografada. Então quase toda prova aqui olha o
+**rastro** — a sequência das operações — e não só o que a função devolveu:
+
+- valida **antes** de qualquer escrita;
+- backup **antes** da exportação;
+- a fotografia do período **antes** de avançar a competência;
+- o Resumo é congelado **antes** de avançar (depois congelaria o mês errado).
+
+E o caso que mais interessa: **a exportação falha**. O erro sobe, a
+competência não avança, o Resumo não é congelado e o Histórico não é
+gravado. Mover `gravarParam_` para antes da exportação — uma linha — faz
+cinco provas quebrarem.
+
+### O lacre tem dois lados, de novo
+
+`excluirVeiculo_` recusa o veículo com lançamento em período fechado **e** o
+veículo com leitura de KM em período fechado. São duas guardas separadas, e
+é o oitavo caso neste projeto de um contrato com mais de um lado. Cada uma
+tem prova própria: desligar só a do odômetro deixa três provas vermelhas.
+
+### A armadilha do realm, agora desligando uma guarda
+
+De novo o `Date` criado fora do `vm`. Nas outras vezes ele esvaziava a
+fixture e as provas passavam sem ter o que provar. Aqui foi pior: o
+lançamento caía no ramo `!(data instanceof Date)` e era contado como
+**período fechado** sem nunca ter sido comparado com data nenhuma. A prova
+do lacre passava — pelo motivo errado. A fábrica de datas passou a rodar
+dentro do `vm`.
+
+### Duas fraquezas de fixture
+
+1. **"apaga a linha errada do cadastro" sobreviveu** porque o veículo alvo
+   era a primeira linha: apagar "a primeira" e apagar "a que casa" davam no
+   mesmo. Agora ele é o do meio, entre dois que têm de sobrar.
+2. **"a bomba aceita saldo negativo" só dava CRASH**, não FALHA: sem o
+   caminho feliz dublado, tirar a guarda fazia o teste estourar. Um teste que
+   estoura não distingue "pegou o defeito" de "o arquivo não compila" — é
+   exatamente o erro de leitura que esta disciplina existe para evitar.
+   Com `estadoTanque_` dublado, o mutante agora produz um ajuste de verdade
+   e quatro provas o reprovam.
+
+### Suíte
+
+`conferir_irreversiveis.js` — **51 provas**, mutação **17 de 17**.
+
+Fica faltando `webCorrigirLancamento` (o desfazer: quando o lançamento novo
+não salva, o original volta com o mesmo ID e a leitura de KM é recolocada) e
+`webGerarDepreciacao`. São os dois restantes da lista de seis.
+
+Total do projeto: 953 → **1.004** provas, em 30 suítes.
