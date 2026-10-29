@@ -2846,3 +2846,37 @@ não cadastrado dá para distinguir — 65.000 contra 60.000. É o terceiro caso
 nesta sessão em que uma fixture "normal" demais deixa passar uma troca.
 
 `conferir_pdf_rateio.js`: 60 → **62**. Total do projeto: **747**.
+
+## V4.22.4 — as lojas em ordem numérica
+
+A tabela saía ordenada por valor, do maior para o menor. Num papel que se
+percorre com o dedo procurando uma loja, isso não serve: a ordem certa é a
+numérica.
+
+### Alfabético não é numérico
+
+O detalhe que justifica uma função própria: **"Loja 10" vem depois de
+"Loja 2" para uma pessoa e ANTES para a comparação alfabética**, que olha
+caractere a caractere e vê `'1' < '2'`.
+
+Com os nomes zerados à esquerda — *Loja 01*, *Loja 02* — o alfabético até
+acerta. Mas basta **um** centro cadastrado sem o zero para a lista sair fora
+de ordem, e ninguém desconfia de uma lista: a pessoa procura, não acha, e
+conclui que a loja não está no relatório.
+
+`compararCentroNatural_` quebra o nome em pedaços de texto e de número e
+compara número com número. *Loja 1, Loja 2, Loja 09, Loja 10* sai nessa
+ordem mesmo com os formatos misturados.
+
+### Provas
+
+12 provas só da ordenação, incluindo os cantos: zero à esquerda, maiúscula
+contra minúscula, nome sem número, nome vazio, nome mais curto que começa
+igual, e dois trechos numéricos no mesmo nome (*CD 1 Loja 99* antes de
+*CD 2 Loja 1*).
+
+Cinco mutações: voltar a ordenar por valor, trocar por alfabético, comparar o
+trecho numérico como texto, inverter o caso do nome curto, e tirar a
+maiusculização.
+
+`conferir_pdf_rateio.js`: 62 → **75**. Total do projeto: **760**.

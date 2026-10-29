@@ -24,7 +24,8 @@ const ctx = {
 ctx.globalThis = ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
-  Object.assign(globalThis, { htmlRateioPdf_, escHtml_, brlPdf_, numBR_, VERSAO_SISTEMA });
+  Object.assign(globalThis, { htmlRateioPdf_, escHtml_, brlPdf_, numBR_, VERSAO_SISTEMA,
+    compararCentroNatural_ });
   exigirExecucaoLeitura_ = function () {};
   exigirExecucaoMutacao_ = function () {};
   param_ = function (n) {
@@ -83,12 +84,15 @@ ok('o total geral é a soma dos diretos', h.indexOf('R$ 60.000,00') !== -1,
   '1000+2000+3000+4000+30000+20000 = 60.000');
 ok('o valor rateado é a base inteira', h.indexOf('R$ 50.000,00') !== -1,
   'o que sai dos centros-base volta inteiro para os que recebem');
-// V4.22.3: o indicador de maior centro saiu a pedido. A tabela já está
-// ordenada por total decrescente, então o maior é a primeira linha.
 ok('não há mais indicador de maior centro', h.indexOf('Maior centro') === -1);
-ok('mas a tabela continua ordenada pelo maior',
-  corpoTabela(h).indexOf('Loja 03') < corpoTabela(h).indexOf('Loja 02'),
-  'quem procura o maior olha a primeira linha');
+// V4.22.4: a tabela passou a sair em ordem NUMÉRICA de centro. É assim que
+// alguém procura uma loja num papel; por valor serve para a tela.
+ok('a tabela sai em ordem numérica de loja',
+  corpoTabela(h).indexOf('Loja 01') < corpoTabela(h).indexOf('Loja 02') &&
+  corpoTabela(h).indexOf('Loja 02') < corpoTabela(h).indexOf('Loja 03'),
+  (corpoTabela(h).match(/Loja \d+/g) || []).join(' '));
+ok('e NÃO por valor', corpoTabela(h).indexOf('Loja 01') < corpoTabela(h).indexOf('Loja 03'),
+  'Loja 03 é a de maior total, e mesmo assim vem depois da 01');
 ok('a soma das fatias dá 100%', h.indexOf('100,00%') !== -1);
 // V4.22.2: a tabela passou a listar SÓ quem recebe rateio. Os centros-base
 // ficam com total zero depois de distribuir, e linha de zeros no meio da
@@ -309,6 +313,46 @@ const app = fs.readFileSync('App.html', 'utf8');
 ok('a tela chama webRateioPdf', app.indexOf('.webRateioPdf(TOKEN') !== -1);
 ok('e manda a competência que está na tela', /webRateioPdf\(TOKEN, mes\)/.test(app));
 ok('com vigia de tempo, como os outros botões longos', /comVigia\(botao, 'Gerando…'/.test(app));
+
+console.log('\n9. Ordem numérica, não alfabética');
+// "Loja 10" vem depois de "Loja 2" para uma pessoa e ANTES para a comparação
+// alfabética, que olha caractere a caractere: '1' < '2'. Com os nomes zerados
+// à esquerda o alfabético até acerta — mas basta UM centro cadastrado sem o
+// zero para a lista sair fora de ordem, e ninguém desconfia de uma lista: só
+// procura e não acha.
+const C = ctx.compararCentroNatural_;
+ok('Loja 2 vem antes de Loja 10', C('Loja 2', 'Loja 10') < 0, String(C('Loja 2', 'Loja 10')));
+ok('e Loja 10 depois de Loja 9', C('Loja 10', 'Loja 9') > 0);
+ok('com zero à esquerda também funciona', C('Loja 02', 'Loja 10') < 0);
+ok('zero à esquerda e sem zero são o mesmo número',
+  C('Loja 02', 'Loja 2') === 0, String(C('Loja 02', 'Loja 2')));
+ok('nome igual dá zero', C('DEPÓSITO', 'DEPÓSITO') === 0);
+ok('nomes sem número caem no alfabético',
+  C('ADM Central', 'Depósito') < 0, String(C('ADM Central', 'Depósito')));
+ok('maiúscula e minúscula não mudam a ordem',
+  C('loja 5', 'LOJA 5') === 0, String(C('loja 5', 'LOJA 5')));
+ok('nome mais curto vem antes do mais longo que começa igual',
+  C('Loja', 'Loja 1') < 0, String(C('Loja', 'Loja 1')));
+ok('nulo não quebra', C(null, 'Loja 1') < 0 && C(undefined, undefined) === 0);
+ok('número de dois trechos é comparado trecho a trecho',
+  C('CD 2 Loja 10', 'CD 2 Loja 9') > 0 && C('CD 1 Loja 99', 'CD 2 Loja 1') < 0);
+
+// A prova que importa: uma lista fora de padrão sai em ordem.
+const misto = apuracao();
+misto.linhas = [
+  { centro: 'Loja 10', direto: 100, percentual: 0.25, recebe: true, rateio: 100, distribuido: 0, total: 200, orfao: false },
+  { centro: 'Loja 2',  direto: 900, percentual: 0.25, recebe: true, rateio: 100, distribuido: 0, total: 1000, orfao: false },
+  { centro: 'Loja 09', direto: 100, percentual: 0.25, recebe: true, rateio: 100, distribuido: 0, total: 200, orfao: false },
+  { centro: 'Loja 1',  direto: 100, percentual: 0.25, recebe: true, rateio: 100, distribuido: 0, total: 200, orfao: false },
+];
+ctx.__apuracao = misto;
+const hm = ctx.htmlRateioPdf_('2026-10');
+const ordem = (corpoTabela(hm).match(/Loja \d+/g) || []);
+ok('mistura de "Loja 2" e "Loja 09" sai na ordem certa',
+  ordem.join(',') === 'Loja 1,Loja 2,Loja 09,Loja 10', ordem.join(','));
+ok('e a de maior valor não vai para o topo só por isso',
+  ordem[1] === 'Loja 2', 'Loja 2 tem o maior total e está em segundo, pelo número');
+ctx.__apuracao = apuracao();
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

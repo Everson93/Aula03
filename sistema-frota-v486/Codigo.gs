@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.22.3';
+const VERSAO_SISTEMA = '4.22.4';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8132,6 +8132,36 @@ function escHtml_(valor) {
 /** R$ 1.234,56 — sempre por numBR_, nunca toFixed (ver a armadilha do ponto). */
 function brlPdf_(valor) { return 'R$ ' + numBR_(valor, 2); }
 
+/**
+ * Compara nomes de centro em ordem NUMERICA, nao alfabetica.
+ *
+ * "Loja 10" vem depois de "Loja 2" para uma pessoa e ANTES para o
+ * `localeCompare`, que compara caractere a caractere: '1' < '2'. Com os nomes
+ * zerados a esquerda ("Loja 02") o alfabetico até acerta, mas basta um centro
+ * cadastrado sem o zero para a lista sair fora de ordem — e ninguem
+ * desconfia de uma lista, so procura e nao acha.
+ *
+ * Quebra o nome em pedacos de texto e de numero e compara numero com numero.
+ */
+function compararCentroNatural_(a, b) {
+  const pa = String(a == null ? '' : a).toUpperCase().match(/\d+|\D+/g) || [];
+  const pb = String(b == null ? '' : b).toUpperCase().match(/\d+|\D+/g) || [];
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i], y = pb[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const nx = /^\d/.test(x), ny = /^\d/.test(y);
+    if (nx && ny) {
+      const d = Number(x) - Number(y);
+      if (d) return d;
+    } else {
+      const d = x.localeCompare(y, 'pt-BR');
+      if (d) return d;
+    }
+  }
+  return 0;
+}
+
 function htmlRateioPdf_(mesRef) {
   const a = apurarRateio_(mesRef);
   const empresa = String(param_('EMPRESA'));
@@ -8188,14 +8218,13 @@ function htmlRateioPdf_(mesRef) {
   // MAS o dinheiro que ficou fora não pode sumir: se houver centro sem
   // cadastro com custo, ele aparece numa linha única logo antes do total,
   // senão o PDF fecharia num número diferente do Resumo e ninguém saberia por quê.
-  // Ordena aqui também. `apurarRateio_` já devolve ordenado, mas a ordem das
-  // linhas é contrato DO DOCUMENTO: quem procura o maior centro olha a
-  // primeira linha, e depender de o chamador ter ordenado quebra calado no
-  // dia em que alguém mudar a apuração.
+  // Ordem NUMERICA pelo nome do centro: e assim que alguem procura uma loja
+  // na lista. `apurarRateio_` devolve ordenado por valor, que serve para a
+  // tela mas nao para um papel que se percorre com o dedo.
   const recebedores = a.linhas
     .filter(function (l) { return l.recebe; })
     .slice()
-    .sort(function (x, y) { return y.total - x.total; });
+    .sort(function (x, y) { return compararCentroNatural_(x.centro, y.centro); });
   const totalLojas = recebedores.reduce(function (t, l) { return t + l.total; }, 0);
 
   const linhas = recebedores.map(function (l) {
