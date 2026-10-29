@@ -3447,8 +3447,8 @@
           '<button class="acao secundaria" onclick="rodarExportacaoPeriodo(this, \'' + esc(p.mes) + '\')">📦 Exportar período agora</button>' +
           '<div id="saidaExportPeriodo" style="margin-top:10px"></div></div>' +
         '<div class="cartao"><b>5. Documento do fechamento (PDF para a contabilidade)</b>' +
-          '<p class="sub" style="margin:6px 0 10px">Um documento só, com três seções: rateio por ' +
-            'centro, depreciação por loja e manutenção por loja com os veículos. ' +
+          '<p class="sub" style="margin:6px 0 10px">Um documento só: a depreciação bem a bem ' +
+            'e a manutenção veículo a veículo da competência. ' +
             'Sai na pasta "Relatórios Frota" do Drive.</p>' +
           '<button class="acao secundaria" onclick="gerarFechamentoPdf(this)">📄 Gerar o PDF do fechamento</button>' +
           '<div id="saidaFechPdf" style="margin-top:10px"></div></div>' +
@@ -3463,11 +3463,11 @@
   }
 
   /**
-   * O PDF que vai para a contabilidade: as três seções num documento só.
+   * O PDF que vai para a contabilidade: depreciação e manutenção num
+   * documento só.
    *
-   * Só sai para a competência aberta — a depreciação e a manutenção vêm do
-   * Resumo, que tem apenas o período corrente. O servidor recusa qualquer
-   * outra e explica por quê.
+   * Só sai para a competência aberta — os dois números vêm do Resumo, que tem
+   * apenas o período corrente. O servidor recusa qualquer outra e explica.
    */
   function gerarFechamentoPdf(botao) {
     el('saidaFechPdf').innerHTML = '<div class="carregando">montando o documento…</div>';

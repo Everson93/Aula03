@@ -2994,3 +2994,56 @@ senão o unificado volta a mostrar dois.
 
 `conferir_pdf_rateio.js`: 75 → **108**, 9 mutações nas partes novas. Total do
 projeto: **835**.
+
+## V4.24.1 — o documento enxugado
+
+Depois de ver a V4.24.0 montada, três cortes:
+
+- **sai o rateio** do documento;
+- **sai o % da loja**;
+- **sai a coluna da loja** das duas seções.
+
+O que sobra é o que a contabilidade confere:
+
+**1. Depreciação** — um bem por linha: `Bem / Patrimônio • Placa • Veículo •
+Depreciação`, em ordem de patrimônio. É a lista que casa com o arquivo que
+eles mandaram.
+
+**2. Manutenção** — um veículo por linha: `Placa • Veículo • Categoria •
+Oficina • Pneus • Manutenção`, do maior para o menor.
+
+A loja sair faz sentido: **o veículo já é vinculado à loja no cadastro**,
+então a contabilidade aloca por lá. O que ela precisa conferir no papel são
+os valores, linha a linha.
+
+Os relatórios **por loja** continuam existindo na tela — são úteis
+internamente, para saber qual veículo puxou a conta de cada loja. O que mudou
+foi o documento que sai da empresa.
+
+### O patrimônio vem do cadastro
+
+O Resumo não tem patrimônio, só placa. `mapaPatrimonioPorPlaca_` faz o
+vínculo numa passagem.
+
+Bem sem patrimônio cadastrado aparece como **⚠ sem patrimônio**, não em
+branco: célula vazia num PDF parece descuido de formatação, e quem recebe não
+sabe que precisa avisar alguém. O valor continua no total.
+
+Placa repetida no cadastro: o **primeiro** patrimônio vence, de propósito.
+Escolher o último seria igualmente arbitrário, mas faria o documento mudar
+conforme a ordem das linhas da planilha — pior que uma escolha fixa.
+
+### Duas fraquezas de fixture, de novo
+
+1. **"não ordenar" sobrevivia** porque a fixture já estava em ordem de
+   patrimônio. Reordenada para que a ordem de entrada seja diferente da de
+   saída. De quebra, entrou a prova de que o patrimônio acompanha a placa
+   certa — trocar esse vínculo manda o bem errado para a contabilidade.
+2. **"placa duplicada: o último vence" sobrevivia** porque não havia placa
+   repetida na fixture.
+
+É o quinto caso nesta sessão de fixture comportada demais. O padrão já é
+claro: **uma fixture em que a entrada e a saída coincidem não distingue a
+transformação da ausência dela.**
+
+`conferir_pdf_rateio.js`: 108 → **118**. Total do projeto: **845**.

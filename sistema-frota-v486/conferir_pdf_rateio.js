@@ -26,7 +26,8 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, { htmlRateioPdf_, escHtml_, brlPdf_, numBR_, VERSAO_SISTEMA,
     compararCentroNatural_, htmlFechamentoPdf_, tabelaRelatorioPdf_, secaoRateioPdf_,
-    R_, TOTAL_COL_RESUMO, col_ });
+    relatorioDepreciacaoPorBem_, relatorioManutencaoPorVeiculo_,
+    R_, TOTAL_COL_RESUMO, COL_VEIC, col_ });
   exigirExecucaoLeitura_ = function () {};
   exigirExecucaoMutacao_ = function () {};
   param_ = function (n) {
@@ -44,6 +45,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   emailContextoAtual_ = function () { return 'fulano@giassi.com.br'; };
   apurarRateio_ = function () { return __apuracao; };
   lerResumo_ = function () { return __resumo || []; };
+  dadosVeiculosExecucao_ = function () { return __veic || []; };
 `, ctx);
 
 let provas = 0, falhas = 0;
@@ -356,9 +358,11 @@ ok('e a de maior valor não vai para o topo só por isso',
   ordem[1] === 'Loja 2', 'Loja 2 tem o maior total e está em segundo, pelo número');
 ctx.__apuracao = apuracao();
 
-console.log('\n10. O documento unificado do fechamento');
-// A contabilidade recebe UM documento, não três. Três seções: rateio,
-// depreciação por loja e manutenção por loja com os veículos.
+console.log('\n10. O documento do fechamento');
+// A contabilidade recebe UM documento. Duas seções: depreciação bem a bem e
+// manutenção veículo a veículo. Sem rateio e sem agrupamento por loja — o
+// veículo já é vinculado à loja no cadastro, e o que se confere aqui são os
+// valores, linha a linha.
 function veicR(placa, desc, cat, centro, dep, ofi, pneus) {
   const l = new Array(ctx.TOTAL_COL_RESUMO).fill(0);
   l[ctx.R_.PLACA] = placa; l[ctx.R_.DESCRICAO] = desc; l[ctx.R_.CATEGORIA] = cat;
@@ -366,62 +370,113 @@ function veicR(placa, desc, cat, centro, dep, ofi, pneus) {
   l[ctx.R_.OFICINA] = ofi || 0; l[ctx.R_.PNEUS] = pneus || 0;
   return l;
 }
+function cadastro(placa, patrimonio) {
+  const v = new Array(20).fill('');
+  v[ctx.COL_VEIC.PLACA - 1] = placa;
+  v[ctx.COL_VEIC.CODIGO - 1] = patrimonio;
+  return v;
+}
 ctx.__apuracao = apuracao();
 ctx.__resumo = [
   veicR('AAA 0001', 'Fiorino', 'Leve', 'Loja 02', 300, 1000, 0),
   veicR('BBB 0002', 'Saveiro', 'Leve', 'Loja 10', 400, 500, 200),
   veicR('CCC 0003', 'Truck', 'Truck Normal', 'Loja 02', 1200, 4000, 1000),
 ];
+ctx.__veic = [cadastro('AAA 0001', '10000017'), cadastro('BBB 0002', '10001099'),
+  cadastro('CCC 0003', '10002200')];
 const hf = ctx.htmlFechamentoPdf_('2026-10');
 
-ok('tem as três seções, numeradas',
-  /1\. Rateio por centro de custo/.test(hf) &&
-  /2\. Depreciação por loja/.test(hf) &&
-  /3\. Manutenção por loja/.test(hf), 'seções: ' + (hf.match(/<h2>[^<]*/g) || []).join(' | '));
-ok('na ordem certa',
-  hf.indexOf('1. Rateio') < hf.indexOf('2. Depreciação') &&
-  hf.indexOf('2. Depreciação') < hf.indexOf('3. Manutenção'));
-ok('cada seção nova começa em página própria',
-  (hf.match(/class="secao quebra"/g) || []).length === 2,
-  'a contabilidade imprime: seção cortada no meio da página fica ilegível');
-ok('o título é do documento, não de uma seção', /<h1>Fechamento da Frota<\/h1>/.test(hf));
+ok('tem as duas seções, numeradas',
+  /1\. Depreciação/.test(hf) && /2\. Manutenção/.test(hf),
+  'seções: ' + (hf.match(/<h2>[^<]*/g) || []).join(' | '));
+ok('e NÃO tem o rateio', hf.indexOf('Rateio por centro') === -1 &&
+  hf.indexOf('% Rateio') === -1, 'o rateio saiu do documento a pedido');
+ok('a manutenção começa em página própria',
+  (hf.match(/class="secao quebra"/g) || []).length === 1);
+ok('o título é do documento', /<h1>Fechamento da Frota<\/h1>/.test(hf));
 
-console.log('\n10b. A capa não repete o que está nas seções');
-ok('o indicador do custo total aparece UMA vez',
-  (hf.match(/Custo total da frota<\/div>/g) || []).length === 1,
-  String((hf.match(/Custo total da frota<\/div>/g) || []).length) +
-  ' — a primeira versão repetia na capa e dentro da seção do rateio');
-// A regra que impede a repetição: a SEÇÃO devolve o indicador à parte, e cada
-// documento decide onde pôr. Se a seção voltar a embutir, o unificado mostra
-// dois. É isso que está sendo proibido.
-const secao = ctx.secaoRateioPdf_(apuracao());
-ok('a seção do rateio NÃO embute indicador no html dela',
-  secao.html.indexOf('class="kpis"') === -1 &&
-  secao.html.indexOf('Custo total da frota') === -1,
-  secao.html.slice(0, 140));
-ok('ela devolve o indicador separado', /Custo total da frota/.test(secao.kpi || ''),
-  'sem isso o documento de uma seção só ficaria sem indicador');
-ok('e o PDF do rateio sozinho mostra exatamente um',
-  (ctx.htmlRateioPdf_('2026-10').match(/Custo total da frota<\/div>/g) || []).length === 1);
-ok('a capa traz depreciação', /Depreciação<\/div><div class="val">R\$ 1\.900,00/.test(hf),
+console.log('\n10b. Sem loja e sem porcentagem');
+ok('a depreciação NÃO tem coluna de centro de custo',
+  hf.split('2. Manutenção')[0].indexOf('Centro de Custo') === -1,
+  'a loja saiu a pedido: o vínculo já está no cadastro');
+ok('a manutenção também não',
+  hf.split('2. Manutenção')[1].indexOf('Centro de Custo') === -1);
+ok('não há coluna de porcentagem em nenhuma das duas',
+  hf.indexOf('% da loja') === -1 && hf.indexOf('% do total') === -1,
+  (hf.match(/<th[^>]*>%[^<]*/g) || []).join(' '));
+ok('a depreciação traz o patrimônio', /BEM \/ PATRIM|Bem \/ Patrimônio/i.test(hf) &&
+  /10000017/.test(hf), 'a contabilidade confere contra o arquivo que enviou');
+ok('e a placa e o veículo ao lado', /AAA 0001/.test(hf) && /Fiorino/.test(hf));
+
+console.log('\n10c. A capa e as recusas');
+ok('a capa traz só os dois totais',
+  (hf.match(/<div class="rot">[^<]*<\/div><div class="val">/g) || []).length === 2,
+  (hf.match(/<div class="rot">([^<]*)<\/div><div class="val">/g) || []).join(' | '));
+ok('depreciação na capa', /Depreciação<\/div><div class="val">R\$ 1\.900,00/.test(hf),
   (hf.match(/Depreciação<\/div><div class="val">[^<]*/) || [''])[0]);
-ok('e manutenção', /Manutenção<\/div><div class="val">R\$ 6\.700,00/.test(hf),
+ok('manutenção na capa', /Manutenção<\/div><div class="val">R\$ 6\.700,00/.test(hf),
   (hf.match(/Manutenção<\/div><div class="val">[^<]*/) || [''])[0]);
-ok('com a contagem de bens', /3 bens/.test(hf));
+ok('com a contagem de bens e de veículos', /3 bens/.test(hf) && /3 veículos/.test(hf));
 
-console.log('\n10c. Nunca misturar competências');
-// O rateio sabe apurar mês fechado; a depreciação e a manutenção saem do
-// Resumo, que só tem o período corrente. Um documento com o rateio de um mês
-// e o detalhe de outro é o tipo de erro que ninguém percebe e que vai
-// assinado para fora.
+// Os dois números saem do Resumo, que só tem o período corrente.
 let erroMes = '';
 try { ctx.htmlFechamentoPdf_('2026-09'); } catch (e) { erroMes = e.message; }
 ok('competência diferente da aberta é RECUSADA', erroMes !== '', 'gerou sem reclamar');
 ok('e o motivo é explicado', /só sai para a competência aberta/.test(erroMes) &&
   /vêm do Resumo/.test(erroMes), erroMes);
-ok('com a saída: o PDF do rateio isolado', /use o PDF do rateio/.test(erroMes), erroMes);
 ok('a competência aberta passa', ctx.htmlFechamentoPdf_('2026-10').length > 1000);
 ok('e sem argumento também', ctx.htmlFechamentoPdf_('').length > 1000);
+
+console.log('\n10c2. Bem sem patrimônio cadastrado');
+// Célula vazia num PDF parece descuido de formatação, não cadastro
+// incompleto. Quem recebe não sabe que precisa avisar alguém.
+ctx.__veic = [cadastro('AAA 0001', ''), cadastro('BBB 0002', '10001099'),
+  cadastro('CCC 0003', '10002200')];
+const rdep = ctx.relatorioDepreciacaoPorBem_(null, null, null);
+ok('aparece com aviso, não em branco',
+  rdep.linhas.some(function (l) { return l[0] === '⚠ sem patrimônio'; }),
+  JSON.stringify(rdep.linhas.map(function (l) { return l[0]; })));
+ok('e o valor dele continua no total', rdep.totais[3] === 1900, String(rdep.totais[3]));
+ctx.__veic = [cadastro('AAA 0001', '10000017'), cadastro('BBB 0002', '10001099'),
+  cadastro('CCC 0003', '10002200')];
+
+// A fixture precisa estar FORA de ordem, senão "não ordenar" dá o mesmo
+// resultado que "ordenar" e a prova não distingue os dois.
+ctx.__veic = [cadastro('AAA 0001', '10002200'), cadastro('BBB 0002', '10000017'),
+  cadastro('CCC 0003', '10001099')];
+ok('a depreciação sai em ordem de patrimônio, não na ordem do Resumo',
+  ctx.relatorioDepreciacaoPorBem_(null, null, null).linhas
+    .map(function (l) { return l[0]; }).join(',') === '10000017,10001099,10002200',
+  ctx.relatorioDepreciacaoPorBem_(null, null, null).linhas
+    .map(function (l) { return l[0]; }).join(','));
+ok('e o patrimônio acompanha a placa certa',
+  ctx.relatorioDepreciacaoPorBem_(null, null, null).linhas
+    .filter(function (l) { return l[0] === '10002200'; })[0][1] === 'AAA 0001',
+  'trocar o vínculo placa↔patrimônio manda o bem errado para a contabilidade');
+
+// Placa repetida no cadastro: o primeiro vence, de propósito. Escolher o
+// último seria igualmente arbitrário, mas mudaria o documento conforme a
+// ordem das linhas da planilha — e isso é pior que uma escolha fixa.
+ctx.__veic = [cadastro('AAA 0001', 'PRIMEIRO'), cadastro('AAA 0001', 'SEGUNDO'),
+  cadastro('BBB 0002', '10001099'), cadastro('CCC 0003', '10002200')];
+ok('placa repetida no cadastro: o primeiro patrimônio vence',
+  ctx.relatorioDepreciacaoPorBem_(null, null, null).linhas
+    .filter(function (l) { return l[1] === 'AAA 0001'; })[0][0] === 'PRIMEIRO',
+  ctx.relatorioDepreciacaoPorBem_(null, null, null).linhas
+    .filter(function (l) { return l[1] === 'AAA 0001'; })[0][0]);
+ctx.__veic = [cadastro('AAA 0001', '10000017'), cadastro('BBB 0002', '10001099'),
+  cadastro('CCC 0003', '10002200')];
+ok('a manutenção sai do maior para o menor',
+  ctx.relatorioManutencaoPorVeiculo_(null, null, null).linhas
+    .map(function (l) { return l[5]; }).join(',') === '5000,1000,700');
+ok('quem não teve manutenção fica de fora',
+  ctx.relatorioManutencaoPorVeiculo_(null, null, null).linhas.length === 3);
+ok('quem não deprecia fica de fora da depreciação', (function () {
+  ctx.__resumo = ctx.__resumo.concat([veicR('ZZZ 9999', 'Sem dep', 'Leve', 'Loja 01', 0, 50, 0)]);
+  const r = ctx.relatorioDepreciacaoPorBem_(null, null, null);
+  ctx.__resumo = ctx.__resumo.slice(0, 3);
+  return r.linhas.length === 3;
+})());
 
 console.log('\n10d. A tabela genérica formata pelo tipo da coluna');
 // O PDF e a tela leem a MESMA função de relatório. Sem isso, um número no
@@ -455,9 +510,12 @@ ok('relatório sem linhas diz isso, não sai em branco',
 console.log('\n10e. As duas pontas do documento');
 const fonteF = fs.readFileSync('Codigo.gs', 'utf8');
 ok('o PDF usa a MESMA função de relatório da tela',
-  /htmlFechamentoPdf_[\s\S]{0,900}relatorioDepreciacaoPorLoja_\(null, null, null\)/.test(fonteF) &&
-  /htmlFechamentoPdf_[\s\S]{0,900}relatorioManutencaoPorLoja_\(null, null, null\)/.test(fonteF),
+  /htmlFechamentoPdf_[\s\S]{0,1400}relatorioDepreciacaoPorBem_\(null, null, null\)/.test(fonteF) &&
+  /htmlFechamentoPdf_[\s\S]{0,1400}relatorioManutencaoPorVeiculo_\(null, null, null\)/.test(fonteF),
   'duplicar a conta no PDF faria o papel e a tela divergirem');
+ok('e essas funções estão no catálogo, visíveis também na tela',
+  /'Depreciação por bem': \{/.test(fonteF) && /'Manutenção por veículo': \{/.test(fonteF),
+  'relatório que só o PDF enxerga não dá para conferir antes de enviar');
 ok('o estilo é um só para os dois documentos',
   /function estiloPdf_\(\)/.test(fonteF) &&
   (fonteF.match(/estiloPdf_\(\)/g) || []).length >= 3);
