@@ -2648,3 +2648,76 @@ Instalar.
 ### Provas
 
 `conferir_alerta_diario.js`: 72 → **105**. Total do projeto: **685**.
+
+## V4.22.0 — o rateio em PDF, montado em vez de fotografado
+
+O que existia era `exportarAbaComoPdf_`, que pede ao Google um PDF **da aba**.
+O resultado tem a cara da planilha: grade, larguras de coluna, cabeçalho
+congelado. Serve para arquivar; não serve para sair da mesa.
+
+O novo monta o documento em HTML e converte com
+`newBlob(html, HTML).getAs(PDF)`. As duas coisas continuam existindo — são
+usos diferentes.
+
+### O que o documento traz
+
+**Cabeçalho institucional** com a empresa, a competência por extenso, o
+período e a base do rateio.
+
+**Quatro indicadores**: custo total da frota, valor rateado (com a fração que
+ele representa), centros que recebem, e o maior centro com valor e
+participação.
+
+> A primeira versão tinha *custo total* e *custo direto* lado a lado. São
+> **sempre o mesmo número**: o que sai dos centros-base volta inteiro para os
+> que recebem. Um quarto do cabeçalho repetindo um número. Trocado pela fração
+> rateada e pelo maior centro, que é o que alguém procura primeiro.
+
+**Tabela** com `% do Total` por centro, os centros-base marcados como *quem
+distribui* e os não cadastrados em vermelho, com a tarja. Totais com régua
+grossa, no fim — onde se lê depois da lista, não antes.
+
+**Observações da apuração**, por escrito. Esta parte é a que mais importa:
+um PDF circula, e se a apuração tem condição e o papel não diz, quem lê decide
+sem saber. Entram percentual que não soma 100%, percentual herdado de outra
+competência, competência encerrada (e se veio do cache ou foi recalculada), e
+centros órfãos.
+
+**Rodapé** com quem gerou, quando, a versão do sistema e a nota de que o total
+fecha com o Resumo.
+
+### Ressalva por ruído é pior que nenhuma
+
+O limiar para avisar sobre a soma dos percentuais é **0,01%**. Os percentuais
+herdados da planilha antiga somam 100,001%, e isso **não** vira observação, de
+propósito: avisar todo mês sobre um milésimo de ponto ensina a pular o bloco —
+e aí some junto o aviso que importa. Há prova para os dois lados.
+
+### Texto da planilha não vira HTML
+
+Nome de centro é digitado por gente. `escHtml_` cobre os cinco caracteres, e
+há prova com `<script>alert(1)</script>` como nome de centro.
+
+### Quatro fraquezas das minhas próprias provas
+
+1. Contei `tag-base` no documento inteiro e peguei a folha de estilo junto:
+   dava 3 onde o certo era 2. Passou a contar a classe aplicada na linha.
+2. A fixture do percentual fora de 100% usava 100,001%, que está **abaixo** do
+   limiar — a prova reprovava o código por uma decisão correta dele. Trocada
+   por 90%, e acrescentada a prova de que o ruído não vira ressalva.
+3. Trocar "o maior centro" por "o primeiro da lista" sobrevivia, porque na
+   minha fixture o maior **era** o primeiro. Reordenada.
+4. Tirar a guarda de divisão por zero sobrevivia — e por um motivo que vale
+   saber: quem segura o NaN é `numBR_`, com `Number(valor || 0)`, já que NaN é
+   falsy. A guarda é reforço. Agora a prova é sobre `numBR_`, que é quem
+   realmente impede o NaN de chegar ao papel.
+
+### Instalar
+
+Não precisa. O PDF sai na pasta **Relatórios Frota** do Drive e a tela devolve
+o link.
+
+### Provas
+
+`conferir_pdf_rateio.js`, **45 provas**, 12 mutações cobertas. Total do
+projeto: **730**.

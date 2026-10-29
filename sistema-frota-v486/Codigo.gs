@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.21.0';
+const VERSAO_SISTEMA = '4.22.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8113,6 +8113,200 @@ function pastaDeRelatorios_() {
   if(!pasta)pasta=pai?pai.createFolder(PASTA_RELATORIOS):DriveApp.createFolder(PASTA_RELATORIOS);
   props.setProperty('PASTA_RELATORIOS_FROTA_ID',pasta.getId());
   return pasta;
+}
+
+// --------------------------------------------- PDF do rateio por centro
+//
+// V4.22: `exportarAbaComoPdf_` fotografa a aba — o PDF sai com a cara da
+// planilha, grade e tudo. Aqui o documento e MONTADO, entao ele pode ter
+// cabecalho institucional, faixa de indicadores, tipografia propria e as
+// ressalvas por escrito. Sao coisas diferentes e as duas continuam existindo.
+
+/** Texto seguro dentro do HTML. */
+function escHtml_(valor) {
+  return String(valor == null ? '' : valor)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/** R$ 1.234,56 — sempre por numBR_, nunca toFixed (ver a armadilha do ponto). */
+function brlPdf_(valor) { return 'R$ ' + numBR_(valor, 2); }
+
+function htmlRateioPdf_(mesRef) {
+  const a = apurarRateio_(mesRef);
+  const empresa = String(param_('EMPRESA'));
+  const periodo = periodoDoMes_(a.competencia);
+  const baseNomes = String(param_('BASE_RATEIO')).split(',')
+    .map(function (n) { return normalizarCentroCusto_(n.trim()); })
+    .filter(function (n) { return n; });
+
+  const totalGeral = a.linhas.reduce(function (t, l) { return t + l.total; }, 0);
+  const totalDireto = a.linhas.reduce(function (t, l) { return t + l.direto; }, 0);
+  const totalRateio = a.linhas.reduce(function (t, l) { return t + l.rateio; }, 0);
+  const recebem = a.linhas.filter(function (l) { return l.recebe; }).length;
+  // `totalDireto` e `totalGeral` sao SEMPRE iguais: o que sai dos centros-base
+  // volta inteiro para os que recebem. Mostrar os dois gastaria um quarto do
+  // cabecalho repetindo o mesmo numero. No lugar vao a parcela rateada e o
+  // maior centro, que e o que alguem procura primeiro.
+  const maior = a.linhas.reduce(function (m, l) {
+    return (!m || l.total > m.total) ? l : m;
+  }, null);
+  const fracaoRateada = totalGeral > 0 ? (totalRateio / totalGeral) * 100 : 0;
+
+  // Ressalvas: o rateio tem condicoes que mudam a leitura do numero, e um PDF
+  // que sai da mesa sem elas vira um numero sem contexto.
+  const notas = [];
+  if (Math.abs(a.somaPercentual - 1) > 0.0001) {
+    notas.push('Os percentuais cadastrados somam ' + numBR_(a.somaPercentual * 100, 3) +
+      '%. O sistema normaliza para 100% antes de ratear, senão distribuiria mais ' +
+      'do que existe e o rateio não fecharia com o Resumo.');
+  }
+  if (!a.proprio) {
+    notas.push(a.origemPercentuais === 'cadastro'
+      ? 'Esta competência ainda não tem percentuais próprios: usou os do cadastro de centros.'
+      : 'Percentuais herdados da competência ' + a.origemPercentuais + '.');
+  }
+  if (a.aproximado) {
+    notas.push('Competência encerrada, ' +
+      (a.cacheHit ? 'lida do cache de apuração' : 'recalculada a partir dos lançamentos') +
+      '. Emplacamento e seguro usam o cadastro atual do veículo.');
+  }
+  if (a.orfaos.length) {
+    notas.push('Centros que aparecem nos veículos mas não estão cadastrados, e por isso ' +
+      'não recebem rateio: ' + a.orfaos.join(', ') + '.');
+  }
+
+  const linhas = a.linhas.map(function (l) {
+    const fatia = totalGeral > 0 ? (l.total / totalGeral) * 100 : 0;
+    const ehBase = baseNomes.indexOf(l.centro) !== -1;
+    const classe = l.orfao ? ' class="orfao"' : (ehBase ? ' class="base"' : '');
+    return '<tr' + classe + '>' +
+      '<td class="centro">' + escHtml_(l.centro) +
+        (l.orfao ? '<span class="tag">não cadastrado</span>' : '') +
+        (ehBase ? '<span class="tag tag-base">distribui</span>' : '') + '</td>' +
+      '<td class="n">' + brlPdf_(l.direto) + '</td>' +
+      '<td class="n">' + (l.recebe ? numBR_(l.percentual * 100, 2) + '%' : '—') + '</td>' +
+      '<td class="n">' + (l.rateio ? brlPdf_(l.rateio) : '—') + '</td>' +
+      '<td class="n neg">' + (l.distribuido ? brlPdf_(l.distribuido) : '—') + '</td>' +
+      '<td class="n forte">' + brlPdf_(l.total) + '</td>' +
+      '<td class="n">' + numBR_(fatia, 2) + '%</td>' +
+      '</tr>';
+  }).join('');
+
+  const agora = Utilities.formatDate(new Date(), timezone_(), 'dd/MM/yyyy HH:mm');
+  const quem = String(emailContextoAtual_() || 'sistema');
+
+  return '<!doctype html><html><head><meta charset="utf-8"><style>' +
+    '@page { size: A4 landscape; margin: 12mm 10mm; }' +
+    'body { font-family: Arial, Helvetica, sans-serif; color: ' + CORES.PRETO + '; font-size: 9pt; margin:0; }' +
+    '.faixa { border-bottom: 3px solid ' + CORES.LARANJA + '; padding-bottom: 7px; margin-bottom: 12px; }' +
+    '.empresa { font-size: 8pt; letter-spacing: 1.4px; text-transform: uppercase; color: ' + CORES.GRAFITE + '; }' +
+    'h1 { font-size: 17pt; margin: 3px 0 2px; font-weight: bold; }' +
+    '.sub { font-size: 9pt; color: ' + CORES.GRAFITE + '; }' +
+    // Sem margem negativa: ela puxava a primeira célula para fora da página e
+    // comia a barra laranja dela. O espaçamento entre células já basta.
+    '.kpis { width: 100%; border-collapse: separate; border-spacing: 7px 0; margin: 0 0 12px 0; }' +
+    '.kpis td { background: ' + CORES.CINZA + '; padding: 8px 11px; width: 25%; ' +
+      'border-left: 3px solid ' + CORES.LARANJA + '; }' +
+    '.kpis .rot { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .7px; color: ' + CORES.GRAFITE + '; }' +
+    '.kpis .val { font-size: 14pt; font-weight: bold; padding-top: 2px; line-height: 1.15; }' +
+    '.kpis .val + .rot { padding-top: 2px; }' +
+    'table.dados { width: 100%; border-collapse: collapse; }' +
+    'table.dados th { background: ' + CORES.PRETO + '; color: #fff; font-size: 7.5pt; ' +
+      'text-transform: uppercase; letter-spacing: .5px; padding: 7px 8px; text-align: left; }' +
+    'table.dados th.n, table.dados td.n { text-align: right; }' +
+    'table.dados td { padding: 5px 8px; border-bottom: 1px solid #e3e0de; }' +
+    'table.dados tbody tr:nth-child(even) td { background: #faf9f8; }' +
+    'tr.base td { background: ' + CORES.LARANJA_CLARO + ' !important; }' +
+    'tr.orfao td { background: ' + CORES.VERMELHO + ' !important; }' +
+    '.centro { font-weight: bold; }' +
+    '.tag { font-size: 6.5pt; font-weight: normal; text-transform: uppercase; letter-spacing: .5px; ' +
+      'background: ' + CORES.VERMELHO + '; color: #8a1c1c; padding: 1px 5px; margin-left: 6px; border-radius: 2px; }' +
+    '.tag-base { background: ' + CORES.LARANJA + '; color: ' + CORES.TEXTO_CLARO + '; }' +
+    '.neg { color: #8a1c1c; }' +
+    '.forte { font-weight: bold; }' +
+    'tr.total td { border-top: 2.5px solid ' + CORES.PRETO + '; border-bottom: none; ' +
+      'font-weight: bold; font-size: 10pt; padding-top: 8px; background: #fff !important; }' +
+    '.notas { margin-top: 14px; border-left: 3px solid ' + CORES.LARANJA + '; ' +
+      'background: ' + CORES.CINZA + '; padding: 9px 12px; font-size: 8pt; }' +
+    '.notas b { text-transform: uppercase; font-size: 7.5pt; letter-spacing: .7px; }' +
+    '.notas li { margin: 4px 0; }' +
+    '.rodape { margin-top: 14px; border-top: 1px solid #ddd; padding-top: 6px; ' +
+      'font-size: 7.5pt; color: ' + CORES.GRAFITE + '; }' +
+    '</style></head><body>' +
+
+    '<div class="faixa">' +
+      '<div class="empresa">' + escHtml_(empresa) + '</div>' +
+      '<h1>Rateio por Centro de Custo</h1>' +
+      '<div class="sub">Competência <b>' + escHtml_(nomeDoMes_(a.competencia)) + '</b> (' +
+        escHtml_(a.competencia) + ') &nbsp;•&nbsp; período de ' +
+        escHtml_(formatarData_(periodo.inicio)) + ' a ' + escHtml_(formatarData_(periodo.fim)) +
+        ' &nbsp;•&nbsp; base do rateio: ' + escHtml_(baseNomes.join(', ') || '—') + '</div>' +
+    '</div>' +
+
+    '<table class="kpis"><tr>' +
+      '<td><div class="rot">Custo total da frota</div><div class="val">' + brlPdf_(totalGeral) + '</div></td>' +
+      '<td><div class="rot">Valor rateado</div><div class="val">' + brlPdf_(totalRateio) + '</div>' +
+        '<div class="rot">' + numBR_(fracaoRateada, 1) + '% do total</div></td>' +
+      '<td><div class="rot">Centros que recebem</div><div class="val">' + numBR_(recebem, 0) + '</div></td>' +
+      '<td><div class="rot">Maior centro</div><div class="val">' +
+        escHtml_(maior ? maior.centro : '—') + '</div>' +
+        '<div class="rot">' + (maior && totalGeral > 0
+          ? brlPdf_(maior.total) + ' &nbsp;•&nbsp; ' + numBR_((maior.total / totalGeral) * 100, 1) + '%'
+          : '') + '</div></td>' +
+    '</tr></table>' +
+
+    '<table class="dados"><thead><tr>' +
+      '<th>Centro de Custo</th><th class="n">Custo Direto</th><th class="n">% Rateio</th>' +
+      '<th class="n">Rateio Recebido</th><th class="n">Distribuído</th>' +
+      '<th class="n">Total</th><th class="n">% do Total</th>' +
+    '</tr></thead><tbody>' + linhas +
+    '<tr class="total">' +
+      '<td>TOTAL GERAL</td>' +
+      '<td class="n">' + brlPdf_(totalDireto) + '</td>' +
+      '<td class="n">—</td>' +
+      '<td class="n">' + brlPdf_(totalRateio) + '</td>' +
+      '<td class="n neg">' + brlPdf_(-totalRateio) + '</td>' +
+      '<td class="n">' + brlPdf_(totalGeral) + '</td>' +
+      '<td class="n">100,00%</td>' +
+    '</tr></tbody></table>' +
+
+    (notas.length
+      ? '<div class="notas"><b>Observações desta apuração</b><ul>' +
+        notas.map(function (n) { return '<li>' + escHtml_(n) + '</li>'; }).join('') +
+        '</ul></div>'
+      : '') +
+
+    '<div class="rodape">' +
+      'Gerado em ' + escHtml_(agora) + ' por ' + escHtml_(quem) +
+      ' &nbsp;•&nbsp; Sistema de Controle de Custos de Frota v' + escHtml_(VERSAO_SISTEMA) +
+      ' &nbsp;•&nbsp; O rateio distribui o custo dos centros-base entre os que recebem; ' +
+      'o total geral é igual ao do Resumo da competência.' +
+    '</div></body></html>';
+}
+
+/** Gera o PDF do rateio e devolve o arquivo no Drive. */
+function gerarPdfRateio_(mesRef) {
+  exigirExecucaoMutacao_();
+  const alvo = normalizarMesReferencia_(mesRef || param_('MES_REFERENCIA'));
+  const html = htmlRateioPdf_(alvo);
+  const nome = 'Frota_Rateio_Centro_' + alvo + '.pdf';
+  const pdf = Utilities.newBlob(html, MimeType.HTML, nome).getAs(MimeType.PDF).setName(nome);
+  const arquivo = pastaDeRelatorios_().createFile(pdf);
+  registrarLog_('PDF do rateio', alvo + ' • ' + arquivo.getName());
+  return arquivo;
+}
+
+function webRateioPdf(token, mesRef) {
+  autorizarContextoWeb_(token, PERFIS_ACESSO);
+  const arquivo = gerarPdfRateio_(mesRef);
+  return {
+    ok: true,
+    nome: arquivo.getName(),
+    url: arquivo.getUrl(),
+    pasta: PASTA_RELATORIOS,
+    mensagem: 'PDF gerado e salvo na pasta "' + PASTA_RELATORIOS + '" do Drive.',
+  };
 }
 
 /** Gera o PDF e manda por e-mail. Devolve a mensagem de confirmação. */

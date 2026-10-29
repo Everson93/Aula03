@@ -1736,6 +1736,29 @@
 
   function telaRateio() { carregarRateio(''); }
 
+  /**
+   * Gera o PDF do rateio da competência que está na tela.
+   *
+   * O PDF é montado como documento, não é uma foto da aba: cabeçalho
+   * institucional, indicadores e as ressalvas da apuração por escrito. Sai na
+   * pasta "Relatórios Frota" do Drive e a tela devolve o link.
+   */
+  function baixarRateioPdf(botao) {
+    var mes = el('ratMes') ? el('ratMes').value : '';
+    el('ratPdf').innerHTML = '<div class="carregando">montando o PDF…</div>';
+    comVigia(botao, 'Gerando…', function (pronto, erro) {
+      google.script.run.withSuccessHandler(function (r) {
+        pronto();
+        el('ratPdf').innerHTML = '<div class="ok-caixa"><b>' + esc(r.nome) + '</b> gerado.<br>' +
+          '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">abrir o PDF</a> ' +
+          '<span class="sub2">— salvo na pasta "' + esc(r.pasta) + '" do Drive</span></div>';
+      }).withFailureHandler(function (e) {
+        erro(e);
+        el('ratPdf').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      }).webRateioPdf(TOKEN, mes);
+    });
+  }
+
   function recarregarRateio() {
     carregarRateio(el('ratMes') ? el('ratMes').value : '');
   }
@@ -1749,7 +1772,10 @@
           'Cada competência usa os percentuais que estavam valendo nela.</p>' +
         '<div class="barra"><div>' +
           seletorCompetencia('ratMes', dados.competencias, dados.competencia, 'recarregarRateio()') +
+        '</div><div>' +
+          '<button class="acao secundaria" onclick="baixarRateioPdf(this)">📄 Gerar PDF</button>' +
         '</div></div>' +
+        '<div id="ratPdf"></div>' +
         (dados.mensagem ? '<div class="aviso">' + esc(dados.mensagem) + '</div>' : '') +
         tabela(dados);
     }).withFailureHandler(falha).webRateio(TOKEN, mes);
