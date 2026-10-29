@@ -3047,3 +3047,62 @@ claro: **uma fixture em que a entrada e a saída coincidem não distingue a
 transformação da ausência dela.**
 
 `conferir_pdf_rateio.js`: 108 → **118**. Total do projeto: **845**.
+
+## V4.24.2 — a loja volta, no lugar do patrimônio
+
+Um dia depois de tirar a loja do documento, o pedido se inverteu: *"BEM /
+PATRIMÔNIO no lugar desse campo coloque a Loja, e na manutenção preciso do
+campo da loja também"*.
+
+Não é contradição. Na V4.24.1 a loja saiu junto com o rateio, porque o rateio
+é que falava de loja. Com o documento já enxuto, a loja deixou de ser rateio e
+virou **a chave de alocação**: é por ela que a contabilidade lança a despesa.
+O patrimônio, que parecia o campo de ligação com o arquivo deles, acabou
+sendo o que menos se usa na conferência.
+
+**1. Depreciação** — `Loja • Placa / ID • Veículo • Depreciação`, agrupada
+por loja e, dentro dela, por placa.
+
+**2. Manutenção** — `Loja • Placa / ID • Veículo • Categoria • Oficina •
+Pneus • Manutenção`, agrupada por loja e, dentro dela, do maior gasto para o
+menor.
+
+O relatório da depreciação passou a se chamar **"Depreciação por veículo"**:
+sem a coluna do patrimônio, "por bem" prometia uma visão que não existe mais.
+
+### O que saiu
+
+`mapaPatrimonioPorPlaca_` foi removida — era a única consumidora do cadastro
+nesses dois relatórios, e com ela some uma leitura de Veículos por relatório.
+
+### Veículo sem loja
+
+Entra como **⚠ sem loja**, pelo mesmo motivo do **⚠ sem patrimônio** da
+versão anterior: célula vazia num PDF parece erro de formatação, e quem
+recebe não sabe que falta cadastro. `lojaDaLinhaResumo_` é a dona dessa
+regra, usada pelos dois relatórios — um lado só do contrato não resolveria.
+
+### A ordenação é por loja, não por valor
+
+A coluna de total da manutenção andou uma casa (`totais[5]` → `totais[6]`)
+com a entrada da loja. Trocar índice de array em silêncio é exatamente o tipo
+de defeito que não dá erro: o PDF sairia com o total dos pneus no rodapé.
+Tem prova própria.
+
+### A sexta fixture comportada demais
+
+A mutação *"manutenção sem agrupar por loja"* **sobreviveu**: na fixture, as
+lojas em ordem e os valores em ordem decrescente coincidiam
+(Loja 02/5.000, Loja 02/1.000, Loja 10/700), então ordenar por loja e ordenar
+só por valor davam a mesma sequência.
+
+Entrou uma loja **de número menor com gasto menor** (Loja 01 / R$ 300). Agora
+por loja ela vem primeira e por valor viria última — e a prova distingue as
+duas. Junto, uma prova que falha se as duas ordens voltarem a coincidir, para
+a fixture não se acomodar de novo.
+
+Sexto caso da mesma família nesta sessão. **Uma fixture em que a entrada e a
+saída coincidem não distingue a transformação da ausência dela.**
+
+`conferir_pdf_rateio.js`: 118 → **124**. Total do projeto: **851**.
+Mutação: 6 de 6 pegas.

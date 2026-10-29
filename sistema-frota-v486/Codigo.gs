@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.24.1';
+const VERSAO_SISTEMA = '4.24.2';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -6677,14 +6677,14 @@ const CATALOGO_RELATORIOS = {
     ],
   },
 
-  'Depreciação por bem': {
-    descricao: 'Uma linha por bem: patrimônio, veículo e o valor depreciado na ' +
-      'competência. É a lista que a contabilidade confere contra o arquivo que enviou.',
+  'Depreciação por veículo': {
+    descricao: 'Uma linha por veículo: a loja a que ele pertence e o valor depreciado ' +
+      'na competência. Ordenado por loja.',
     somenteApp: true,
     fonte: 'resumo',
     filtros: ['centro', 'categoria', 'veiculoResumo'],
     colunas: [
-      ['Bem / Patrimônio', '@', 140],
+      ['Loja', '@', 150],
       ['Placa / ID', '@', 110],
       ['Veículo', '@', 220],
       ['Depreciação', 'R$ #,##0.00', 130],
@@ -6692,14 +6692,16 @@ const CATALOGO_RELATORIOS = {
   },
 
   'Manutenção por veículo': {
-    descricao: 'Oficina e pneus de cada veículo na competência, sem agrupamento.',
+    descricao: 'Oficina e pneus de cada veículo na competência, com a loja a que ele ' +
+      'pertence. Ordenado por loja e, dentro dela, do maior gasto para o menor.',
     somenteApp: true,
     fonte: 'resumo',
     filtros: ['centro', 'categoria', 'veiculoResumo'],
     colunas: [
+      ['Loja', '@', 150],
       ['Placa / ID', '@', 110],
-      ['Veículo', '@', 200],
-      ['Categoria', '@', 150],
+      ['Veículo', '@', 190],
+      ['Categoria', '@', 140],
       ['Oficina', 'R$ #,##0.00', 120],
       ['Pneus', 'R$ #,##0.00', 115],
       ['Manutenção', 'R$ #,##0.00', 130],
@@ -8471,7 +8473,7 @@ function htmlFechamentoPdf_(mesRef) {
   const dep = relatorioDepreciacaoPorBem_(null, null, null);
   const man = relatorioManutencaoPorVeiculo_(null, null, null);
   const totalDep = Number(dep.totais[3]) || 0;
-  const totalMan = Number(man.totais[5]) || 0;
+  const totalMan = Number(man.totais[6]) || 0;
 
   return '<!doctype html><html><head><meta charset="utf-8"><style>' + estiloPdf_() +
     '</style></head><body>' +
@@ -8485,13 +8487,13 @@ function htmlFechamentoPdf_(mesRef) {
     '</tr></table>' +
 
     '<div class="secao"><h2>1. Depreciação</h2>' +
-      '<p class="sub" style="margin:0 0 8px">Um bem por linha, com o patrimônio. ' +
-      'Valores lançados na competência.</p>' +
+      '<p class="sub" style="margin:0 0 8px">Um veículo por linha, com a loja a que ele ' +
+      'pertence. Valores lançados na competência.</p>' +
       tabelaRelatorioPdf_(dep) + '</div>' +
 
     '<div class="secao quebra"><h2>2. Manutenção</h2>' +
       '<p class="sub" style="margin:0 0 8px">Oficina e pneus de cada veículo na competência, ' +
-      'do maior para o menor.</p>' +
+      'por loja e, dentro dela, do maior gasto para o menor.</p>' +
       tabelaRelatorioPdf_(man) + '</div>' +
 
     rodapePdf_('As duas seções são da mesma competência e do mesmo Resumo. ' +
@@ -9400,7 +9402,7 @@ function webRelatorio(token, tipo, filtros) {
 function relatorioPorTipo_(tipo, centro, categoria, placa, termo) {
   switch (tipo) {
     case 'Gerencial por Centro de Custo': return relatorioGerencial_(centro, categoria, placa);
-    case 'Depreciação por bem': return relatorioDepreciacaoPorBem_(centro, categoria, placa);
+    case 'Depreciação por veículo': return relatorioDepreciacaoPorBem_(centro, categoria, placa);
     case 'Manutenção por veículo': return relatorioManutencaoPorVeiculo_(centro, categoria, placa);
     case 'Depreciação por loja': return relatorioDepreciacaoPorLoja_(centro, categoria, placa);
     case 'Manutenção por loja': return relatorioManutencaoPorLoja_(centro, categoria, placa);
@@ -9463,68 +9465,65 @@ function relatorioGerencial_(centro, categoria, placa) {
   };
 }
 
-/** Patrimonio de cada placa, do cadastro. Uma passagem, nao uma busca por linha. */
-function mapaPatrimonioPorPlaca_() {
-  const mapa = {};
-  dadosVeiculosExecucao_().forEach(function (v) {
-    const placa = normalizaPlaca_(v[COL_VEIC.PLACA - 1]);
-    if (!placa) return;
-    if (mapa['#' + placa] === undefined) mapa['#' + placa] = chavePatrimonio_(v[COL_VEIC.CODIGO - 1]);
-  });
-  return mapa;
+/** Loja da linha do Resumo. Veiculo sem centro nao vira celula vazia. */
+function lojaDaLinhaResumo_(l) {
+  return String(l[R_.CENTRO] || '').trim() || '⚠ sem loja';
 }
 
 /**
- * Deprecia um bem por linha, com o patrimonio.
+ * Deprecia um veiculo por linha, com a loja.
  *
  * Sai do RESUMO, nao da aba de importacao: o Resumo e o que foi de fato
  * lancado no mes. A aba Depreciacao Mensal e o que o contabil MANDOU — se os
- * dois divergirem, quem manda num documento contabil e o que esta nos
- * lancamentos. A tela de divergencias existe para acertar isso antes.
+ * dois divergirem, num documento contabil quem manda e o lancamento. A tela
+ * de divergencias existe para acertar isso antes de enviar.
  *
- * O patrimonio vem do cadastro, pela placa. Bem sem patrimonio cadastrado
- * aparece com o aviso, em vez de sair com a celula vazia: celula vazia num
- * PDF parece descuido de formatacao, nao cadastro incompleto.
+ * Ordenado por LOJA: ela e a primeira coluna, e coluna que pula de valor a
+ * cada linha nao se percorre com o dedo.
  */
 function relatorioDepreciacaoPorBem_(centro, categoria, placa) {
-  const patrimonios = mapaPatrimonioPorPlaca_();
   const itens = filtrarResumo_(centro, categoria, placa)
     .filter(function (l) { return (Number(l[R_.DEPRECIACAO]) || 0) > 0; })
     .map(function (l) {
-      const p = patrimonios['#' + normalizaPlaca_(l[R_.PLACA])] || '';
-      return { bem: p, placa: String(l[R_.PLACA] || ''),
+      return { loja: lojaDaLinhaResumo_(l), placa: String(l[R_.PLACA] || ''),
         descricao: String(l[R_.DESCRICAO] || ''), valor: Number(l[R_.DEPRECIACAO]) || 0 };
     })
-    .sort(function (a, b) { return compararCentroNatural_(a.bem || a.placa, b.bem || b.placa); });
+    .sort(function (a, b) {
+      const porLoja = compararCentroNatural_(a.loja, b.loja);
+      return porLoja !== 0 ? porLoja : compararCentroNatural_(a.placa, b.placa);
+    });
 
   return {
-    colunas: [col_('Bem / Patrimônio'), col_('Placa / ID'), col_('Veículo'),
-      col_('Depreciação', 'moeda')],
-    linhas: itens.map(function (i) {
-      return [i.bem || '⚠ sem patrimônio', i.placa, i.descricao, i.valor];
-    }),
+    colunas: [col_('Loja'), col_('Placa / ID'), col_('Veículo'), col_('Depreciação', 'moeda')],
+    linhas: itens.map(function (i) { return [i.loja, i.placa, i.descricao, i.valor]; }),
     totais: [null, null, null, itens.reduce(function (t, i) { return t + i.valor; }, 0)],
   };
 }
 
-/** Oficina e pneus de cada veiculo, sem agrupamento. */
+/** Oficina e pneus de cada veiculo, com a loja. */
 function relatorioManutencaoPorVeiculo_(centro, categoria, placa) {
   const itens = filtrarResumo_(centro, categoria, placa)
     .map(function (l) {
-      return { linha: l, manutencao: (Number(l[R_.OFICINA]) || 0) + (Number(l[R_.PNEUS]) || 0) };
+      return { linha: l, loja: lojaDaLinhaResumo_(l),
+        manutencao: (Number(l[R_.OFICINA]) || 0) + (Number(l[R_.PNEUS]) || 0) };
     })
     .filter(function (i) { return i.manutencao > 0; })
-    .sort(function (a, b) { return b.manutencao - a.manutencao; });
+    // Loja em ordem numerica; dentro dela, o maior gasto primeiro — e ali que
+    // esta a resposta de "o que aconteceu nesta loja".
+    .sort(function (a, b) {
+      const porLoja = compararCentroNatural_(a.loja, b.loja);
+      return porLoja !== 0 ? porLoja : b.manutencao - a.manutencao;
+    });
 
   return {
-    colunas: [col_('Placa / ID'), col_('Veículo'), col_('Categoria'),
+    colunas: [col_('Loja'), col_('Placa / ID'), col_('Veículo'), col_('Categoria'),
       col_('Oficina', 'moeda'), col_('Pneus', 'moeda'), col_('Manutenção', 'moeda')],
     linhas: itens.map(function (i) {
       const l = i.linha;
-      return [l[R_.PLACA], l[R_.DESCRICAO], l[R_.CATEGORIA],
+      return [i.loja, l[R_.PLACA], l[R_.DESCRICAO], l[R_.CATEGORIA],
         l[R_.OFICINA], l[R_.PNEUS], i.manutencao];
     }),
-    totais: [null, null, null,
+    totais: [null, null, null, null,
       itens.reduce(function (t, i) { return t + (Number(i.linha[R_.OFICINA]) || 0); }, 0),
       itens.reduce(function (t, i) { return t + (Number(i.linha[R_.PNEUS]) || 0); }, 0),
       itens.reduce(function (t, i) { return t + i.manutencao; }, 0)],
