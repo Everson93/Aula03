@@ -3446,11 +3446,12 @@
           '<p class="sub" style="margin:6px 0 10px">Cria uma nova Planilha Google independente com Resumo, lançamentos, odômetro, rateio, veículos, centros, pendências e hash de integridade.</p>' +
           '<button class="acao secundaria" onclick="rodarExportacaoPeriodo(this, \'' + esc(p.mes) + '\')">📦 Exportar período agora</button>' +
           '<div id="saidaExportPeriodo" style="margin-top:10px"></div></div>' +
-        '<div class="cartao"><b>5. Documento do fechamento (PDF para a contabilidade)</b>' +
-          '<p class="sub" style="margin:6px 0 10px">Um documento só: a depreciação bem a bem ' +
-            'e a manutenção veículo a veículo da competência. ' +
+        '<div class="cartao"><b>5. Documento do fechamento (para a contabilidade)</b>' +
+          '<p class="sub" style="margin:6px 0 10px">Um documento só: a depreciação veículo a ' +
+            'veículo e a manutenção veículo a veículo da competência, as duas por loja. ' +
             'Sai na pasta "Relatórios Frota" do Drive.</p>' +
-          '<button class="acao secundaria" onclick="gerarFechamentoPdf(this)">📄 Gerar o PDF do fechamento</button>' +
+          '<button class="acao" onclick="gerarFechamentoArquivo(this, \'xlsx\')">📊 Gerar a planilha (XLSX)</button> ' +
+          '<button class="acao secundaria" onclick="gerarFechamentoArquivo(this, \'pdf\')">📄 Gerar o PDF</button>' +
           '<div id="saidaFechPdf" style="margin-top:10px"></div></div>' +
         '<div class="cartao"><b>6. Fechar ' + esc(p.mesExtenso) + '</b>' +
           '<p class="sub" style="margin:6px 0 10px">O fechamento cria automaticamente outra exportação independente antes de avançar para ' + esc(p.proximo) + '.</p>' +
@@ -3463,24 +3464,32 @@
   }
 
   /**
-   * O PDF que vai para a contabilidade: depreciação e manutenção num
-   * documento só.
+   * O documento que vai para a contabilidade: depreciação e manutenção num
+   * arquivo só, em planilha (XLSX) ou em PDF.
+   *
+   * Um handler para os dois formatos, de propósito: duplicá-lo era a maneira
+   * curta de um deles ficar para trás quando a tela mudasse.
    *
    * Só sai para a competência aberta — os dois números vêm do Resumo, que tem
    * apenas o período corrente. O servidor recusa qualquer outra e explica.
    */
-  function gerarFechamentoPdf(botao) {
-    el('saidaFechPdf').innerHTML = '<div class="carregando">montando o documento…</div>';
+  function gerarFechamentoArquivo(botao, formato) {
+    var planilha = formato === 'xlsx';
+    el('saidaFechPdf').innerHTML = '<div class="carregando">montando ' +
+      (planilha ? 'a planilha' : 'o documento') + '…</div>';
     comVigia(botao, 'Gerando…', function (pronto, erro) {
-      google.script.run.withSuccessHandler(function (r) {
+      var chamada = google.script.run.withSuccessHandler(function (r) {
         pronto();
         el('saidaFechPdf').innerHTML = '<div class="ok-caixa"><b>' + esc(r.nome) + '</b> gerado.<br>' +
-          '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">abrir o PDF</a> ' +
+          '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">abrir ' +
+          (planilha ? 'a planilha' : 'o PDF') + '</a> ' +
           '<span class="sub2">— salvo na pasta "' + esc(r.pasta) + '" do Drive</span></div>';
       }).withFailureHandler(function (e) {
         erro(e);
         el('saidaFechPdf').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
-      }).webFechamentoPdf(TOKEN, '');
+      });
+      if (planilha) chamada.webFechamentoXlsx(TOKEN, '');
+      else chamada.webFechamentoPdf(TOKEN, '');
     });
   }
 

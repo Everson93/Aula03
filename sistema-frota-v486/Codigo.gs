@@ -597,7 +597,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.24.2';
+const VERSAO_SISTEMA = '4.25.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8406,9 +8406,16 @@ function htmlRateioPdf_(mesRef) {
  * Formata pelo tipo declarado na coluna, para nao haver um formatador no
  * servidor e outro no cliente.
  */
+const TIPOS_NUMERICOS_RELATORIO_ = ['moeda', 'moeda3', 'numero', 'decimal'];
+
+/** O tipo declarado na coluna do relatorio e numerico? Dono unico da lista. */
+function tipoEhNumerico_(tipo) {
+  return TIPOS_NUMERICOS_RELATORIO_.indexOf(tipo) !== -1;
+}
+
 function tabelaRelatorioPdf_(rel) {
   function celula(valor, tipo, forte) {
-    const numerico = ['moeda', 'moeda3', 'numero', 'decimal'].indexOf(tipo) !== -1;
+    const numerico = tipoEhNumerico_(tipo);
     let texto;
     if (valor === null || valor === undefined || valor === '') texto = numerico ? '—' : '';
     else if (tipo === 'moeda') texto = brlPdf_(valor);
@@ -8420,7 +8427,7 @@ function tabelaRelatorioPdf_(rel) {
   }
 
   const cabecalho = rel.colunas.map(function (c) {
-    const n = ['moeda', 'moeda3', 'numero', 'decimal'].indexOf(c.tipo) !== -1;
+    const n = tipoEhNumerico_(c.tipo);
     return '<th' + (n ? ' class="n"' : '') + '>' + escHtml_(c.titulo) + '</th>';
   }).join('');
 
@@ -8447,19 +8454,22 @@ function tabelaRelatorioPdf_(rel) {
 }
 
 /**
- * Documento unico do fechamento, para a contabilidade.
+ * Os dois relatorios do fechamento, com a mesma regra de competencia.
  *
- * Duas secoes: depreciacao bem a bem e manutencao veiculo a veiculo. Sem
- * rateio e sem agrupamento por loja — o veiculo ja e vinculado a loja no
- * cadastro, entao a contabilidade aloca pelo proprio cadastro; o que ela
- * precisa conferir aqui sao os valores, linha a linha.
+ * O PDF e a planilha leem daqui. Sao o mesmo documento em dois formatos: uma
+ * regra de competencia em cada um seria a chance de o XLSX aceitar um mes que
+ * o PDF recusa, e o erro so apareceria no que ja saiu da empresa.
  *
- * SO a competencia aberta: os dois numeros saem do RESUMO, que tem apenas o
+ * SO a competencia aberta: os dois numeros vem do RESUMO, que tem apenas o
  * periodo corrente. Deixar escolher outro mes produziria um documento com o
  * cabecalho de um mes e os valores de outro — e esse erro vai assinado para
  * fora. Melhor recusar e dizer por que.
+ *
+ * O total e sempre a ULTIMA coluna, nao um indice fixo: quando a Loja entrou
+ * na frente (V4.24.2) o indice do total andou uma casa, e um numero trocado
+ * em silencio no rodape e exatamente o defeito que nao da erro.
  */
-function htmlFechamentoPdf_(mesRef) {
+function dadosFechamento_(mesRef) {
   const aberta = normalizarMesReferencia_(param_('MES_REFERENCIA'));
   const alvo = normalizarMesReferencia_(mesRef || aberta);
   if (alvo !== aberta) {
@@ -8468,37 +8478,193 @@ function htmlFechamentoPdf_(mesRef) {
       'corrente — gerá-lo para ' + alvo + ' produziria um documento com o cabeçalho de ' +
       'um mês e os valores de outro.');
   }
-
-  const periodo = periodoDoMes_(alvo);
   const dep = relatorioDepreciacaoPorBem_(null, null, null);
   const man = relatorioManutencaoPorVeiculo_(null, null, null);
-  const totalDep = Number(dep.totais[3]) || 0;
-  const totalMan = Number(man.totais[6]) || 0;
+  return {
+    competencia: alvo,
+    periodo: periodoDoMes_(alvo),
+    dep: dep,
+    man: man,
+    totalDep: Number(dep.totais[dep.totais.length - 1]) || 0,
+    totalMan: Number(man.totais[man.totais.length - 1]) || 0,
+  };
+}
+
+const SUB_DEPRECIACAO_FECHAMENTO_ = 'Um veículo por linha, com a loja a que ele pertence. ' +
+  'Valores lançados na competência.';
+const SUB_MANUTENCAO_FECHAMENTO_ = 'Oficina e pneus de cada veículo na competência, por ' +
+  'loja e, dentro dela, do maior gasto para o menor.';
+
+/**
+ * Documento unico do fechamento em PDF, para a contabilidade.
+ */
+function htmlFechamentoPdf_(mesRef) {
+  const d = dadosFechamento_(mesRef);
 
   return '<!doctype html><html><head><meta charset="utf-8"><style>' + estiloPdf_() +
     '</style></head><body>' +
-    cabecalhoPdf_('Fechamento da Frota', alvo, periodo) +
+    cabecalhoPdf_('Fechamento da Frota', d.competencia, d.periodo) +
 
     '<table class="kpis"><tr>' +
-      '<td><div class="rot">Depreciação</div><div class="val">' + brlPdf_(totalDep) + '</div>' +
-        '<div class="rot">' + numBR_(dep.linhas.length, 0) + ' bens</div></td>' +
-      '<td><div class="rot">Manutenção</div><div class="val">' + brlPdf_(totalMan) + '</div>' +
-        '<div class="rot">' + numBR_(man.linhas.length, 0) + ' veículos • oficina e pneus</div></td>' +
+      '<td><div class="rot">Depreciação</div><div class="val">' + brlPdf_(d.totalDep) + '</div>' +
+        '<div class="rot">' + numBR_(d.dep.linhas.length, 0) + ' bens</div></td>' +
+      '<td><div class="rot">Manutenção</div><div class="val">' + brlPdf_(d.totalMan) + '</div>' +
+        '<div class="rot">' + numBR_(d.man.linhas.length, 0) + ' veículos • oficina e pneus</div></td>' +
     '</tr></table>' +
 
     '<div class="secao"><h2>1. Depreciação</h2>' +
-      '<p class="sub" style="margin:0 0 8px">Um veículo por linha, com a loja a que ele ' +
-      'pertence. Valores lançados na competência.</p>' +
-      tabelaRelatorioPdf_(dep) + '</div>' +
+      '<p class="sub" style="margin:0 0 8px">' + escHtml_(SUB_DEPRECIACAO_FECHAMENTO_) + '</p>' +
+      tabelaRelatorioPdf_(d.dep) + '</div>' +
 
     '<div class="secao quebra"><h2>2. Manutenção</h2>' +
-      '<p class="sub" style="margin:0 0 8px">Oficina e pneus de cada veículo na competência, ' +
-      'por loja e, dentro dela, do maior gasto para o menor.</p>' +
-      tabelaRelatorioPdf_(man) + '</div>' +
+      '<p class="sub" style="margin:0 0 8px">' + escHtml_(SUB_MANUTENCAO_FECHAMENTO_) + '</p>' +
+      tabelaRelatorioPdf_(d.man) + '</div>' +
 
     rodapePdf_('As duas seções são da mesma competência e do mesmo Resumo. ' +
       'Cada veículo é vinculado à loja pelo centro de custo do cadastro.') +
     '</body></html>';
+}
+
+/**
+ * Formato de exibicao da planilha para o tipo declarado na coluna.
+ *
+ * O tipo e declarado uma vez, na funcao do relatorio, e serve a tela, ao PDF
+ * e a planilha. Um formatador por destino era o caminho curto para o PDF
+ * dizer R$ 1.234,00 e a planilha entregar texto.
+ */
+function formatoPlanilha_(tipo) {
+  if (tipo === 'moeda') return 'R$ #,##0.00';
+  if (tipo === 'moeda3') return 'R$ #,##0.000';
+  if (tipo === 'numero') return '#,##0';
+  if (tipo === 'decimal') return '#,##0.00"%"';
+  return '@';
+}
+
+/**
+ * Escreve um relatorio {colunas, linhas, totais} numa aba da planilha.
+ *
+ * Numero vai como NUMERO, com formato de exibicao — nunca como texto ja
+ * formatado. Quem recebe a planilha vai somar, filtrar e conferir, e uma
+ * coluna de texto que parece dinheiro quebra tudo isso sem dar erro. Em
+ * pt-BR ainda corre o risco de o ponto do milhar virar decimal na abertura.
+ *
+ * Generico de proposito: a mesma funcao desenha as duas secoes, entao elas
+ * nao tem como divergir de formatacao.
+ */
+function escreverRelatorioNaAba_(aba, rel, titulo, subtitulo) {
+  const nCols = rel.colunas.length;
+  const LINHA_CAB = 4;
+  const necessarias = LINHA_CAB + rel.linhas.length + 2;
+  if (aba.getMaxRows() < necessarias) aba.insertRowsAfter(aba.getMaxRows(), necessarias - aba.getMaxRows());
+  if (aba.getMaxColumns() < nCols) aba.insertColumnsAfter(aba.getMaxColumns(), nCols - aba.getMaxColumns());
+
+  aba.getRange(1, 1, 1, nCols).merge().setValue(titulo).setFontWeight('bold').setFontSize(13);
+  aba.getRange(2, 1, 1, nCols).merge().setValue(subtitulo)
+    .setFontColor(CORES.GRAFITE).setWrap(true);
+
+  aba.getRange(LINHA_CAB, 1, 1, nCols)
+    .setValues([rel.colunas.map(function (c) { return c.titulo; })])
+    .setBackground(CORES.LARANJA).setFontColor(CORES.PRETO).setFontWeight('bold');
+
+  if (rel.linhas.length) {
+    aba.getRange(LINHA_CAB + 1, 1, rel.linhas.length, nCols).setValues(rel.linhas);
+  }
+
+  const linhaTotal = LINHA_CAB + rel.linhas.length + 1;
+  if (rel.totais && rel.totais.length) {
+    const total = rel.totais.map(function (v, i) {
+      if (v === null || v === undefined) return i === 0 ? 'TOTAL' : '';
+      return v;
+    });
+    aba.getRange(linhaTotal, 1, 1, nCols).setValues([total])
+      .setFontWeight('bold').setBackground(CORES.CINZA);
+  }
+
+  // Formato e alinhamento do bloco inteiro em duas chamadas, nao uma por
+  // coluna: escrita de planilha dentro de laco e o custo mais caro do Apps
+  // Script, e `conferir_desempenho.js` reprova quem volta a fazer isso.
+  // O bloco inclui a linha de total — ela tambem e numero.
+  const modeloFormato = rel.colunas.map(function (c) { return formatoPlanilha_(c.tipo); });
+  const modeloAlinho = rel.colunas.map(function (c) {
+    return tipoEhNumerico_(c.tipo) ? 'right' : 'left';
+  });
+  const nLinhasFormato = rel.linhas.length + 1;
+  const formatos = [], alinhos = [];
+  for (let i = 0; i < nLinhasFormato; i++) { formatos.push(modeloFormato); alinhos.push(modeloAlinho); }
+  const bloco = aba.getRange(LINHA_CAB + 1, 1, nLinhasFormato, nCols);
+  bloco.setNumberFormats(formatos);
+  bloco.setHorizontalAlignments(alinhos);
+
+  aba.setFrozenRows(LINHA_CAB);
+  try { aba.autoResizeColumns(1, nCols); } catch (e) {}
+  return linhaTotal;
+}
+
+/** A capa da planilha: de onde vieram os numeros e quem gerou. */
+function capaPlanilhaFechamento_(aba, d) {
+  const agora = new Date();
+  const valores = [
+    ['FECHAMENTO DA FROTA', ''],
+    ['Empresa', String(param_('EMPRESA'))],
+    ['Competência', d.competencia],
+    ['Período', formatarData_(d.periodo.inicio) + ' a ' + formatarData_(d.periodo.fim)],
+    ['Gerado em', Utilities.formatDate(agora, timezone_(), 'dd/MM/yyyy HH:mm:ss')],
+    ['Gerado por', emailContextoAtual_()],
+    ['Versão do sistema', VERSAO_SISTEMA],
+    ['Depreciação R$', d.totalDep],
+    ['Veículos com depreciação', d.dep.linhas.length],
+    ['Manutenção R$', d.totalMan],
+    ['Veículos com manutenção', d.man.linhas.length],
+    ['Origem', 'Aba Resumo da competência aberta. As duas abas são do mesmo Resumo.'],
+    ['Alocação', 'Cada veículo é vinculado à loja pelo centro de custo do cadastro.'],
+  ];
+  prepararAbaExportacao_(aba, valores, 1);
+  aba.getRange('A1:B1').setBackground(CORES.PRETO).setFontColor(CORES.BRANCO).setFontWeight('bold');
+  aba.getRange(2, 1, valores.length - 1, 1).setFontWeight('bold');
+  aba.getRange('B8').setNumberFormat('R$ #,##0.00');
+  aba.getRange('B10').setNumberFormat('R$ #,##0.00');
+  aba.setColumnWidth(1, 230);
+  aba.setColumnWidth(2, 520);
+}
+
+/**
+ * O fechamento em planilha (.xlsx), para a contabilidade trabalhar em cima.
+ *
+ * O Apps Script nao escreve xlsx: monta-se uma Planilha Google temporaria e
+ * pede-se a ela a exportacao. A temporaria vai para a lixeira no `finally` —
+ * sem isso, cada tentativa frustrada deixaria um arquivo solto no Drive.
+ */
+function gerarXlsxFechamento_(mesRef) {
+  exigirExecucaoMutacao_();
+  const d = dadosFechamento_(mesRef);
+  const nome = 'Frota_Fechamento_' + d.competencia + '.xlsx';
+  const temp = SpreadsheetApp.create('~temp_fechamento_' + d.competencia + '_' + Utilities.getUuid().slice(0, 8));
+  let arquivo = null;
+  try {
+    const capa = temp.getSheets()[0];
+    capa.setName('0_Informacoes');
+    capaPlanilhaFechamento_(capa, d);
+    escreverRelatorioNaAba_(temp.insertSheet('1_Depreciacao'), d.dep,
+      '1. Depreciação — ' + d.competencia, SUB_DEPRECIACAO_FECHAMENTO_);
+    escreverRelatorioNaAba_(temp.insertSheet('2_Manutencao'), d.man,
+      '2. Manutenção — ' + d.competencia, SUB_MANUTENCAO_FECHAMENTO_);
+    temp.setActiveSheet(capa);
+    SpreadsheetApp.flush();
+
+    const url = 'https://docs.google.com/spreadsheets/d/' + temp.getId() + '/export?format=xlsx';
+    const resposta = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    });
+    if (resposta.getResponseCode() !== 200) {
+      throw new Error('Não consegui gerar a planilha (HTTP ' + resposta.getResponseCode() + ').');
+    }
+    arquivo = pastaDeRelatorios_().createFile(resposta.getBlob().setName(nome));
+  } finally {
+    try { DriveApp.getFileById(temp.getId()).setTrashed(true); } catch (e) {}
+  }
+  registrarLog_('Planilha do fechamento', d.competencia + ' • ' + arquivo.getName());
+  return arquivo;
 }
 
 function gerarPdfFechamento_(mesRef) {
@@ -8521,6 +8687,18 @@ function webFechamentoPdf(token, mesRef) {
     url: arquivo.getUrl(),
     pasta: PASTA_RELATORIOS,
     mensagem: 'Documento do fechamento gerado na pasta "' + PASTA_RELATORIOS + '" do Drive.',
+  };
+}
+
+function webFechamentoXlsx(token, mesRef) {
+  autorizarContextoWeb_(token, PERFIS_ACESSO);
+  const arquivo = gerarXlsxFechamento_(mesRef);
+  return {
+    ok: true,
+    nome: arquivo.getName(),
+    url: arquivo.getUrl(),
+    pasta: PASTA_RELATORIOS,
+    mensagem: 'Planilha do fechamento gerada na pasta "' + PASTA_RELATORIOS + '" do Drive.',
   };
 }
 
@@ -9465,9 +9643,28 @@ function relatorioGerencial_(centro, categoria, placa) {
   };
 }
 
+const SEM_LOJA_ = '⚠ sem loja';
+
 /** Loja da linha do Resumo. Veiculo sem centro nao vira celula vazia. */
 function lojaDaLinhaResumo_(l) {
-  return String(l[R_.CENTRO] || '').trim() || '⚠ sem loja';
+  return String(l[R_.CENTRO] || '').trim() || SEM_LOJA_;
+}
+
+/**
+ * Ordena lojas, com os veiculos sem cadastro no fim.
+ *
+ * Por ordem alfabetica o aviso iria para a FRENTE, e o documento que vai
+ * para a contabilidade abriria com uma linha de problema. O aviso precisa
+ * aparecer — por isso nao e celula vazia — mas depois do que esta certo.
+ *
+ * Dono unico da regra: a depreciacao e a manutencao chamam esta funcao, e
+ * nao ha como uma ordenar de um jeito e a outra de outro.
+ */
+function compararLojaResumo_(a, b) {
+  const fa = a === SEM_LOJA_ ? 1 : 0;
+  const fb = b === SEM_LOJA_ ? 1 : 0;
+  if (fa !== fb) return fa - fb;
+  return compararCentroNatural_(a, b);
 }
 
 /**
@@ -9489,7 +9686,7 @@ function relatorioDepreciacaoPorBem_(centro, categoria, placa) {
         descricao: String(l[R_.DESCRICAO] || ''), valor: Number(l[R_.DEPRECIACAO]) || 0 };
     })
     .sort(function (a, b) {
-      const porLoja = compararCentroNatural_(a.loja, b.loja);
+      const porLoja = compararLojaResumo_(a.loja, b.loja);
       return porLoja !== 0 ? porLoja : compararCentroNatural_(a.placa, b.placa);
     });
 
@@ -9511,7 +9708,7 @@ function relatorioManutencaoPorVeiculo_(centro, categoria, placa) {
     // Loja em ordem numerica; dentro dela, o maior gasto primeiro — e ali que
     // esta a resposta de "o que aconteceu nesta loja".
     .sort(function (a, b) {
-      const porLoja = compararCentroNatural_(a.loja, b.loja);
+      const porLoja = compararLojaResumo_(a.loja, b.loja);
       return porLoja !== 0 ? porLoja : b.manutencao - a.manutencao;
     });
 

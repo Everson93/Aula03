@@ -528,10 +528,19 @@ ok('relatório sem linhas diz isso, não sai em branco',
 
 console.log('\n10e. As duas pontas do documento');
 const fonteF = fs.readFileSync('Codigo.gs', 'utf8');
-ok('o PDF usa a MESMA função de relatório da tela',
-  /htmlFechamentoPdf_[\s\S]{0,1400}relatorioDepreciacaoPorBem_\(null, null, null\)/.test(fonteF) &&
-  /htmlFechamentoPdf_[\s\S]{0,1400}relatorioManutencaoPorVeiculo_\(null, null, null\)/.test(fonteF),
-  'duplicar a conta no PDF faria o papel e a tela divergirem');
+// Os dois formatos do documento têm de ler a mesma fonte. Esta regra confere
+// os três lados: quem produz os dados, quem gera o PDF e quem gera a planilha.
+ok('os dados do fechamento saem das MESMAS funções da tela',
+  /function dadosFechamento_[\s\S]{0,1400}relatorioDepreciacaoPorBem_\(null, null, null\)/.test(fonteF) &&
+  /function dadosFechamento_[\s\S]{0,1400}relatorioManutencaoPorVeiculo_\(null, null, null\)/.test(fonteF),
+  'duplicar a conta no documento faria o papel e a tela divergirem');
+ok('o PDF e a planilha leem de dadosFechamento_, cada um não refaz a conta',
+  /function htmlFechamentoPdf_\(mesRef\) \{\s*const d = dadosFechamento_\(mesRef\);/.test(fonteF) &&
+  /function gerarXlsxFechamento_\(mesRef\) \{[\s\S]{0,200}dadosFechamento_\(mesRef\)/.test(fonteF),
+  'um formato lendo por fora aceitaria competência que o outro recusa');
+ok('nenhum dos dois chama o relatório direto',
+  !/function htmlFechamentoPdf_[\s\S]{0,2500}?relatorioDepreciacaoPorBem_/.test(fonteF),
+  'htmlFechamentoPdf_ voltou a montar os dados por conta própria');
 ok('e essas funções estão no catálogo, visíveis também na tela',
   /'Depreciação por veículo': \{/.test(fonteF) && /'Manutenção por veículo': \{/.test(fonteF),
   'relatório que só o PDF enxerga não dá para conferir antes de enviar');
@@ -541,8 +550,12 @@ ok('o estilo é um só para os dois documentos',
 ok('o PDF do rateio sozinho continua existindo',
   /function htmlRateioPdf_\(mesRef\)/.test(fonteF), 'uso interno, por competência qualquer');
 const appF = fs.readFileSync('App.html', 'utf8');
-ok('o botão está no fechamento', /gerarFechamentoPdf\(this\)/.test(appF));
-ok('e chama webFechamentoPdf', /\.webFechamentoPdf\(TOKEN/.test(appF));
+ok('os dois botões estão no fechamento',
+  /gerarFechamentoArquivo\(this, \\?'xlsx\\?'\)/.test(appF) &&
+  /gerarFechamentoArquivo\(this, \\?'pdf\\?'\)/.test(appF));
+ok('e um handler só chama os dois callbacks',
+  /\.webFechamentoPdf\(TOKEN/.test(appF) && /\.webFechamentoXlsx\(TOKEN/.test(appF) &&
+  (appF.match(/function gerarFechamentoArquivo\(/g) || []).length === 1);
 ok('com vigia de tempo', /comVigia\(botao, 'Gerando…'/.test(appF));
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));

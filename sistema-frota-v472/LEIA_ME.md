@@ -3106,3 +3106,80 @@ saída coincidem não distingue a transformação da ausência dela.**
 
 `conferir_pdf_rateio.js`: 118 → **124**. Total do projeto: **851**.
 Mutação: 6 de 6 pegas.
+
+## V4.25.0 — o fechamento em planilha (.xlsx)
+
+*"mudança de planos, temos que gerar em Xls planilha o arquivo"*.
+
+Faz sentido e eu devia ter perguntado antes de montar o PDF: o PDF é para
+**ler**; a planilha é para **trabalhar**. A contabilidade vai somar, filtrar,
+fazer tabela dinâmica e colar no sistema dela. Num PDF, isso vira digitação
+manual — e digitação manual de 167 linhas de valor é onde o erro entra.
+
+O PDF **continua existindo**, no botão ao lado. Custa uma função e serve para
+anexar e arquivar; a planilha passou a ser o botão principal.
+
+### O que a planilha tem
+
+| Aba | Conteúdo |
+|---|---|
+| `0_Informacoes` | empresa, competência, período, quem gerou, os dois totais |
+| `1_Depreciacao` | Loja • Placa / ID • Veículo • Depreciação |
+| `2_Manutencao` | Loja • Placa / ID • Veículo • Categoria • Oficina • Pneus • Manutenção |
+
+As mesmas duas seções do PDF, nas mesmas ordens.
+
+### Número é número
+
+A regra que mais importa aqui: **valor vai como número, com formato de
+exibição** — nunca como texto já formatado. Texto que parece dinheiro passa
+despercebido na tela e quebra toda soma e todo filtro em cima, sem dar erro.
+Em pt-BR ainda corre o risco de o separador ser lido ao contrário na
+abertura. É a mesma armadilha do `toFixed`, num destino novo.
+
+Por isso `escreverRelatorioNaAba_` recebe o relatório cru e aplica
+`formatoPlanilha_(tipo)` na célula. O **tipo é declarado uma vez**, na função
+do relatório, e serve à tela, ao PDF e à planilha.
+
+### Uma fonte, dois formatos
+
+`dadosFechamento_` nasceu disto: o PDF e a planilha precisam recusar a mesma
+competência, somar os mesmos valores e ler o mesmo Resumo. Uma regra em cada
+um era a chance de o XLSX aceitar um mês que o PDF recusa — e o erro só
+apareceria no que já saiu da empresa.
+
+De quebra, o total deixou de ser índice fixo e passou a ser **a última
+coluna**. Foi exatamente esse índice que andou uma casa quando a Loja entrou
+na frente, na V4.24.2.
+
+### A planilha temporária
+
+O Apps Script não escreve xlsx. Monta-se uma Planilha Google temporária e
+pede-se a ela a exportação (`/export?format=xlsx`), como já se fazia com o
+PDF das abas. A temporária vai para a lixeira num `finally`: sem isso, cada
+tentativa frustrada deixaria um arquivo largado no Drive, e ninguém limpa
+isso à mão. Tem prova com HTTP 500.
+
+### O aviso mudou de lugar
+
+`⚠ sem loja` ia para a **frente** do documento, por ordem alfabética — o
+documento da contabilidade abria com uma linha de problema. `compararLojaResumo_`
+joga o balde do aviso para o fim, e é dono único da regra para as duas
+seções.
+
+### Suíte nova
+
+`conferir_planilha_fechamento.js` — **41 provas**. A dublê de planilha valida
+**dimensão**: escrever 9 colunas num intervalo de 7 reprova aqui como
+reprovaria no Apps Script. Mutação: **11 de 11 pegas**, incluindo valor
+virando texto, a temporária não indo para a lixeira, o formato não alcançando
+a linha de total e o aviso voltando para a frente.
+
+### E uma regra antiga fez o trabalho dela
+
+`conferir_desempenho.js` reprovou o primeiro rascunho: `setNumberFormat`
+chamado dentro de um laço, uma vez por coluna. Virou `setNumberFormats` do
+bloco inteiro, em duas chamadas. A regra foi escrita na V4.17 para outro
+defeito e pegou este sozinha.
+
+Total do projeto: 851 → **894**.
