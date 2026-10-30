@@ -3682,3 +3682,52 @@ Tem prova estática de que o regex aparece **uma vez só** no arquivo.
 
 `conferir_planilha_fechamento.js` 63 → **81**; `conferir_telas.js` 24 → **30**.
 Total do projeto: 1.130 → **1.154**, em 31 suítes. Mutação: 10 de 10.
+
+## V4.31.0 — combustível lançado, abastecimento a abastecimento
+
+Já existia **"Abastecimento e consumo"**: o total do mês por veículo, tirado
+do Resumo. O que faltava era a **origem** desse total — e é onde o problema
+costuma estar.
+
+`Combustível lançado por veículo` lista cada abastecimento: data, placa,
+patrimônio, veículo, tipo, interno ou externo, nota, litros, valor, **o preço
+do litro daquele abastecimento**, centro de custo e ID. Usa toda a base, não
+só o período aberto, como os outros detalhamentos — conferir consumo exige
+olhar para trás.
+
+### O preço unitário é o motivo de o relatório existir
+
+A média do mês esconde o abastecimento caro. Sete abastecimentos a R$ 6,10 e
+um a R$ 9,40 fecham numa média de R$ 6,50, que parece normal. O relatório
+mostra os oito.
+
+Por isso a aritmética tem prova em três níveis, e o que se prova em cada um é
+que ele **não** virou média de médias:
+
+- **linha**: R$/litro é desta linha, não a média do veículo;
+- **veículo**: valor do veículo / litros do veículo;
+- **rodapé**: valor total / litros totais. A média dos preços das linhas daria
+  outro número — um abastecimento de 10 L pesaria igual a um de 300.
+
+### O consolidado deixou de ser de oficina
+
+Os relatórios de oficina traziam um `porVeiculo` que a **tela** transformava
+em tabela, com colunas fixas: *Placa, Veículo, Serviços, Natureza que mais
+pesou, Total*. Isso amarrava o consolidado de qualquer relatório ao formato
+da oficina — o de combustível sairia com uma coluna "Natureza que mais
+pesou" vazia.
+
+Agora cada relatório devolve um `consolidado` **pronto**, no mesmo formato
+`{colunas, linhas, totais}` de todo o resto, e a tela só desenha. Os dois
+relatórios de oficina passaram a usar `consolidadoOficina_`, que é o dono das
+colunas deles.
+
+### Suíte
+
+`conferir_combustivel_lancado.js` — **40 provas**, mutação **10 de 10**.
+
+Entre elas, uma regra que vale para qualquer relatório novo: **as colunas do
+catálogo têm de bater com as do relatório, na mesma ordem**. Catálogo fora de
+ordem não dá erro — produz uma planilha exportada com o cabeçalho trocado.
+
+Total do projeto: 1.154 → **1.194**, em 32 suítes.

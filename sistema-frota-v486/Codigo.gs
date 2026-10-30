@@ -606,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.30.0';
+const VERSAO_SISTEMA = '4.31.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -6816,6 +6816,22 @@ const CATALOGO_RELATORIOS = {
     ],
   },
 
+  'Combustível lançado por veículo': {
+    descricao: 'Cada abastecimento lançado: data, nota, litros, valor e o preço do litro ' +
+      'daquele abastecimento, mais o consolidado de litros e valor por veículo. Usa toda ' +
+      'a base. Só no app: a versão da planilha não traz o consolidado.',
+    somenteApp: true,
+    fonte: 'lancamentos',
+    filtros: ['centroLancamento', 'categoriaLancamento', 'veiculoLancamento'],
+    colunas: [
+      ['Data', 'dd/mm/yyyy', 95], ['Placa', '@', 100], ['Patrimônio', '@', 110],
+      ['Veículo', '@', 180], ['Tipo', '@', 150], ['Abastecimento', '@', 110],
+      ['NF / Documento', '@', 140], ['Litros', '#,##0.000', 95],
+      ['Valor', 'R$ #,##0.00', 110], ['R$ / litro', 'R$ #,##0.000', 100],
+      ['Centro de Custo', '@', 150], ['ID Lançamento', '@', 160],
+    ],
+  },
+
   'Abastecimento e consumo': {
     descricao: 'Litros, preço médio pago por litro e km/litro de cada veículo.',
     fonte: 'resumo',
@@ -9818,6 +9834,7 @@ function relatorioPorTipo_(tipo, centro, categoria, placa, termo) {
     case 'Manutenção por loja': return relatorioManutencaoPorLoja_(centro, categoria, placa);
     case 'Manutenção — oficina e pneus': return relatorioManutencao_(centro, categoria, placa);
     case 'Detalhamento de oficina por veículo': return relatorioDetalhamentoOficina_(centro, categoria, placa);
+    case 'Combustível lançado por veículo': return relatorioCombustivelLancado_(centro, categoria, placa);
     case 'Abastecimento e consumo': return relatorioAbastecimento_(centro, categoria, placa);
     case 'Ranking de custo por KM': return relatorioRanking_(centro, categoria, placa);
     case 'IPVA por veículo': return relatorioIpva_(centro, categoria, placa);
@@ -10268,6 +10285,120 @@ function relatorioManutencao_(centro, categoria, placa) {
   };
 }
 
+/**
+ * Consolidado por veiculo dos relatorios de oficina.
+ *
+ * Era montado na TELA, a partir de um `porVeiculo` de formato fixo. Isso
+ * amarrava o consolidado de qualquer relatorio ao formato da oficina: um
+ * consolidado de combustivel teria de sair com a coluna "Natureza que mais
+ * pesou". Agora cada relatorio devolve um `consolidado` pronto, no mesmo
+ * formato {colunas, linhas, totais} de todo o resto, e a tela so desenha.
+ */
+function consolidadoOficina_(itens) {
+  const ordenados = itens.slice().sort(function (a, b) { return b.valor - a.valor; });
+  return {
+    colunas: [col_('Placa'), col_('Veículo'), col_('Serviços', 'numero'),
+      col_('Natureza que mais pesou'), col_('Total', 'moeda')],
+    linhas: ordenados.map(function (v) {
+      const naturezas = v.naturezas || {};
+      // A natureza que mais pesou no veiculo e o que orienta a proxima acao.
+      const principal = Object.keys(naturezas).sort(function (x, y) {
+        return naturezas[y] - naturezas[x];
+      })[0] || '';
+      return [v.placa, v.descricao, v.itens, principal, v.valor];
+    }),
+    totais: [null, null,
+      ordenados.reduce(function (t, v) { return t + v.itens; }, 0), null,
+      ordenados.reduce(function (t, v) { return t + v.valor; }, 0)],
+    mensagem: 'Consolidado por veículo, do que mais consumiu para o que menos.',
+  };
+}
+
+/**
+ * Combustivel LANCADO, abastecimento a abastecimento.
+ *
+ * O relatorio "Abastecimento e consumo" ja da o total do mes por veiculo,
+ * tirado do Resumo. Este da a origem desse total: cada lancamento, com data,
+ * nota, litros, valor e o preco do litro daquele abastecimento.
+ *
+ * E o preco do litro que importa aqui: a media do mes esconde o
+ * abastecimento caro. Um veiculo com 7 abastecimentos a R$ 6,10 e um a
+ * R$ 9,40 fecha o mes numa media que parece normal.
+ *
+ * Usa TODA a base, nao so o periodo aberto, como os outros detalhamentos —
+ * conferir consumo exige olhar para tras.
+ */
+function relatorioCombustivelLancado_(centro, categoria, placa) {
+  const veiculos = {};
+  dadosVeiculosExecucao_().forEach(function (v) {
+    const p = normalizaPlaca_(v[COL_VEIC.PLACA - 1]);
+    if (p) {
+      veiculos[p] = { patrimonio: String(v[COL_VEIC.CODIGO - 1] || ''),
+        descricao: String(v[COL_VEIC.DESCRICAO - 1] || '') };
+    }
+  });
+
+  const dados = lerLancamentos_().filter(function (l) {
+    if (TIPOS_COMBUSTIVEL.indexOf(String(l[L_.TIPO])) === -1) return false;
+    if (centro && String(l[L_.CENTRO]) !== centro) return false;
+    if (categoria && String(l[L_.CATEGORIA]) !== categoria) return false;
+    if (placa && normalizaPlaca_(l[L_.PLACA]) !== placa) return false;
+    return true;
+  }).sort(function (a, b) { return b[L_.DATA] - a[L_.DATA]; });
+
+  const acumulado = {};
+  dados.forEach(function (l) {
+    const p = normalizaPlaca_(l[L_.PLACA]);
+    if (!acumulado[p]) {
+      const v = veiculos[p] || {};
+      acumulado[p] = { placa: String(l[L_.PLACA] || ''), descricao: v.descricao || '',
+        abastecimentos: 0, litros: 0, valor: 0 };
+    }
+    acumulado[p].abastecimentos++;
+    acumulado[p].litros += Number(l[L_.LITROS]) || 0;
+    acumulado[p].valor += Number(l[L_.VALOR]) || 0;
+  });
+  const porVeiculo = Object.keys(acumulado).map(function (p) { return acumulado[p]; })
+    .sort(function (a, b) { return b.valor - a.valor; });
+
+  const somaLitros = dados.reduce(function (t, l) { return t + (Number(l[L_.LITROS]) || 0); }, 0);
+  const somaValor = dados.reduce(function (t, l) { return t + (Number(l[L_.VALOR]) || 0); }, 0);
+
+  return {
+    colunas: [col_('Data', 'data'), col_('Placa'), col_('Patrimônio'), col_('Veículo'),
+      col_('Tipo'), col_('Abastecimento'), col_('NF / Documento'),
+      col_('Litros', 'litros'), col_('Valor', 'moeda'), col_('R$ / litro', 'moeda3'),
+      col_('Centro de Custo'), col_('ID Lançamento')],
+    linhas: dados.map(function (l) {
+      const v = veiculos[normalizaPlaca_(l[L_.PLACA])] || {};
+      const litros = Number(l[L_.LITROS]) || 0;
+      const valor = Number(l[L_.VALOR]) || 0;
+      return [formatarData_(l[L_.DATA]), l[L_.PLACA], v.patrimonio || '', v.descricao || '',
+        l[L_.TIPO], tipoAbastecimentoDe_(l[L_.TIPO], l[L_.TIPO_ABASTECIMENTO]),
+        l[L_.DOCUMENTO] || '', litros, valor,
+        litros > 0 ? valor / litros : 0, l[L_.CENTRO], l[L_.ID]];
+    }),
+    // O preco medio do rodape e valor total / litros totais. Media das medias
+    // daria outro numero: um abastecimento de 10 L pesaria igual a um de 300.
+    totais: [null, null, null, null, null, null, null, somaLitros, somaValor,
+      somaLitros > 0 ? somaValor / somaLitros : 0, null, null],
+    consolidado: {
+      colunas: [col_('Placa'), col_('Veículo'), col_('Abastecimentos', 'numero'),
+        col_('Litros', 'litros'), col_('Valor', 'moeda'), col_('R$ / litro', 'moeda3')],
+      linhas: porVeiculo.map(function (v) {
+        return [v.placa, v.descricao, v.abastecimentos, v.litros, v.valor,
+          v.litros > 0 ? v.valor / v.litros : 0];
+      }),
+      totais: [null, null,
+        porVeiculo.reduce(function (t, v) { return t + v.abastecimentos; }, 0),
+        somaLitros, somaValor, somaLitros > 0 ? somaValor / somaLitros : 0],
+      mensagem: 'Litros e valor por veículo, do que mais gastou para o que menos.',
+    },
+    mensagem: porVeiculo.length + ' veículo(s) • ' + dados.length + ' abastecimento(s) • ' +
+      numBR_(somaLitros, 3) + ' L em toda a base (não apenas o período aberto).',
+  };
+}
+
 function relatorioAbastecimento_(centro, categoria, placa) {
   const dados = filtrarResumo_(centro, categoria, placa)
     .filter(function (l) { return Number(l[R_.LITROS]) > 0; })
@@ -10387,13 +10518,10 @@ function relatorioManutencaoVeiculo_(centro, categoria, placa, incluirPneus) {
     linhas: linhas,
     totais: [null, null, null, null, null, null, null,
       dados.reduce(function (t, l) { return t + (Number(l[L_.VALOR]) || 0); }, 0)],
-    porVeiculo: ordenados.map(function (v) {
+    consolidado: consolidadoOficina_(ordenados.map(function (v) {
       return { placa: v.placa, descricao: v.descricao, itens: v.itens.length,
-        valor: v.total,
-        naturezaPrincipal: Object.keys(v.naturezas).sort(function (a, b) {
-          return v.naturezas[b] - v.naturezas[a];
-        })[0] || '' };
-    }),
+        valor: v.total, naturezas: v.naturezas };
+    })),
     mensagem: ordenados.length + ' veículo(s) • ' + dados.length + ' serviço(s) ' +
       (incluirPneus === false ? 'de oficina ' : 'de oficina e pneus ') +
       'em toda a base (não apenas o período aberto).',
@@ -10876,7 +11004,7 @@ function relatorioDetalhamentoOficina_(centro, categoria, placa) {
       dados.reduce(function(s,l){return s+(Number(l[L_.VALOR])||0);},0),null,null],
     // Item 10: alem das linhas, o gasto consolidado por veiculo. Sem isto a
     // pergunta "qual veiculo esta consumindo oficina" so se responde somando a mao.
-    porVeiculo: (function () {
+    consolidado: (function () {
       const acumulado = {};
       dados.forEach(function (l) {
         const p = normalizaPlaca_(l[L_.PLACA]);
@@ -10890,17 +11018,9 @@ function relatorioDetalhamentoOficina_(centro, categoria, placa) {
         const nat = String(l[L_.NATUREZA_OFICINA] || '(não informado)');
         acumulado[p].naturezas[nat] = (acumulado[p].naturezas[nat] || 0) + (Number(l[L_.VALOR]) || 0);
       });
-      return Object.keys(acumulado)
-        .map(function (p) {
-          const a = acumulado[p];
-          // natureza que mais pesou no veiculo: e o que orienta a proxima acao
-          const principal = Object.keys(a.naturezas).sort(function (x, y) {
-            return a.naturezas[y] - a.naturezas[x];
-          })[0] || '';
-          return { placa: a.placa, descricao: a.descricao, itens: a.itens,
-            valor: a.valor, naturezaPrincipal: principal };
-        })
-        .sort(function (x, y) { return y.valor - x.valor; });
+      return consolidadoOficina_(Object.keys(acumulado).map(function (p) {
+        return acumulado[p];
+      }));
     })(),
     mensagem: dados.length + ' despesa(s) de oficina encontrada(s).'
   };

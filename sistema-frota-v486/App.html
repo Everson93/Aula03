@@ -1686,24 +1686,16 @@
     el('saidaRel').innerHTML = '<div class="carregando">calculando…</div>';
     google.script.run
       .withSuccessHandler(function (dados) {
-        // Alguns relatorios trazem um consolidado por veiculo alem das linhas.
-        // Ele vai ANTES da tabela: e o que responde "quem esta consumindo
-        // manutencao" sem obrigar a rolar centenas de servicos.
-        var resumo = '';
-        if (dados && dados.porVeiculo && dados.porVeiculo.length) {
-          resumo = tabela({
-            colunas: [col('Placa'), col('Veículo'), col('Serviços', 'numero'),
-              col('Natureza que mais pesou'), col('Total', 'moeda')],
-            linhas: dados.porVeiculo.map(function (v) {
-              return [v.placa, v.descricao, v.itens, v.naturezaPrincipal, v.valor];
-            }),
-            totais: [null, null,
-              dados.porVeiculo.reduce(function (t, v) { return t + v.itens; }, 0),
-              null,
-              dados.porVeiculo.reduce(function (t, v) { return t + v.valor; }, 0)],
-            mensagem: 'Consolidado por veículo, do que mais consumiu para o que menos.',
-          });
-        }
+        // Alguns relatórios trazem um consolidado por veículo além das linhas.
+        // Ele vai ANTES da tabela: é o que responde "quem está consumindo"
+        // sem obrigar a rolar centenas de linhas.
+        //
+        // O consolidado vem PRONTO do servidor, no mesmo formato de qualquer
+        // relatório. Antes a tela montava as colunas, e isso amarrava todo
+        // consolidado ao formato da oficina — o de combustível sairia com a
+        // coluna "Natureza que mais pesou".
+        var resumo = (dados && dados.consolidado && dados.consolidado.linhas &&
+          dados.consolidado.linhas.length) ? tabela(dados.consolidado) : '';
         var aviso = AVISO_LEITURA; AVISO_LEITURA = '';
         el('saidaRel').innerHTML = aviso + resumo +
           tabela(comAcoesDeLeitura(dados),
