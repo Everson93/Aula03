@@ -606,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.29.1';
+const VERSAO_SISTEMA = '4.29.2';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8614,16 +8614,20 @@ function formatoPlanilha_(tipo) {
  * Generico de proposito: a mesma funcao desenha as duas secoes, entao elas
  * nao tem como divergir de formatacao.
  */
-function escreverRelatorioNaAba_(aba, rel, titulo, subtitulo) {
+function escreverRelatorioNaAba_(aba, rel, titulo, subtitulo, larguras) {
   const nCols = rel.colunas.length;
   const LINHA_CAB = 4;
   const necessarias = LINHA_CAB + rel.linhas.length + 2;
   if (aba.getMaxRows() < necessarias) aba.insertRowsAfter(aba.getMaxRows(), necessarias - aba.getMaxRows());
   if (aba.getMaxColumns() < nCols) aba.insertColumnsAfter(aba.getMaxColumns(), nCols - aba.getMaxColumns());
 
-  aba.getRange(1, 1, 1, nCols).merge().setValue(titulo).setFontWeight('bold').setFontSize(13);
-  aba.getRange(2, 1, 1, nCols).merge().setValue(subtitulo)
-    .setFontColor(CORES.GRAFITE).setWrap(true);
+  // Titulo e contexto SEM mesclar e SEM quebra de linha. Mesclar a primeira
+  // linha nas 23 colunas e depois pedir autoResize fazia o Sheets alargar a
+  // coluna A ate caber o titulo inteiro: a planilha abria com uma coluna de
+  // meia tela. O texto transborda visualmente, que e o comportamento normal
+  // de uma celula de titulo.
+  aba.getRange(1, 1).setValue(titulo).setFontWeight('bold').setFontSize(13);
+  aba.getRange(2, 1).setValue(subtitulo).setFontColor(CORES.GRAFITE);
 
   // Faixa de grupo sobre as colunas que o modelo da contabilidade agrupa
   // ("Combustível" por cima de litros e R$). Vai na linha de cima do
@@ -8678,38 +8682,39 @@ function escreverRelatorioNaAba_(aba, rel, titulo, subtitulo) {
   bloco.setHorizontalAlignments(alinhos);
 
   aba.setFrozenRows(LINHA_CAB);
-  try { aba.autoResizeColumns(1, nCols); } catch (e) {}
+
+  // Largura declarada, nao autoResize. Alem do problema do titulo, o
+  // autoResize mede o conteudo: um mes com um veiculo de descricao longa
+  // sairia com a planilha em outra largura que o mes anterior.
+  const padrao = rel.colunas.map(function (c) {
+    if (c.tipo === 'texto') return 150;
+    if (c.tipo === 'numero') return 90;
+    return 110;
+  });
+  for (let i = 0; i < nCols; i++) {
+    const l = Number(larguras && larguras[i]) || padrao[i];
+    aba.setColumnWidth(i + 1, Math.max(60, Math.min(l, 320)));
+  }
   return linhaTotal;
 }
 
-/** A capa da planilha: de onde vieram os numeros e quem gerou. */
-function capaPlanilhaFechamento_(aba, d) {
-  const agora = new Date();
-  const valores = [
-    ['FECHAMENTO DA FROTA', ''],
-    ['Empresa', String(param_('EMPRESA'))],
-    ['Competência', d.competencia],
-    ['Período', formatarData_(d.periodo.inicio) + ' a ' + formatarData_(d.periodo.fim)],
-    ['Gerado em', Utilities.formatDate(agora, timezone_(), 'dd/MM/yyyy HH:mm:ss')],
-    ['Gerado por', emailContextoAtual_()],
-    ['Versão do sistema', VERSAO_SISTEMA],
-    ['Total da frota R$', d.total],
-    ['Veículos', d.veiculos],
-    ['Depreciação dentro do total R$', d.totalDep],
-    ['Origem', 'Aba Resumo da competência aberta.'],
-    ['Alocação', 'Cada veículo é vinculado ao setor pelo centro de custo do cadastro.'],
-    ['IPVA', 'Sem coluna: já vem embutido no valor da depreciação enviado pela contabilidade.'],
-    ['TOTAL', 'Soma das colunas de valor, inclusive multa e depreciação. "Veículo novo" ' +
-      'é imobilizado e fica fora.'],
-  ];
-  prepararAbaExportacao_(aba, valores, 1);
-  aba.getRange('A1:B1').setBackground(CORES.PRETO).setFontColor(CORES.BRANCO).setFontWeight('bold');
-  aba.getRange(2, 1, valores.length - 1, 1).setFontWeight('bold');
-  aba.getRange('B8').setNumberFormat('R$ #,##0.00');
-  aba.getRange('B10').setNumberFormat('R$ #,##0.00');
-  aba.getRange('B9').setNumberFormat('#,##0');
-  aba.setColumnWidth(1, 230);
-  aba.setColumnWidth(2, 520);
+/** Larguras declaradas no catalogo do relatorio, quando ele tem. */
+function largurasDoCatalogo_(nome) {
+  const cfg = CATALOGO_RELATORIOS[nome];
+  if (!cfg || !cfg.colunas || !cfg.colunas.length) return null;
+  return cfg.colunas.map(function (c) { return Number(c[2]) || 0; });
+}
+
+/**
+ * A linha de contexto do relatorio: empresa, periodo, quem gerou e as duas
+ * ressalvas que o papel precisa carregar (o IPVA e o que o TOTAL soma).
+ */
+function contextoDoFechamento_(d) {
+  return String(param_('EMPRESA')) + '  •  competência ' + d.competencia +
+    '  •  período de ' + formatarData_(d.periodo.inicio) + ' a ' + formatarData_(d.periodo.fim) +
+    '  •  gerado em ' + Utilities.formatDate(new Date(), timezone_(), 'dd/MM/yyyy HH:mm') +
+    ' por ' + emailContextoAtual_() +
+    '  •  ' + SUB_FECHAMENTO_ + ' ' + NOTA_IPVA_FECHAMENTO_;
 }
 
 /**
@@ -8726,13 +8731,14 @@ function gerarXlsxFechamento_(mesRef) {
   const temp = SpreadsheetApp.create('~temp_fechamento_' + d.competencia + '_' + Utilities.getUuid().slice(0, 8));
   let arquivo = null;
   try {
-    const capa = temp.getSheets()[0];
-    capa.setName('0_Informacoes');
-    capaPlanilhaFechamento_(capa, d);
-    escreverRelatorioNaAba_(temp.insertSheet('Relatorio'), d.op,
+    // Uma aba so. A capa separada virou linha de contexto: quem recebe abre
+    // o arquivo, ve o relatorio, e o de-onde-veio esta na mesma tela.
+    const aba = temp.getSheets()[0];
+    aba.setName('Relatorio');
+    escreverRelatorioNaAba_(aba, d.op,
       'Relatório Operacional dos Veículos — ' + d.competencia,
-      SUB_FECHAMENTO_ + ' ' + NOTA_IPVA_FECHAMENTO_);
-    temp.setActiveSheet(capa);
+      contextoDoFechamento_(d),
+      largurasDoCatalogo_('Relatório Operacional dos Veículos'));
     SpreadsheetApp.flush();
 
     const url = 'https://docs.google.com/spreadsheets/d/' + temp.getId() + '/export?format=xlsx';
@@ -8786,7 +8792,9 @@ function gerarXlsxRelatorio_(tipo, filtros) {
       .filter(function (k) { return f[k] && ['TODOS', 'TODAS'].indexOf(f[k]) === -1; })
       .map(function (k) { return k + ': ' + f[k]; }).join(' • ');
     escreverRelatorioNaAba_(aba, rel, nome + ' — ' + mes,
-      (rel.mensagem || '') + (filtrosTexto ? '  |  filtros: ' + filtrosTexto : ''));
+      String(param_('EMPRESA')) + '  •  ' + (rel.mensagem || '') +
+      (filtrosTexto ? '  •  filtros: ' + filtrosTexto : ''),
+      largurasDoCatalogo_(nome));
     SpreadsheetApp.flush();
 
     const resposta = UrlFetchApp.fetch(

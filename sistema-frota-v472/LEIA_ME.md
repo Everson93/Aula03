@@ -3605,3 +3605,40 @@ As duas apareceram por mutação; nenhuma teria aparecido lendo o código.
 
 `conferir_telas.js` 13 → **24**; `conferir_planilha_fechamento.js` 47 → **56**.
 Total do projeto: 1.103 → **1.123**. Mutação: 10 de 10.
+
+## V4.29.2 — a planilha abria com uma coluna de meia tela
+
+Duas correções do que o usuário viu ao abrir o arquivo.
+
+### A coluna A gigante
+
+O título ia **mesclado nas 23 colunas** e, logo depois, vinha
+`autoResizeColumns`. O Sheets mede o conteúdo da célula mesclada e alarga a
+**primeira** coluna até caber o título inteiro — a planilha abria com a
+coluna da placa ocupando meia tela.
+
+Duas mudanças:
+
+- título e contexto **sem mesclar**. O texto transborda visualmente, que é o
+  comportamento normal de uma célula de título numa planilha;
+- **largura declarada** no lugar do autoResize. Além do problema do título, o
+  autoResize mede o conteúdo: um mês com um veículo de descrição longa sairia
+  com a planilha em outra largura que o mês anterior. As larguras vêm do
+  catálogo do relatório — as mesmas que a aba Relatórios da planilha usa — e
+  ficam presas entre 60 e 320 pixels.
+
+### A aba de informações saiu
+
+*"não precisa gerar uma guia Informações, somente a guia relatório"*. Ela
+virou **uma linha de contexto** logo abaixo do título: empresa, competência,
+período, quem gerou e quando, mais as duas ressalvas que o papel precisa
+carregar — o IPVA e o que o TOTAL soma.
+
+É melhor assim, e não só mais enxuto: a ressalva sobre o IPVA agora está na
+mesma tela que o número, em vez de numa aba que ninguém abre.
+
+O exportador genérico de relatórios ganhou a mesma linha de contexto, com a
+empresa e os filtros aplicados.
+
+`conferir_planilha_fechamento.js` 56 → **63**. Total: 1.123 → **1.130**.
+Mutação: 6 de 6, incluindo "volta a mesclar o título" e "volta o autoResize".

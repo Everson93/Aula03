@@ -45,6 +45,7 @@ function novaAba(nome) {
     setFrozenRows: function (n) { aba.congeladas = n; },
     autoResizeColumns: function () {},
     setColumnWidth: function (c, l) { aba.larguras[c] = l; },
+    mesclados: [],
     setHiddenGridlines: function () { return aba; },
     clear: function () { aba.grade = {}; return aba; },
     getDataRange: function () { return aba.getRange(1, 1, aba.maxRows, aba.maxCols); },
@@ -79,7 +80,7 @@ function novaAba(nome) {
           return faixa;
         },
         setValue: function (x) { aba.grade[linha + ',' + coluna] = x; return faixa; },
-        merge: function () { return faixa; },
+        merge: function () { aba.mesclados.push({ linha: linha, coluna: coluna, nC: nC }); return faixa; },
         setNumberFormat: function (f) {
           for (let i = 0; i < nL; i++) for (let j = 0; j < nC; j++) {
             aba.formatos[(linha + i) + ',' + (coluna + j)] = f;
@@ -181,7 +182,8 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, { gerarXlsxFechamento_, webFechamentoXlsx, dadosFechamento_,
     gerarXlsxRelatorio_, webRelatorioXlsx, relatorioPorTipo_, CATALOGO_RELATORIOS,
-    escreverRelatorioNaAba_, formatoPlanilha_, capaPlanilhaFechamento_, htmlFechamentoPdf_,
+    escreverRelatorioNaAba_, formatoPlanilha_, contextoDoFechamento_, htmlFechamentoPdf_,
+    largurasDoCatalogo_,
     tipoEhNumerico_, col_, R_, TOTAL_COL_RESUMO, PASTA_RELATORIOS });
   exigirExecucaoLeitura_ = function () {};
   exigirExecucaoMutacao_ = function () {};
@@ -244,12 +246,13 @@ console.log('\n1. A aba única, no formato do modelo');
 const arquivo = gerar();
 const planilha = diario.criadas[0];
 const nomes = planilha.getSheets().map(function (a) { return a.getName(); });
-ok('capa e relatório', nomes.join(' | ') === '0_Informacoes | Relatorio', nomes.join(' | '));
+ok('uma aba só, sem a de informações',
+  nomes.join(' | ') === 'Relatorio', nomes.join(' | '));
 ok('o arquivo sai com o nome da competência',
   arquivo.getName() === 'Frota_Fechamento_2026-10.xlsx', arquivo.getName());
 ok('e guardado na pasta de relatórios', diario.arquivos.length === 1);
 
-const rel = planilha.getSheets()[1];
+const rel = planilha.getSheets()[0];
 const CAB = 4, PRIMEIRA = 5, TOTAL = 10;   // 5 veículos na fixture
 
 console.log('\n2. Valor é número, não texto que parece dinheiro');
@@ -314,20 +317,30 @@ ok('as médias não são somadas no rodapé',
   rel.valor(TOTAL, 20) + ' / ' + rel.valor(TOTAL, 21));
 ok('o total também é número', typeof rel.valor(TOTAL, 22) === 'number');
 
-const capa = planilha.getSheets()[0];
-function procurarNaCapa(rotulo) {
-  for (let l = 1; l <= 20; l++) if (capa.valor(l, 1) === rotulo) return capa.valor(l, 2);
-  return undefined;
-}
-ok('a capa traz a competência', procurarNaCapa('Competência') === '2026-10');
-ok('a capa traz o total como número', procurarNaCapa('Total da frota R$') === 13150,
-  String(procurarNaCapa('Total da frota R$')));
-ok('e bate com o rodapé da aba',
-  procurarNaCapa('Total da frota R$') === rel.valor(TOTAL, 22));
-ok('a capa diz por que não há IPVA',
-  /embutido/.test(String(procurarNaCapa('IPVA'))), String(procurarNaCapa('IPVA')));
-ok('e o que o TOTAL soma',
-  /multa/.test(String(procurarNaCapa('TOTAL'))), String(procurarNaCapa('TOTAL')));
+// A capa separada virou a linha de contexto, logo abaixo do título: quem
+// recebe abre o arquivo e vê de onde o número veio, na mesma tela.
+const contexto = String(rel.valor(2, 1) || '');
+ok('o contexto traz a empresa', /GIASSI/.test(contexto), contexto);
+ok('e a competência', /2026-10/.test(contexto), contexto);
+ok('e o período', /26\/09\/2026 a 25\/10\/2026/.test(contexto), contexto);
+ok('e quem gerou', /fulano@giassi\.com\.br/.test(contexto), contexto);
+ok('e por que não há IPVA', /IPVA não tem coluna/.test(contexto), contexto);
+ok('e o que o TOTAL soma', /inclusive multa e depreciação/.test(contexto), contexto);
+ok('o contexto NÃO é mesclado nas 23 colunas',
+  rel.mesclados.filter(function (m) { return m.linha <= 2; }).length === 0,
+  'mesclar o título e pedir autoResize alargava a coluna A até meia tela');
+
+console.log('\n5b. As colunas não saem com largura de autoResize');
+ok('toda coluna recebe largura declarada',
+  Object.keys(rel.larguras).length === 23, Object.keys(rel.larguras).length + ' de 23');
+ok('a coluna da placa é estreita, não do tamanho do título',
+  rel.larguras[1] === 100, String(rel.larguras[1]));
+ok('e nenhuma passa de 320px', Object.keys(rel.larguras).every(function (k) {
+  return rel.larguras[k] <= 320; }), JSON.stringify(rel.larguras));
+ok('as larguras vêm do catálogo do relatório',
+  ctx.largurasDoCatalogo_('Relatório Operacional dos Veículos')[0] === 100);
+ok('relatório sem catálogo cai no padrão por tipo',
+  ctx.largurasDoCatalogo_('Não existe') === null);
 
 console.log('\n6. A exportação e a planilha temporária');
 ok('pede a exportação em xlsx',
@@ -422,7 +435,7 @@ try { gerar(); } catch (e) { erroGrande = e; }
 ok('1200 veículos cabem: a aba cresce antes de escrever', !erroGrande,
   erroGrande ? erroGrande.message : '');
 ok('e o total continua na última linha de dados + 1',
-  diario.criadas[0].getSheets()[1].valor(4 + 1200 + 1, 1) === 'TOTAL');
+  diario.criadas[0].getSheets()[0].valor(4 + 1200 + 1, 1) === 'TOTAL');
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S) de ' + provas : '\nTUDO OK: ' + provas + ' provas');
 process.exit(falhas ? 1 : 0);
