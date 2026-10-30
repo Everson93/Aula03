@@ -606,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.29.0';
+const VERSAO_SISTEMA = '4.29.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8749,6 +8749,70 @@ function gerarXlsxFechamento_(mesRef) {
   }
   registrarLog_('Planilha do fechamento', d.competencia + ' • ' + arquivo.getName());
   return arquivo;
+}
+
+/**
+ * Qualquer relatorio da tela em .xlsx, com a mesma formatacao do fechamento.
+ *
+ * Reaproveita `escreverRelatorioNaAba_`: numero sai como numero, com formato
+ * de exibicao. Um exportador proprio aqui seria o caminho curto para a
+ * planilha do fechamento sair formatada e a dos outros relatorios sair como
+ * texto, sem ninguem notar ate a contabilidade tentar somar.
+ */
+function gerarXlsxRelatorio_(tipo, filtros) {
+  exigirExecucaoMutacao_();
+  const nome = String(tipo || '').trim();
+  if (!CATALOGO_RELATORIOS[nome]) throw new Error('Relatório desconhecido: ' + nome + '.');
+  const f = filtros || {};
+  const rel = relatorioPorTipo_(nome,
+    f.centro && f.centro !== 'TODOS' ? f.centro : null,
+    f.categoria && f.categoria !== 'TODAS' ? f.categoria : null,
+    f.veiculo && f.veiculo !== 'TODOS' ? f.veiculo : null,
+    f.termo || '');
+  if (!rel || !rel.colunas || !rel.colunas.length) {
+    throw new Error('O relatório "' + nome + '" não devolveu colunas para exportar.');
+  }
+
+  const mes = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const semAcento = nome.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const arquivoNome = 'Frota_' + semAcento + '_' + mes + '.xlsx';
+  const temp = SpreadsheetApp.create('~temp_' + semAcento + '_' + Utilities.getUuid().slice(0, 8));
+  let arquivo = null;
+  try {
+    const aba = temp.getSheets()[0];
+    aba.setName('Relatorio');
+    const filtrosTexto = ['centro', 'categoria', 'veiculo', 'termo']
+      .filter(function (k) { return f[k] && ['TODOS', 'TODAS'].indexOf(f[k]) === -1; })
+      .map(function (k) { return k + ': ' + f[k]; }).join(' • ');
+    escreverRelatorioNaAba_(aba, rel, nome + ' — ' + mes,
+      (rel.mensagem || '') + (filtrosTexto ? '  |  filtros: ' + filtrosTexto : ''));
+    SpreadsheetApp.flush();
+
+    const resposta = UrlFetchApp.fetch(
+      'https://docs.google.com/spreadsheets/d/' + temp.getId() + '/export?format=xlsx',
+      { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (resposta.getResponseCode() !== 200) {
+      throw new Error('Não consegui gerar a planilha (HTTP ' + resposta.getResponseCode() + ').');
+    }
+    arquivo = pastaDeRelatorios_().createFile(resposta.getBlob().setName(arquivoNome));
+  } finally {
+    try { DriveApp.getFileById(temp.getId()).setTrashed(true); } catch (e) {}
+  }
+  registrarLog_('Planilha de relatório', nome + ' • ' + arquivo.getName());
+  return arquivo;
+}
+
+function webRelatorioXlsx(token, tipo, filtros) {
+  autorizarContextoWeb_(token, PERFIS_ACESSO);
+  const arquivo = gerarXlsxRelatorio_(tipo, filtros);
+  return {
+    ok: true,
+    nome: arquivo.getName(),
+    url: arquivo.getUrl(),
+    pasta: PASTA_RELATORIOS,
+    mensagem: 'Planilha gerada na pasta "' + PASTA_RELATORIOS + '" do Drive.',
+  };
 }
 
 function gerarPdfFechamento_(mesRef) {

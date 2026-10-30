@@ -115,5 +115,34 @@ ok('"comprovantes" NÃO para CONSULTA, que não registra nada',
   perfis.CONSULTA.indexOf('comprovantes') === -1,
   'a tela é um formulário de registro; mostrá-la a quem o servidor recusa é promessa falsa');
 
+console.log('\n4. Depois de gravar, o formulário não guarda o veículo');
+// Placa que fica preenchida lança o gasto seguinte no veículo anterior — e
+// isso só aparece no fechamento, quando ninguém lembra mais.
+
+const limpeza = (app.match(/\['placa'[^\]]*\]\s*\n?\s*\.forEach\(function \(id\) \{ if \(el\(id\)\) el\(id\)\.value = ''; \}\);/) || [''])[0];
+ok('a placa está na lista de campos limpos depois de gravar', limpeza !== '',
+  'sem ela o lançamento seguinte sai na placa anterior');
+['litros', 'valor', 'km', 'documento', 'observacao'].forEach(function (campo) {
+  ok('e ' + campo + ' continua sendo limpo', limpeza.indexOf("'" + campo + "'") !== -1,
+    'acrescentar a placa não pode ter derrubado os outros');
+});
+// `el('placa').focus()` tambem aparece na tela de comprovantes: a prova tem
+// de olhar o foco DEPOIS da gravacao, nao em qualquer lugar do arquivo.
+ok('o foco volta para a placa depois de gravar',
+  /carregarUltimos\(\);\s*\n\s*if \(el\('placa'\)\) el\('placa'\)\.focus\(\);/.test(app),
+  'quem lança em série digita a próxima placa em seguida');
+
+console.log('\n5. Exportar em planilha o relatório da tela');
+ok('o botão existe na tela de relatórios', /baixarRelatorioXlsx\(this\)/.test(app));
+ok('e manda os MESMOS filtros que a tela usou',
+  /webRelatorioXlsx\(TOKEN, tipo, \{[\s\S]{0,260}centro:[\s\S]{0,260}categoria:[\s\S]{0,260}veiculo:[\s\S]{0,260}termo:/.test(app),
+  'exportar sem os filtros entrega um arquivo diferente do que está na tela');
+ok('o servidor refaz o relatório em vez de receber a tabela pronta',
+  /function gerarXlsxRelatorio_[\s\S]{0,900}relatorioPorTipo_\(nome,/.test(gs),
+  'tabela vinda do cliente envelhece entre o desenho e o clique, e é adulterável');
+ok('e usa o mesmo escritor de aba do fechamento',
+  /function gerarXlsxRelatorio_[\s\S]{0,1800}escreverRelatorioNaAba_\(/.test(gs),
+  'um exportador próprio faria um caminho formatar e o outro entregar texto');
+
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

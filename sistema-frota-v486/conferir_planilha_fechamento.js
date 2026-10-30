@@ -128,9 +128,13 @@ function novaAba(nome) {
 
 const diario = { criadas: [], lixeira: [], fetch: [], arquivos: [], log: [] };
 
+// O id NAO pode vir de diario.criadas.length: os blocos zeram essa lista e o
+// id se repetia, fazendo a prova da lixeira passar com o id de uma planilha
+// anterior. Contador proprio, que so cresce.
+let seqPlanilha = 0;
 function novaPlanilha(nome) {
   const abas = [novaAba('Página1')];
-  const id = 'ID_' + diario.criadas.length;
+  const id = 'ID_' + (seqPlanilha++);
   const p = {
     id: id, nome: nome, abas: abas,
     getId: function () { return id; },
@@ -176,6 +180,7 @@ ctx.globalThis = ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, { gerarXlsxFechamento_, webFechamentoXlsx, dadosFechamento_,
+    gerarXlsxRelatorio_, webRelatorioXlsx, relatorioPorTipo_, CATALOGO_RELATORIOS,
     escreverRelatorioNaAba_, formatoPlanilha_, capaPlanilhaFechamento_, htmlFechamentoPdf_,
     tipoEhNumerico_, col_, R_, TOTAL_COL_RESUMO, PASTA_RELATORIOS });
   exigirExecucaoLeitura_ = function () {};
@@ -370,6 +375,41 @@ ok('devolve ok, nome, url e pasta',
   r.pasta === ctx.PASTA_RELATORIOS, JSON.stringify(r));
 ok('a mensagem fala em planilha, não em PDF',
   /planilha/i.test(r.mensagem) && !/PDF/i.test(r.mensagem), r.mensagem);
+
+console.log('\n9b. Qualquer relatório da tela em planilha');
+// O mesmo exportador do fechamento, para não existir um caminho que formata
+// e outro que entrega texto.
+diario.criadas.length = 0; diario.arquivos.length = 0; diario.fetch.length = 0;
+let rx = ctx.webRelatorioXlsx('token', 'Relatório Operacional dos Veículos', {});
+ok('exporta o relatório pedido', rx.ok === true && /\.xlsx$/.test(rx.nome), JSON.stringify(rx));
+ok('o nome do arquivo traz o relatório e a competência',
+  rx.nome === 'Frota_Relatorio_Operacional_dos_Veiculos_2026-10.xlsx', rx.nome);
+ok('pede a exportação em xlsx', /[?&]format=xlsx\b/.test(diario.fetch[0].url));
+ok('a temporária vai para a lixeira',
+  diario.lixeira.indexOf(diario.criadas[0].getId()) !== -1, diario.lixeira.join(','));
+const abaRx = diario.criadas[0].getSheets()[0];
+ok('o valor sai como número, igual ao do fechamento',
+  typeof abaRx.valor(5, 22) === 'number' && abaRx.formato(5, 22) === 'R$ #,##0.00',
+  typeof abaRx.valor(5, 22) + ' / ' + abaRx.formato(5, 22));
+ok('o subtítulo registra os filtros usados', (function () {
+  diario.criadas.length = 0;
+  ctx.webRelatorioXlsx('token', 'Relatório Operacional dos Veículos', { centro: 'Loja 02' });
+  return /centro: Loja 02/.test(String(diario.criadas[0].getSheets()[0].valor(2, 1)));
+})(), String(diario.criadas.length ? diario.criadas[0].getSheets()[0].valor(2, 1) : ''));
+ok('e o filtro realmente filtra', (function () {
+  diario.criadas.length = 0;
+  ctx.webRelatorioXlsx('token', 'Relatório Operacional dos Veículos', { centro: 'Loja 02' });
+  const a = diario.criadas[0].getSheets()[0];
+  return a.valor(5, 23) === 'Loja 02' && a.valor(7, 1) === 'TOTAL';
+})(), 'exportar sem aplicar o filtro entrega um arquivo diferente do que está na tela');
+// Relatorio que nao existe nao pode virar arquivo vazio na pasta do Drive.
+let erroRx = null;
+diario.criadas.length = 0; diario.arquivos.length = 0;
+try { ctx.webRelatorioXlsx('token', 'Relatório Inventado', {}); } catch (e) { erroRx = e; }
+ok('relatório desconhecido é recusado', !!erroRx && /desconhecido/.test(erroRx.message),
+  erroRx ? erroRx.message : 'gerou sem reclamar');
+ok('e não cria planilha nem arquivo',
+  diario.criadas.length === 0 && diario.arquivos.length === 0);
 
 console.log('\n10. A aba não é escrita fora do seu tamanho');
 // A dublê reprova intervalo maior que a aba, como o Apps Script faz. Esta

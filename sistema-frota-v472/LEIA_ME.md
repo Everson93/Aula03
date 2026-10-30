@@ -1752,12 +1752,15 @@ delas gravando no vizinho.
 
 # Pendente
 
-- **IPVA contado duas vezes no Resumo?** O relatório operacional (V4.29) tira
-  o IPVA do TOTAL porque o contábil já o embute na depreciação que envia. Mas
-  a coluna `TOTAL R$` do **Resumo** continua somando o IPVA e a depreciação —
-  se a premissa está certa, o Resumo está inflado em um IPVA por veículo. Vale
-  conferir com a contabilidade antes de mexer: o número do Resumo é o que
-  fecha o Histórico de todos os meses anteriores.
+- **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026
+  que o IPVA **já vem embutido na depreciação** que a contabilidade envia. O
+  relatório operacional (V4.29) tira o IPVA do TOTAL por isso. Mas a coluna
+  `TOTAL R$` do **Resumo** continua somando os dois, e o sistema ainda gera a
+  parcela de 1/12 a partir do IPVA anual do cadastro. Se a premissa vale para
+  toda a frota, o Resumo está inflado em um IPVA por veículo por mês. Não
+  mexi: esse número fecha o Histórico de todos os meses já encerrados, e
+  corrigi-lo muda o passado. **Decisão pendente do usuário:** parar de gerar
+  a parcela, zerar o IPVA anual do cadastro, ou manter como está.
 
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
   origem na migração das 170 abas, e **nada no código atual lê ou escreve nela**.
@@ -3548,3 +3551,57 @@ depois.
 
 `conferir_pdf_rateio.js` 143 → **152**; `conferir_planilha_fechamento.js`
 46 → **47**. Total do projeto: 1.093 → **1.103**.
+
+## V4.29.1 — exportar qualquer relatório em planilha, e a placa que ficava
+
+Dois pedidos pequenos e uma confirmação.
+
+### A confirmação
+
+*"o ipva ta certo, ja vem na depreciação"*. A premissa da V4.29 está certa,
+então a pergunta que ficou em **Pendente** passou a ser um fato: o TOTAL do
+**Resumo** soma IPVA e depreciação, e o sistema ainda gera a parcela de 1/12
+do IPVA anual do cadastro. Se vale para toda a frota, o Resumo está inflado.
+Continua sem mexer, porque esse número fecha o Histórico dos meses
+encerrados — é decisão de quem assina.
+
+### Exportar em planilha qualquer relatório da tela
+
+Botão na tela de Relatórios. Três cuidados:
+
+- **O servidor refaz o relatório**, em vez de receber a tabela pronta do
+  navegador. A tabela do cliente envelhece entre o desenho e o clique, e é
+  adulterável; o que vai para a contabilidade tem de sair da base.
+- **Os mesmos filtros** da tela vão junto, e o subtítulo da aba registra
+  quais foram. Exportar sem filtro entregaria um arquivo diferente do que
+  está na tela, e ninguém perceberia.
+- **O mesmo `escreverRelatorioNaAba_` do fechamento.** Um exportador próprio
+  aqui seria o caminho curto para um arquivo sair formatado e o outro sair
+  como texto.
+
+A temporária vai para a lixeira no `finally`, como a do fechamento.
+
+### A placa que ficava preenchida
+
+Depois de gravar, o formulário limpava valor, litros, KM, documento e
+observação — e deixava a **placa**. O lançamento seguinte, que quase nunca é
+do mesmo veículo, saía na placa anterior se o operador não reparasse. É um
+erro que só aparece no fechamento, quando ninguém lembra mais.
+
+Agora a placa entra na limpeza e o foco volta para ela, que é onde quem
+lança em série vai digitar.
+
+### Duas fraquezas de teste, não de código
+
+1. A dublê de planilha gerava o id a partir de `diario.criadas.length`, e os
+   blocos zeram essa lista — o id **se repetia**. A prova de "a temporária
+   foi para a lixeira" passava encontrando o id de uma planilha anterior.
+   Contador próprio, que só cresce.
+2. A prova do foco procurava `el('placa').focus()` em qualquer lugar do
+   arquivo, e isso também existe na tela de comprovantes. Passou a olhar o
+   foco **logo depois da gravação**.
+
+As duas apareceram por mutação; nenhuma teria aparecido lendo o código.
+
+`conferir_telas.js` 13 → **24**; `conferir_planilha_fechamento.js` 47 → **56**.
+Total do projeto: 1.103 → **1.123**. Mutação: 10 de 10.

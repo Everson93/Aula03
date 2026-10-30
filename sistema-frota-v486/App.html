@@ -1557,12 +1557,17 @@
         el('msgLanc').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
           esc(r.mensagem) + '</div>';
         if (r.ok) {
-          ['litros', 'valor', 'km', 'documento', 'observacao', 'detalheOficina'].forEach(function (id) { if(el(id)) el(id).value = ''; });
+          // A placa entra na limpeza: o lançamento seguinte quase nunca é do
+          // mesmo veículo, e deixá-la preenchida já gerou gasto lançado na
+          // placa anterior — o tipo de erro que só aparece no fechamento.
+          ['placa', 'litros', 'valor', 'km', 'documento', 'observacao', 'detalheOficina']
+            .forEach(function (id) { if (el(id)) el(id).value = ''; });
           if (ehCombustivel()) consultarCustoBomba();
           if(el('naturezaOficina') && el('naturezaOficina').options.length) el('naturezaOficina').selectedIndex = 0;
           el('forcarKm').checked = false;
           consultarOdometro();
           carregarUltimos();
+          if (el('placa')) el('placa').focus();
         }
       })
       .withFailureHandler(function (erro) {
@@ -1614,7 +1619,10 @@
             '<label for="relTermo">Peça ou serviço</label>' +
             '<input type="text" id="relTermo" placeholder="ex.: alternador, embreagem, pastilha">' +
           '</div>' +
+          '<div style="align-self:end"><button class="acao secundaria" id="btnRelXlsx" ' +
+            'onclick="baixarRelatorioXlsx(this)">📊 Exportar em planilha</button></div>' +
         '</div>' +
+        '<div id="msgRelXlsx"></div>' +
         '<div id="saidaRel"><div class="carregando">carregando…</div></div>';
 
       var descricoes = {};
@@ -1797,6 +1805,33 @@
     }).withFailureHandler(function (e) {
       avisarEDesenhar('<div class="erro-caixa">' + esc(e.message) + '</div>');
     }).webExcluirOdometro(TOKEN, ref);
+  }
+
+  /**
+   * O relatório que está na tela, em .xlsx, com os mesmos filtros.
+   *
+   * O servidor refaz o relatório em vez de receber a tabela pronta da tela:
+   * assim o número da planilha é o mesmo que a tela calculou da base, e não
+   * uma cópia que envelhece entre o desenho e o clique.
+   */
+  function baixarRelatorioXlsx(botao) {
+    var tipo = el('relTipo').value;
+    el('msgRelXlsx').innerHTML = '<div class="carregando">montando a planilha…</div>';
+    comVigia(botao, 'Gerando…', function (pronto, erro) {
+      google.script.run.withSuccessHandler(function (r) {
+        pronto();
+        el('msgRelXlsx').innerHTML = '<div class="ok-caixa"><b>' + esc(r.nome) + '</b> gerado.<br>' +
+          '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">abrir a planilha</a> ' +
+          '<span class="sub2">— salvo na pasta "' + esc(r.pasta) + '" do Drive</span></div>';
+      }).withFailureHandler(function (e) {
+        erro(e);
+        el('msgRelXlsx').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      }).webRelatorioXlsx(TOKEN, tipo, {
+        centro: el('relCentro').value, categoria: el('relCategoria').value,
+        veiculo: String(el('relVeiculo').value || '').trim() || 'TODOS',
+        termo: el('relTermo') ? el('relTermo').value : ''
+      });
+    });
   }
 
   function telaResumo() {
