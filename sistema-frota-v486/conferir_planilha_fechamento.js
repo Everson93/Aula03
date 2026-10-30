@@ -127,7 +127,8 @@ function novaAba(nome) {
   return aba;
 }
 
-const diario = { criadas: [], lixeira: [], fetch: [], arquivos: [], log: [] };
+const diario = { criadas: [], lixeira: [], fetch: [], arquivos: [], log: [], emails: [] };
+let cotaEmail = 100;
 
 // O id NAO pode vir de diario.criadas.length: os blocos zeram essa lista e o
 // id se repetia, fazendo a prova da lixeira passar com o id de uma planilha
@@ -158,6 +159,10 @@ const ctx = {
   CacheService: { getScriptCache: () => ({ get: () => null, put: () => {}, remove: () => {} }) },
   LockService: { getScriptLock: () => ({ tryLock: () => true }) },
   ScriptApp: { getOAuthToken: () => 'TOKEN_FALSO' },
+  MailApp: {
+    getRemainingDailyQuota: function () { return cotaEmail; },
+    sendEmail: function (opcoes) { diario.emails.push(opcoes); },
+  },
   UrlFetchApp: {
     fetch: function (url, opcoes) {
       diario.fetch.push({ url: url, opcoes: opcoes });
@@ -182,6 +187,7 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, { gerarXlsxFechamento_, webFechamentoXlsx, dadosFechamento_,
     gerarXlsxRelatorio_, webRelatorioXlsx, relatorioPorTipo_, CATALOGO_RELATORIOS,
+    listaDeEmails_, enviarArquivoPorEmail_,
     escreverRelatorioNaAba_, formatoPlanilha_, contextoDoFechamento_, htmlFechamentoPdf_,
     largurasDoCatalogo_,
     tipoEhNumerico_, col_, R_, TOTAL_COL_RESUMO, PASTA_RELATORIOS });
@@ -207,7 +213,8 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     return { createFile: function (blob) {
       __diario.arquivos.push(blob.nome);
       return { getName: function () { return blob.nome; },
-               getUrl: function () { return 'https://drive/' + blob.nome; } };
+               getUrl: function () { return 'https://drive/' + blob.nome; },
+               getBlob: function () { return blob; } };
     } };
   };
 `, ctx);
@@ -423,6 +430,68 @@ ok('relatório desconhecido é recusado', !!erroRx && /desconhecido/.test(erroRx
   erroRx ? erroRx.message : 'gerou sem reclamar');
 ok('e não cria planilha nem arquivo',
   diario.criadas.length === 0 && diario.arquivos.length === 0);
+
+console.log('\n9c. Enviar a planilha por e-mail');
+diario.emails.length = 0; diario.criadas.length = 0; diario.arquivos.length = 0;
+let rm = ctx.webFechamentoXlsx('token', '', 'contabilidade@giassi.com.br');
+ok('envia quando o campo vem preenchido', diario.emails.length === 1, String(diario.emails.length));
+ok('o anexo é a planilha que acabou de ser gerada',
+  diario.emails[0].attachments.length === 1 &&
+  diario.emails[0].attachments[0].nome === rm.nome,
+  JSON.stringify(diario.emails[0].attachments.map(function (b) { return b.nome; })));
+ok('o assunto diz qual relatório e qual competência',
+  /Relatório Operacional dos Veículos — 2026-10/.test(diario.emails[0].subject),
+  diario.emails[0].subject);
+ok('o corpo diz onde o arquivo também está',
+  new RegExp(ctx.PASTA_RELATORIOS).test(diario.emails[0].htmlBody), diario.emails[0].htmlBody);
+// O arquivo continua no Drive: o e-mail é uma cópia, não o único lugar onde
+// o documento existe. Quem conferir em seis meses procura na pasta.
+ok('o arquivo continua salvo na pasta', diario.arquivos.length === 1);
+ok('a resposta diz para quem foi', rm.enviados.join(',') === 'contabilidade@giassi.com.br' &&
+  /Enviada para/.test(rm.mensagem), JSON.stringify(rm));
+ok('fica no Log', diario.log.some(function (l) { return /Planilha por e-mail/.test(l); }));
+
+diario.emails.length = 0;
+rm = ctx.webFechamentoXlsx('token', '', '');
+ok('campo vazio não manda nada', diario.emails.length === 0 && rm.ok === true);
+ok('e a mensagem não promete envio', !/Enviada para/.test(rm.mensagem), rm.mensagem);
+
+diario.emails.length = 0; diario.criadas.length = 0; diario.arquivos.length = 0;
+let erroMail = null;
+try { ctx.webFechamentoXlsx('token', '', 'nao-e-email'); } catch (e) { erroMail = e; }
+ok('e-mail inválido é recusado', !!erroMail && /E-mail inválido/.test(erroMail.message),
+  erroMail ? erroMail.message : 'passou');
+// Validar depois de montar obrigaria a refazer dois minutos de geração.
+ok('e a planilha nem chega a ser montada',
+  diario.criadas.length === 0 && diario.arquivos.length === 0,
+  diario.criadas.length + ' planilha(s)');
+
+diario.emails.length = 0; diario.criadas.length = 0;
+cotaEmail = 0;
+erroMail = null;
+try { ctx.webFechamentoXlsx('token', '', 'a@x.com'); } catch (e) { erroMail = e; }
+cotaEmail = 100;
+ok('sem cota do Gmail, avisa em vez de falhar calado',
+  !!erroMail && /Cota diária/.test(erroMail.message), erroMail ? erroMail.message : 'passou');
+
+ok('mais de 20 destinatários é recusado', (function () {
+  const muitos = [];
+  for (let i = 0; i < 21; i++) muitos.push('p' + i + '@giassi.com.br');
+  try { ctx.listaDeEmails_(muitos.join(',')); return false; }
+  catch (e) { return /20 destinatários/.test(e.message); }
+})());
+ok('duplicado vira um só', ctx.listaDeEmails_('a@x.com, A@X.COM').length === 1);
+ok('ponto e vírgula também separa', ctx.listaDeEmails_('a@x.com; b@y.com').length === 2);
+ok('vazio explode quando não é opcional', (function () {
+  try { ctx.listaDeEmails_(''); return false; } catch (e) { return true; }
+})());
+ok('e devolve lista vazia quando é', ctx.listaDeEmails_('', { permiteVazio: true }).length === 0);
+
+diario.emails.length = 0;
+ctx.webRelatorioXlsx('token', 'Relatório Operacional dos Veículos', {}, 'a@x.com');
+ok('o exportador genérico manda pelo mesmo caminho', diario.emails.length === 1 &&
+  diario.emails[0].attachments.length === 1, String(diario.emails.length));
+diario.emails.length = 0;
 
 console.log('\n10. A aba não é escrita fora do seu tamanho');
 // A dublê reprova intervalo maior que a aba, como o Apps Script faz. Esta

@@ -1619,6 +1619,9 @@
             '<label for="relTermo">Peça ou serviço</label>' +
             '<input type="text" id="relTermo" placeholder="ex.: alternador, embreagem, pastilha">' +
           '</div>' +
+          '<div><label for="relEmail">Enviar por e-mail (opcional)</label>' +
+            '<input type="text" id="relEmail" placeholder="nome@giassi.com.br" ' +
+              'autocomplete="off"></div>' +
           '<div style="align-self:end"><button class="acao secundaria" id="btnRelXlsx" ' +
             'onclick="baixarRelatorioXlsx(this)">📊 Exportar em planilha</button></div>' +
         '</div>' +
@@ -1830,7 +1833,7 @@
         centro: el('relCentro').value, categoria: el('relCategoria').value,
         veiculo: String(el('relVeiculo').value || '').trim() || 'TODOS',
         termo: el('relTermo') ? el('relTermo').value : ''
-      });
+      }, el('relEmail') ? el('relEmail').value : '');
     });
   }
 
@@ -3660,6 +3663,12 @@
           '<p class="sub" style="margin:6px 0 10px">Um documento só: a depreciação veículo a ' +
             'veículo e a manutenção veículo a veículo da competência, as duas por loja. ' +
             'Sai na pasta "Relatórios Frota" do Drive.</p>' +
+          '<div class="linha"><div style="max-width:420px">' +
+            '<label for="fechEmail">Enviar por e-mail (opcional)</label>' +
+            '<input type="text" id="fechEmail" placeholder="contabilidade@giassi.com.br" ' +
+              'autocomplete="off">' +
+            '<div class="sub2">Vale para a planilha. Vários endereços, separados por vírgula.</div>' +
+          '</div></div>' +
           '<button class="acao" onclick="gerarFechamentoArquivo(this, \'xlsx\')">📊 Gerar a planilha (XLSX)</button> ' +
           '<button class="acao secundaria" onclick="gerarFechamentoArquivo(this, \'pdf\')">📄 Gerar o PDF</button>' +
           '<div id="saidaFechPdf" style="margin-top:10px"></div></div>' +
@@ -3698,7 +3707,9 @@
         erro(e);
         el('saidaFechPdf').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
       });
-      if (planilha) chamada.webFechamentoXlsx(TOKEN, '');
+      // O e-mail só acompanha a planilha: o PDF é para arquivar e imprimir,
+      // e mandar os dois anexos pelo mesmo campo seria surpresa.
+      if (planilha) chamada.webFechamentoXlsx(TOKEN, '', el('fechEmail') ? el('fechEmail').value : '');
       else chamada.webFechamentoPdf(TOKEN, '');
     });
   }

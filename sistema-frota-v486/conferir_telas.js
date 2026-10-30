@@ -144,5 +144,24 @@ ok('e usa o mesmo escritor de aba do fechamento',
   /function gerarXlsxRelatorio_[\s\S]{0,1800}escreverRelatorioNaAba_\(/.test(gs),
   'um exportador próprio faria um caminho formatar e o outro entregar texto');
 
+console.log('\n6. O campo de e-mail da planilha');
+ok('existe na tela de relatórios', /id="relEmail"/.test(app));
+ok('e no cartão do fechamento', /id="fechEmail"/.test(app));
+ok('o relatório manda o e-mail junto com os filtros',
+  /webRelatorioXlsx\(TOKEN, tipo, \{[\s\S]{0,320}\}, el\('relEmail'\)/.test(app),
+  'campo na tela que o callback não envia é promessa falsa');
+ok('o fechamento manda só na planilha, não no PDF',
+  /webFechamentoXlsx\(TOKEN, '', el\('fechEmail'\)/.test(app) &&
+  /webFechamentoPdf\(TOKEN, ''\);/.test(app),
+  'o PDF é para arquivar; mandar os dois pelo mesmo campo seria surpresa');
+ok('o servidor valida o e-mail ANTES de montar a planilha', (function () {
+  const f = (gs.match(/function webFechamentoXlsx[\s\S]*?\n\}/) || [''])[0];
+  return f.indexOf('listaDeEmails_') !== -1 &&
+    f.indexOf('listaDeEmails_') < f.indexOf('gerarXlsxFechamento_');
+})(), 'errar o endereço depois de dois minutos de geração obriga a refazer tudo');
+ok('e a validação tem um dono só',
+  (gs.match(/\^\[\^@\\s\]\+@\[\^@\\s\]\+/g) || []).length === 1,
+  'duas cópias da mesma regra de validação, duas chances de uma afrouxar');
+
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

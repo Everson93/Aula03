@@ -3642,3 +3642,43 @@ empresa e os filtros aplicados.
 
 `conferir_planilha_fechamento.js` 56 → **63**. Total: 1.123 → **1.130**.
 Mutação: 6 de 6, incluindo "volta a mesclar o título" e "volta o autoResize".
+
+## V4.30.0 — mandar a planilha por e-mail
+
+Campo de e-mail em dois lugares: na tela de Relatórios, ao lado do botão de
+exportar, e no cartão 5 do Fechamento. Vazio, nada muda — o arquivo só vai
+para o Drive, como antes.
+
+### Quatro decisões
+
+**O arquivo continua no Drive.** O e-mail é uma cópia, não o único lugar
+onde o documento existe. Quem for conferir daqui a seis meses procura na
+pasta, não na caixa de entrada de alguém. O corpo do e-mail diz isso.
+
+**O e-mail é validado ANTES de montar a planilha.** Errar o endereço e só
+descobrir depois de dois minutos de geração obrigaria a refazer tudo. Tem
+prova de que a planilha nem chega a ser criada quando o endereço está errado.
+
+**Só a planilha vai por e-mail, não o PDF.** O PDF é para arquivar e
+imprimir; mandar os dois anexos pelo mesmo campo seria surpresa. Há prova
+estática disso — e a mutação que faz o PDF também receber o campo é pega.
+
+**A cota do Gmail é conferida antes.** Sem isso o envio falharia calado
+depois de o arquivo já estar gerado.
+
+### Uma regra de validação que estava em três lugares
+
+O regex de e-mail aparecia em três trechos: o envio de relatório por PDF, a
+validação do parâmetro `EMAIL_ALERTAS` e os destinatários do alerta diário.
+Três cópias da mesma regra são três chances de uma afrouxar sozinha.
+
+Agora há um dono, `listaDeEmails_`, com duas portas:
+
+- quem **digita na tela** recebe o erro na cara — é o certo ali;
+- o **alerta diário** passa `ignorarInvalidos`, porque um endereço errado no
+  parâmetro não pode derrubar o envio para os outros.
+
+Tem prova estática de que o regex aparece **uma vez só** no arquivo.
+
+`conferir_planilha_fechamento.js` 63 → **81**; `conferir_telas.js` 24 → **30**.
+Total do projeto: 1.130 → **1.154**, em 31 suítes. Mutação: 10 de 10.

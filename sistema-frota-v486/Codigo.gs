@@ -606,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.29.2';
+const VERSAO_SISTEMA = '4.30.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -8811,15 +8811,24 @@ function gerarXlsxRelatorio_(tipo, filtros) {
   return arquivo;
 }
 
-function webRelatorioXlsx(token, tipo, filtros) {
+function webRelatorioXlsx(token, tipo, filtros, emails) {
   autorizarContextoWeb_(token, PERFIS_ACESSO);
+  const destinos = listaDeEmails_(emails, { permiteVazio: true });
   const arquivo = gerarXlsxRelatorio_(tipo, filtros);
+  let enviados = [];
+  if (destinos.length) {
+    enviados = enviarArquivoPorEmail_(arquivo, destinos.join(','),
+      '[Frota] ' + String(tipo || '') + ' — ' + normalizarMesReferencia_(param_('MES_REFERENCIA')),
+      '<p>Segue o relatório <b>' + escHtml_(String(tipo || '')) + '</b>, em planilha.</p>');
+  }
   return {
     ok: true,
     nome: arquivo.getName(),
     url: arquivo.getUrl(),
     pasta: PASTA_RELATORIOS,
-    mensagem: 'Planilha gerada na pasta "' + PASTA_RELATORIOS + '" do Drive.',
+    enviados: enviados,
+    mensagem: 'Planilha gerada na pasta "' + PASTA_RELATORIOS + '" do Drive.' +
+      (enviados.length ? ' Enviada para ' + enviados.join(', ') + '.' : ''),
   };
 }
 
@@ -8846,15 +8855,28 @@ function webFechamentoPdf(token, mesRef) {
   };
 }
 
-function webFechamentoXlsx(token, mesRef) {
+function webFechamentoXlsx(token, mesRef, emails) {
   autorizarContextoWeb_(token, PERFIS_ACESSO);
+  // Valida os e-mails ANTES de montar a planilha: errar o endereco depois de
+  // dois minutos de geracao obrigaria a refazer tudo.
+  const destinos = listaDeEmails_(emails, { permiteVazio: true });
   const arquivo = gerarXlsxFechamento_(mesRef);
+  const mes = normalizarMesReferencia_(mesRef || param_('MES_REFERENCIA'));
+  let enviados = [];
+  if (destinos.length) {
+    enviados = enviarArquivoPorEmail_(arquivo, destinos.join(','),
+      '[Frota] Relatório Operacional dos Veículos — ' + mes,
+      '<p>Segue o <b>Relatório Operacional dos Veículos</b> da competência <b>' + mes +
+      '</b>, em planilha.</p>');
+  }
   return {
     ok: true,
     nome: arquivo.getName(),
     url: arquivo.getUrl(),
     pasta: PASTA_RELATORIOS,
-    mensagem: 'Planilha do fechamento gerada na pasta "' + PASTA_RELATORIOS + '" do Drive.',
+    enviados: enviados,
+    mensagem: 'Planilha do fechamento gerada na pasta "' + PASTA_RELATORIOS + '" do Drive.' +
+      (enviados.length ? ' Enviada para ' + enviados.join(', ') + '.' : ''),
   };
 }
 
@@ -8882,22 +8904,74 @@ function webRateioPdf(token, mesRef) {
 }
 
 /** Gera o PDF e manda por e-mail. Devolve a mensagem de confirmação. */
-function enviarRelatorioPorEmail_(destinatarios, nomeAba) {
-  exigirExecucaoMutacao_();
-  const lista = String(destinatarios || '')
+/**
+ * Transforma "a@x.com; b@y.com" na lista de destinatarios, ou explode.
+ *
+ * Dono unico da regra. A mesma validacao estava escrita em dois lugares (o
+ * envio de relatorio e o parametro EMAIL_ALERTAS) — duas copias de uma regra
+ * de validacao e duas chances de uma delas ficar mais frouxa que a outra sem
+ * ninguem notar.
+ */
+function listaDeEmails_(texto, opcoes) {
+  const lista = String(texto || '')
     .split(/[,;]/)
     .map(function (e) { return e.trim().toLowerCase(); })
     .filter(function (e, i, a) { return e && a.indexOf(e) === i; });
-  if (!lista.length) throw new Error('Informe pelo menos um e-mail.');
-  if (lista.length > 20) throw new Error('Por segurança, envie para no máximo 20 destinatários por operação.');
-
-  const invalidos = lista.filter(function (e) { return e.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e); });
+  const permiteVazio = opcoes && opcoes.permiteVazio === true;
+  // `ignorarInvalidos` e para o alerta diario: um endereco errado no
+  // parametro nao pode derrubar o envio dos outros. Quem digita na tela
+  // recebe o erro na cara, que e o certo ali.
+  const ignorar = opcoes && opcoes.ignorarInvalidos === true;
+  const bom = function (e) {
+    return e.length <= 254 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+  };
+  if (ignorar) return lista.filter(bom).slice(0, 20);
+  if (!lista.length) {
+    if (permiteVazio) return [];
+    throw new Error('Informe pelo menos um e-mail.');
+  }
+  if (lista.length > 20) {
+    throw new Error('Por segurança, envie para no máximo 20 destinatários por operação.');
+  }
+  const invalidos = lista.filter(function (e) { return !bom(e); });
   if (invalidos.length) throw new Error('E-mail inválido: ' + invalidos.join(', '));
+  return lista;
+}
 
+/** Recusa cedo quando a cota diaria do Gmail nao cobre o envio. */
+function exigirCotaDeEmail_(quantos) {
   const restante = MailApp.getRemainingDailyQuota();
-  if (restante < lista.length) {
+  if (restante < quantos) {
     throw new Error('Cota diária de e-mail insuficiente (restam ' + restante + ').');
   }
+}
+
+/**
+ * Manda um arquivo do Drive por e-mail, como anexo.
+ *
+ * O arquivo continua salvo na pasta do Drive: o e-mail e uma copia, nao o
+ * unico lugar onde o documento existe. Quem conferir daqui a seis meses
+ * procura na pasta, nao na caixa de entrada de alguem.
+ */
+function enviarArquivoPorEmail_(arquivo, destinatarios, assunto, corpoHtml) {
+  const lista = listaDeEmails_(destinatarios);
+  exigirCotaDeEmail_(lista.length);
+  MailApp.sendEmail({
+    to: lista.join(','),
+    subject: assunto,
+    htmlBody: corpoHtml +
+      '<p style="color:#666;font-size:12px">Enviado pelo Sistema de Controle de Custos de Frota. ' +
+      'O arquivo também está na pasta "' + PASTA_RELATORIOS + '" do Drive.</p>',
+    attachments: [arquivo.getBlob()],
+  });
+  registrarLog_('Planilha por e-mail', arquivo.getName() + ' → ' + lista.join(', '));
+  return lista;
+}
+
+function enviarRelatorioPorEmail_(destinatarios, nomeAba) {
+  exigirExecucaoMutacao_();
+  const lista = listaDeEmails_(destinatarios);
+  exigirCotaDeEmail_(lista.length);
 
   const arquivo = exportarAbaComoPdf_(nomeAba);
   const periodo = periodoAtual_();
@@ -14374,13 +14448,8 @@ function webSalvarParametro(token, nome, valor) {
   if (nome === 'EMAIL_ALERTAS') {
     // Vazio e valido: e como se desliga o alerta diario.
     valor = String(valor || '').trim().slice(0, 500);
-    if (valor) {
-      const invalidos = valor.split(/[,;]/).map(function (e) { return e.trim(); })
-        .filter(function (e) { return e && (e.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)); });
-      if (invalidos.length) {
-        return { ok: false, mensagem: 'E-mail inválido em EMAIL_ALERTAS: ' + invalidos.join(', ') + '.' };
-      }
-    }
+    try { listaDeEmails_(valor, { permiteVazio: true }); }
+    catch (e) { return { ok: false, mensagem: 'EMAIL_ALERTAS: ' + e.message }; }
   }
   if (nome === 'HORA_ALERTA') {
     const hora = Math.floor(Number(valor));
@@ -15447,13 +15516,8 @@ function montarAlertasDiarios_() {
 
 /** Destinatarios do alerta, do parametro EMAIL_ALERTAS. Lista vazia desliga o envio. */
 function destinatariosAlerta_() {
-  return String(param_('EMAIL_ALERTAS') || '')
-    .split(/[,;]/)
-    .map(function (e) { return e.trim().toLowerCase(); })
-    .filter(function (e, i, a) {
-      return e && a.indexOf(e) === i && e.length <= 254 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
-    })
-    .slice(0, 20);
+  return listaDeEmails_(param_('EMAIL_ALERTAS'),
+    { permiteVazio: true, ignorarInvalidos: true });
 }
 
 /**
