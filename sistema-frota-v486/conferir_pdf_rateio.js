@@ -28,6 +28,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     compararCentroNatural_, htmlFechamentoPdf_, tabelaRelatorioPdf_, secaoRateioPdf_,
     relatorioDepreciacaoPorBem_, relatorioManutencaoPorVeiculo_,
     relatorioDespesasPorVeiculo_, rubricasDeOutros_, R_DESPESA_FECHAMENTO_,
+    relatorioOperacionalVeiculos_, R_TOTAL_OPERACIONAL_,
     R_DESPESA_EM_COLUNA_, R_DESPESA_EM_OUTROS_, R_FORA_DA_DESPESA_, R_COMPOEM_TOTAL_,
     R_, TOTAL_COL_RESUMO, COL_VEIC, col_ });
   exigirExecucaoLeitura_ = function () {};
@@ -46,6 +47,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   timezone_ = function () { return 'America/Sao_Paulo'; };
   emailContextoAtual_ = function () { return 'fulano@giassi.com.br'; };
   apurarRateio_ = function () { return __apuracao; };
+  lerLancamentos_ = function () { return []; };
   lerResumo_ = function () { return __resumo || []; };
   dadosVeiculosExecucao_ = function () { return __veic || []; };
 `, ctx);
@@ -377,6 +379,9 @@ function veicR(placa, desc, cat, centro, dep, ofi, pneus, extras) {
   l[ctx.R_.COMBUSTIVEL] = e.combustivel || 0;
   l[ctx.R_.IPVA] = e.ipva || 0;
   l[ctx.R_.PEDAGIO] = e.pedagio || 0;
+  // "Veículo novo" (Oficina Ativo) é imobilizado: aparece na coluna e NÃO
+  // entra no TOTAL. Sem um valor aqui, somá-lo ou não daria o mesmo número.
+  l[ctx.R_.OFICINA_ATIVO] = e.veiculoNovo || 0;
   return l;
 }
 function cadastro(placa, patrimonio) {
@@ -392,50 +397,98 @@ ctx.__resumo = [
   veicR('BBB 0002', 'Saveiro', 'Leve', 'Loja 10', 400, 500, 200,
     { combustivel: 600, ipva: 90 }),
   veicR('CCC 0003', 'Truck', 'Truck Normal', 'Loja 02', 1200, 4000, 1000,
-    { combustivel: 2000, ipva: 300, pedagio: 150 }),
+    { combustivel: 2000, ipva: 300, pedagio: 150, veiculoNovo: 90000 }),
 ];
 ctx.__veic = [cadastro('AAA 0001', '10000017'), cadastro('BBB 0002', '10001099'),
   cadastro('CCC 0003', '10002200')];
 const hf = ctx.htmlFechamentoPdf_('2026-10');
 
-ok('tem as duas seções, numeradas',
-  /1\. Depreciação/.test(hf) && /2\. Despesas da frota/.test(hf),
-  'seções: ' + (hf.match(/<h2>[^<]*/g) || []).join(' | '));
+// V4.29: o documento passou a ser UMA tabela, no formato do relatório da
+// planilha antiga que a contabilidade recebe há anos. Uma linha por veículo,
+// todas as rubricas em colunas, o setor no fim.
+ok('é uma tabela só, sem seções numeradas',
+  (hf.match(/<table class="dados/g) || []).length === 1 &&
+  hf.indexOf('1. Depreciação') === -1,
+  'tabelas: ' + (hf.match(/<table class="[^"]*"/g) || []).join(' | '));
 ok('e NÃO tem o rateio', hf.indexOf('Rateio por centro') === -1 &&
   hf.indexOf('% Rateio') === -1, 'o rateio saiu do documento a pedido');
-ok('a seção 2 começa em página própria',
-  (hf.match(/class="secao quebra"/g) || []).length === 1);
-ok('o título é do documento', /<h1>Fechamento da Frota<\/h1>/.test(hf));
+ok('o título é o do relatório da contabilidade',
+  /<h1>Relatório Operacional dos Veículos<\/h1>/.test(hf),
+  (hf.match(/<h1>[^<]*/) || [''])[0]);
+ok('a tabela sai em modo compacto', /<table class="dados compacta">/.test(hf),
+  '23 colunas em A4 deitado estouram a margem sem isso');
 
-console.log('\n10b. A loja é a primeira coluna');
-// V4.24.2: a loja voltou, como PRIMEIRA coluna das duas seções, e o
-// patrimônio saiu. A contabilidade pivota por loja a partir da coluna.
-ok('a Loja é a primeira coluna das duas seções',
-  (hf.match(/<thead><tr><th>Loja<\/th>/g) || []).length === 2,
-  (hf.match(/<thead><tr><th>[^<]*/g) || []).join(' | '));
-ok('o patrimônio saiu', hf.indexOf('Patrimônio') === -1 && hf.indexOf('10000017') === -1,
-  'foi substituído pela loja a pedido');
-ok('não há coluna de porcentagem em nenhuma das duas',
-  hf.indexOf('% da loja') === -1 && hf.indexOf('% do total') === -1,
-  (hf.match(/<th[^>]*>%[^<]*/g) || []).join(' '));
-ok('a placa e o veículo continuam', /AAA 0001/.test(hf) && /Fiorino/.test(hf));
-ok('e a loja aparece no corpo', /Loja 02/.test(hf) && /Loja 10/.test(hf));
+console.log('\n10b. As colunas do modelo');
+const cab = (hf.match(/<thead><tr>([\s\S]*?)<\/tr><\/thead>/) || ['', ''])[1];
+const titulos = (cab.match(/<th[^>]*>([^<]*)<\/th>/g) || [])
+  .map(function (t) { return t.replace(/<[^>]*>/g, ''); });
+ok('a placa abre e o setor fecha, como no modelo',
+  titulos[0] === 'Placa' && titulos[titulos.length - 1] === 'Setor',
+  titulos.join(' | '));
+ok('a ordem das rubricas é a do modelo',
+  titulos.slice(0, 10).join('|') ===
+  'Placa|Tipo|Comb. litros|Comb. R$|Tipo com.|Lubrif. litros|Lubrif. R$|' +
+  'Lavação/graxa R$|Oficina R$|Pneus R$',
+  titulos.join(' | '));
+ok('o TOTAL vem logo antes do setor',
+  titulos[titulos.length - 2] === 'TOTAL R$', titulos.slice(-4).join(' | '));
+// O modelo é de antes do Arla e do gás existirem. Deixá-los de fora seria
+// perder dinheiro de vista num papel que vai assinado.
+ok('Arla 32 e gás entraram, que o modelo não tinha',
+  titulos.indexOf('Arla 32 R$') !== -1 && titulos.indexOf('Gás R$') !== -1,
+  titulos.join(' | '));
+ok('o IPVA NÃO tem coluna', titulos.indexOf('IPVA') === -1 &&
+  !titulos.some(function (t) { return /IPVA/.test(t); }), titulos.join(' | '));
+ok('a depreciação é uma coluna, não uma seção',
+  titulos.indexOf('Depreciação R$') !== -1);
+ok('e o veículo e o setor aparecem no corpo',
+  /AAA 0001/.test(hf) && /Fiorino/.test(hf) && /Loja 02/.test(hf) && /Loja 10/.test(hf));
 
-console.log('\n10c. A capa e as recusas');
-ok('a capa traz só os dois totais',
+console.log('\n10c. O TOTAL fecha com as colunas');
+const rop = ctx.relatorioOperacionalVeiculos_(null, null, null);
+const iTotal = rop.colunas.length - 2;
+ok('o total é 12.200, a soma das rubricas sem o IPVA',
+  rop.totais[iTotal] === 12200, String(rop.totais[iTotal]));
+// Se o IPVA entrasse seriam 12.710; se a depreciação saísse, 10.300.
+ok('com o IPVA dentro daria outro número', rop.totais[iTotal] !== 12710);
+ok('e sem a depreciação, outro ainda', rop.totais[iTotal] !== 10300);
+// Imobilizado não é despesa do mês: a coluna existe para conferência e fica
+// fora da soma. Com os 90.000 do carro novo dentro, o papel mentiria feio.
+ok('"Veículo novo" aparece na coluna', rop.totais[16] === 90000, String(rop.totais[16]));
+ok('e NÃO entra no TOTAL', rop.totais[iTotal] === 12200,
+  String(rop.totais[iTotal]));
+ok('a linha de cada veículo fecha sozinha', rop.linhas.every(function (l) {
+  let soma = 0;
+  rop.colunas.forEach(function (c, i) {
+    if (c.tipo !== 'moeda' || i === iTotal) return;
+    if (c.titulo === 'Veículo novo R$') return;   // imobilizado, fora do total
+    soma += Number(l[i]) || 0;
+  });
+  return Math.abs(soma - Number(l[iTotal])) < 0.005;
+}), JSON.stringify(rop.linhas.map(function (l) { return l[iTotal]; })));
+ok('o rodapé do relatório soma as colunas, não a média',
+  rop.totais[rop.colunas.length - 4] === null &&
+  rop.totais[rop.colunas.length - 3] === null,
+  'KM/litro e R$/KM são médias: somá-las não quer dizer nada');
+ok('o R$/KM da linha usa o TOTAL deste relatório', (function () {
+  const comKm = ctx.__resumo.slice();
+  const l = rop.linhas.filter(function (x) { return x[0] === 'AAA 0001'; })[0];
+  return l[rop.colunas.length - 3] === 0;   // sem KM na fixture, divisão evitada
+})(), 'divisão por zero vira NaN e NaN some no PDF');
+
+console.log('\n10c1. A capa e as recusas');
+ok('a capa traz dois indicadores',
   (hf.match(/<div class="rot">[^<]*<\/div><div class="val">/g) || []).length === 2,
   (hf.match(/<div class="rot">([^<]*)<\/div><div class="val">/g) || []).join(' | '));
-ok('depreciação na capa', /Depreciação<\/div><div class="val">R\$ 1\.900,00/.test(hf),
-  (hf.match(/Depreciação<\/div><div class="val">[^<]*/) || [''])[0]);
-ok('despesas na capa, com TODO o gasto menos a depreciação',
-  /Despesas<\/div><div class="val">R\$ 10\.300,00/.test(hf),
-  (hf.match(/Despesas<\/div><div class="val">[^<]*/) || [''])[0]);
-// 6.700 era oficina + pneus. Se esse número voltar, a seção encolheu de novo.
-ok('e não é mais só oficina e pneus', hf.indexOf('R$ 6.700,00') === -1,
-  'a seção 2 voltou a somar só oficina e pneus');
-ok('com a contagem de bens e de veículos', /3 bens/.test(hf) && /3 veículos/.test(hf));
+ok('o total da frota na capa', /Total da frota<\/div><div class="val">R\$ 12\.200,00/.test(hf),
+  (hf.match(/Total da frota<\/div><div class="val">[^<]*/) || [''])[0]);
+ok('e quanto disso é depreciação',
+  /Depreciação no total<\/div><div class="val">R\$ 1\.900,00/.test(hf),
+  (hf.match(/Depreciação no total<\/div><div class="val">[^<]*/) || [''])[0]);
+ok('o rodapé explica por que não há IPVA', /IPVA não tem coluna/.test(hf));
+ok('e diz o que o TOTAL soma', /inclusive multa e depreciação/.test(hf));
 
-// Os dois números saem do Resumo, que só tem o período corrente.
+// Os números saem do Resumo, que só tem o período corrente.
 let erroMes = '';
 try { ctx.htmlFechamentoPdf_('2026-09'); } catch (e) { erroMes = e.message; }
 ok('competência diferente da aberta é RECUSADA', erroMes !== '', 'gerou sem reclamar');
@@ -557,10 +610,8 @@ ok('nenhuma rubrica fica sem destino',
 ok('e só depreciação e IPVA ficam fora do total do Resumo',
   ctx.R_FORA_DA_DESPESA_.slice().sort().join(',') === 'DEPRECIACAO,IPVA',
   ctx.R_FORA_DA_DESPESA_.join(','));
-ok('o rodapé diz o que há dentro de "Outros"',
-  ctx.rubricasDeOutros_().every(function (n) { return hf.indexOf(n) !== -1; }),
-  ctx.rubricasDeOutros_().join(', '));
-ok('e avisa por que o IPVA não está lá', /IPVA não aparece na seção 2/.test(hf));
+ok('o "Outros" deste relatório tem legenda própria',
+  ctx.rubricasDeOutros_().length === 8, ctx.rubricasDeOutros_().join(', '));
 
 console.log('\n10d. A tabela genérica formata pelo tipo da coluna');
 // O PDF e a tela leem a MESMA função de relatório. Sem isso, um número no
@@ -595,20 +646,19 @@ console.log('\n10e. As duas pontas do documento');
 const fonteF = fs.readFileSync('Codigo.gs', 'utf8');
 // Os dois formatos do documento têm de ler a mesma fonte. Esta regra confere
 // os três lados: quem produz os dados, quem gera o PDF e quem gera a planilha.
-ok('os dados do fechamento saem das MESMAS funções da tela',
-  /function dadosFechamento_[\s\S]{0,1400}relatorioDepreciacaoPorBem_\(null, null, null\)/.test(fonteF) &&
-  /function dadosFechamento_[\s\S]{0,1400}relatorioDespesasPorVeiculo_\(null, null, null\)/.test(fonteF),
+ok('os dados do fechamento saem da MESMA função da tela',
+  /function dadosFechamento_[\s\S]{0,1400}relatorioOperacionalVeiculos_\(null, null, null\)/.test(fonteF),
   'duplicar a conta no documento faria o papel e a tela divergirem');
 ok('o PDF e a planilha leem de dadosFechamento_, cada um não refaz a conta',
   /function htmlFechamentoPdf_\(mesRef\) \{\s*const d = dadosFechamento_\(mesRef\);/.test(fonteF) &&
   /function gerarXlsxFechamento_\(mesRef\) \{[\s\S]{0,200}dadosFechamento_\(mesRef\)/.test(fonteF),
   'um formato lendo por fora aceitaria competência que o outro recusa');
 ok('nenhum dos dois chama o relatório direto',
-  !/function htmlFechamentoPdf_[\s\S]{0,2500}?relatorioDepreciacaoPorBem_/.test(fonteF),
+  !/function htmlFechamentoPdf_[\s\S]{0,2500}?relatorioOperacionalVeiculos_/.test(fonteF),
   'htmlFechamentoPdf_ voltou a montar os dados por conta própria');
 ok('e essas funções estão no catálogo, visíveis também na tela',
   /'Depreciação por veículo': \{/.test(fonteF) &&
-  /'Despesas por veículo \(exceto depreciação\)': \{/.test(fonteF),
+  /'Relatório Operacional dos Veículos': \{/.test(fonteF),
   'relatório que só o PDF enxerga não dá para conferir antes de enviar');
 ok('o estilo é um só para os dois documentos',
   /function estiloPdf_\(\)/.test(fonteF) &&

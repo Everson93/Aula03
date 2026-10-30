@@ -2022,6 +2022,15 @@
             '<input type="text" id="vCodigo" value="' + esc(v.codigo || '') + '"></div>' +
         '</div>' +
         '<div class="linha">' +
+          '<div><label for="vCombustivel">Combustível</label>' +
+            '<select id="vCombustivel"><option value=""></option>' +
+            (CONFIG.combustiveis || []).map(function (c) {
+              return '<option' + (String(v.combustivel || '') === c ? ' selected' : '') + '>' +
+                esc(c) + '</option>'; }).join('') + '</select>' +
+            '<div class="sub2">Sai como G, D ou F na coluna "Tipo Com." do relatório ' +
+            'operacional que vai para a contabilidade.</div></div>' +
+        '</div>' +
+        '<div class="linha">' +
           '<div><label for="vAtivo">Situação</label>' +
             seletor('vAtivo', ['ATIVO', 'INATIVO']) + '</div>' +
           '<div style="flex:2"><div class="sub2" style="margin-top:26px">' +
@@ -2087,6 +2096,7 @@
         emplacamento: el('vEmplacamento').value, seguro: el('vSeguro').value,
         precoCombustivel: el('vPreco').value,
         ipva: el('vIpva') ? el('vIpva').value : 0,
+        combustivel: el('vCombustivel') ? el('vCombustivel').value : '',
         ativo: !el('vAtivo') || el('vAtivo').value !== 'INATIVO'
       });
   }

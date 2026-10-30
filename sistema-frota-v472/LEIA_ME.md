@@ -1752,6 +1752,13 @@ delas gravando no vizinho.
 
 # Pendente
 
+- **IPVA contado duas vezes no Resumo?** O relatório operacional (V4.29) tira
+  o IPVA do TOTAL porque o contábil já o embute na depreciação que envia. Mas
+  a coluna `TOTAL R$` do **Resumo** continua somando o IPVA e a depreciação —
+  se a premissa está certa, o Resumo está inflado em um IPVA por veículo. Vale
+  conferir com a contabilidade antes de mexer: o número do Resumo é o que
+  fecha o Histórico de todos os meses anteriores.
+
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
   origem na migração das 170 abas, e **nada no código atual lê ou escreve nela**.
   Pode já conter um agrupamento útil da planilha antiga; vale olhar antes de
@@ -3467,3 +3474,77 @@ despesa" e "a depreciação entra na seção 2".
 
 `conferir_pdf_rateio.js` 126 → **143**; `conferir_planilha_fechamento.js`
 41 → **46**. Total do projeto: 1.071 → **1.093**.
+
+## V4.29.0 — o relatório no formato que a contabilidade já conhece
+
+O usuário mandou o `MOdelo_de_relatorio.xlsx`: o **Relatório Operacional dos
+Veículos** da planilha antiga, que a contabilidade recebe há anos. Uma tabela
+só, uma linha por veículo, vinte e uma colunas, o setor no fim.
+
+As duas seções que eu vinha montando (depreciação e despesas) saíram. O
+documento do fechamento virou essa tabela.
+
+### O mapeamento
+
+Quase tudo já existia no Resumo. O que o modelo tem e o sistema não tinha:
+
+- **Tipo Com.** (G/D) — o sistema não guardava o combustível do veículo em
+  lugar nenhum. Entrou a coluna **Combustível** no cadastro, com lista
+  (Gasolina, Diesel, Flex, Etanol, GNV, Elétrico). **Esta é a única mudança
+  estrutural: precisa rodar "Instalar / atualizar sistema".**
+- **Lubrif. litros** — o Resumo soma o valor do lubrificante, não os litros.
+  Sai de Lançamentos, numa passagem só. Fica vazio quando o operador não
+  preencheu, que é a verdade: o sistema não sabe.
+
+E duas diferenças deliberadas em relação ao modelo:
+
+- **Arla 32 e Gás ganharam coluna.** O modelo é de antes de eles existirem.
+  Deixá-los de fora seria perder dinheiro de vista num papel assinado.
+- **A multa entra no TOTAL.** No modelo a coluna aparecia e a fórmula
+  `=D+G+H+I+J+M+N+P+K` não a somava. Decisão do usuário, 30/10/2026.
+
+### O TOTAL é somado das colunas que aparecem
+
+Não é cópia de `R_.TOTAL`. A coluna do Resumo inclui o IPVA, e este relatório
+não tem coluna de IPVA — ele já vem embutido na depreciação que a
+contabilidade envia. Um TOTAL que não fecha com a soma das colunas visíveis é
+a pior coisa que um relatório contábil pode ter: quem confere vai somar na
+calculadora.
+
+Isso abriu uma pergunta que ficou **pendente**: se a premissa está certa, a
+coluna TOTAL do próprio Resumo está inflada em um IPVA por veículo. Não mexi
+— esse número fecha o Histórico de todos os meses já encerrados.
+
+### O tipo `decimal` queria dizer duas coisas
+
+Achado no caminho. No PDF, `decimal` escrevia o valor **com %**; na tela,
+sem. E ele era usado tanto para porcentagem quanto para litros e KM/litro —
+ou seja, "248,06 litros" sairia no papel como **248,06%**. Ninguém tinha
+comparado os dois formatadores.
+
+Agora são três tipos: `decimal` é porcentagem (e a tela passou a pôr o % também),
+`litros` tem três casas e `media` duas. Onze colunas migraram.
+
+### 23 colunas numa folha A4
+
+A folha já era deitada. Entrou um modo **compacto** na tabela do PDF (fonte
+menor e `white-space: nowrap` nas células numéricas) — sem o nowrap o
+navegador quebrava "R$ 1.234,00" em duas linhas e a tabela ficava ilegível,
+sem dar erro nenhum.
+
+Na planilha, a linha acima do cabeçalho virou a **faixa de grupo** do modelo:
+"Combustível" por cima de litros e R$, "Lubrificante" idem.
+
+### Mutação: 11 de 11
+
+A última a cair foi **"Veículo novo entra no TOTAL"**: a fixture tinha zero
+na coluna de imobilizado, então somá-la ou não dava o mesmo número. Com
+R$ 90.000 de carro novo na fixture, o mutante fica evidente — é justamente o
+tipo de valor que, somado por engano, faria o papel mentir feio.
+
+Também caiu de novo a regra de desempenho: a faixa de grupo era escrita
+célula a célula dentro de um laço. Virou uma escrita só, com as junções
+depois.
+
+`conferir_pdf_rateio.js` 143 → **152**; `conferir_planilha_fechamento.js`
+46 → **47**. Total do projeto: 1.093 → **1.103**.

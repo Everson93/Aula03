@@ -193,6 +193,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     ('0'+(d.getMonth()+1)).slice(-2) + '/' + d.getFullYear(); };
   timezone_ = function () { return 'America/Sao_Paulo'; };
   emailContextoAtual_ = function () { return 'fulano@giassi.com.br'; };
+  lerLancamentos_ = function () { return []; };
   lerResumo_ = function () { return __resumo || []; };
   dadosVeiculosExecucao_ = function () { return []; };
   pastaDeRelatorios_ = function () {
@@ -234,99 +235,94 @@ function gerar() {
   return ctx.gerarXlsxFechamento_('');
 }
 
-console.log('\n1. As abas e a ordem delas');
+console.log('\n1. A aba única, no formato do modelo');
 const arquivo = gerar();
 const planilha = diario.criadas[0];
 const nomes = planilha.getSheets().map(function (a) { return a.getName(); });
-ok('três abas: capa, depreciação e despesas',
-  nomes.join(' | ') === '0_Informacoes | 1_Depreciacao | 2_Despesas', nomes.join(' | '));
+ok('capa e relatório', nomes.join(' | ') === '0_Informacoes | Relatorio', nomes.join(' | '));
 ok('o arquivo sai com o nome da competência',
   arquivo.getName() === 'Frota_Fechamento_2026-10.xlsx', arquivo.getName());
 ok('e guardado na pasta de relatórios', diario.arquivos.length === 1);
 
-const dep = planilha.getSheets()[1];
-const man = planilha.getSheets()[2];
+const rel = planilha.getSheets()[1];
+const CAB = 4, PRIMEIRA = 5, TOTAL = 10;   // 5 veículos na fixture
 
 console.log('\n2. Valor é número, não texto que parece dinheiro');
-// A contabilidade vai SOMAR estas células. Texto formatado passa despercebido
-// na tela e quebra toda fórmula em cima.
-const celulaValor = dep.valor(5, 4);
-ok('a depreciação da primeira linha é número',
-  typeof celulaValor === 'number', typeof celulaValor + ' = ' + celulaValor);
-ok('é o valor cru, sem R$ nem separador',
-  celulaValor === 300, String(celulaValor));
-ok('quem formata é o formato de exibição da célula',
-  dep.formato(5, 4) === 'R$ #,##0.00', String(dep.formato(5, 4)));
+// A contabilidade vai SOMAR estas células. Texto formatado passa
+// despercebido na tela e quebra toda fórmula em cima.
+ok('o combustível da primeira linha é número',
+  typeof rel.valor(PRIMEIRA, 4) === 'number',
+  typeof rel.valor(PRIMEIRA, 4) + ' = ' + rel.valor(PRIMEIRA, 4));
+ok('é o valor cru, sem R$ nem separador', rel.valor(PRIMEIRA, 22) === 400,
+  String(rel.valor(PRIMEIRA, 22)));
+ok('quem formata é o formato de exibição', rel.formato(PRIMEIRA, 22) === 'R$ #,##0.00',
+  String(rel.formato(PRIMEIRA, 22)));
+ok('litros têm três casas, não formato de moeda',
+  rel.formato(PRIMEIRA, 3) === '#,##0.000', String(rel.formato(PRIMEIRA, 3)));
+ok('KM/litro é média, sem o % que o tipo "decimal" põe',
+  rel.formato(PRIMEIRA, 20) === '#,##0.00', String(rel.formato(PRIMEIRA, 20)));
 ok('a coluna de texto não ganha formato de moeda',
-  dep.formato(5, 1) === '@', String(dep.formato(5, 1)));
-ok('formatoPlanilha_ cobre os tipos declarados',
-  ctx.formatoPlanilha_('moeda') === 'R$ #,##0.00' &&
-  ctx.formatoPlanilha_('moeda3') === 'R$ #,##0.000' &&
-  ctx.formatoPlanilha_('numero') === '#,##0' &&
-  ctx.formatoPlanilha_('decimal') === '#,##0.00"%"' &&
-  ctx.formatoPlanilha_('texto') === '@');
+  rel.formato(PRIMEIRA, 1) === '@', String(rel.formato(PRIMEIRA, 1)));
 
-console.log('\n3. A loja abre as duas abas');
-ok('Loja é o cabeçalho da coluna 1 na depreciação', dep.valor(4, 1) === 'Loja', String(dep.valor(4, 1)));
-ok('Loja é o cabeçalho da coluna 1 nas despesas', man.valor(4, 1) === 'Loja', String(man.valor(4, 1)));
-ok('a primeira linha da depreciação é a Loja 01', dep.valor(5, 1) === 'Loja 01', String(dep.valor(5, 1)));
-ok('a primeira linha das despesas é a Loja 01', man.valor(5, 1) === 'Loja 01', String(man.valor(5, 1)));
-ok('as despesas não estão ordenadas só por valor: a Loja 01 gastou menos',
-  man.valor(5, 9) === 100, String(man.valor(5, 9)));
-// O aviso tem de aparecer, mas no FIM: um documento que vai para a
-// contabilidade não abre com uma linha de problema.
-ok('veículo sem centro de custo sai avisando, não em branco',
-  man.valor(9, 1) === '⚠ sem loja', String(man.valor(9, 1)));
-ok('e sai depois das lojas de verdade, não na frente',
-  ['Loja 01', 'Loja 02', 'Loja 02', 'Loja 10'].join(',') ===
-  [man.valor(5, 1), man.valor(6, 1), man.valor(7, 1), man.valor(8, 1)].join(','),
-  [man.valor(5, 1), man.valor(6, 1), man.valor(7, 1), man.valor(8, 1), man.valor(9, 1)].join(','));
+console.log('\n3. As colunas e os grupos do modelo');
+ok('a placa abre', rel.valor(CAB, 1) === 'Placa', String(rel.valor(CAB, 1)));
+ok('o setor fecha', rel.valor(CAB, 23) === 'Setor', String(rel.valor(CAB, 23)));
+ok('o TOTAL vem antes do setor', rel.valor(CAB, 22) === 'TOTAL R$', String(rel.valor(CAB, 22)));
+ok('nenhuma coluna é de IPVA', (function () {
+  for (let c = 1; c <= 23; c++) if (/IPVA/.test(String(rel.valor(CAB, c) || ''))) return false;
+  return true;
+})());
+// O modelo junta "Combustível" por cima de litros e R$. A faixa de grupo vai
+// na linha de cima do cabeçalho, que antes ficava vazia.
+ok('a faixa "Combustível" fica sobre as colunas dele',
+  rel.valor(CAB - 1, 3) === 'Combustível', String(rel.valor(CAB - 1, 3)));
+ok('e "Lubrificante" sobre as dele',
+  rel.valor(CAB - 1, 6) === 'Lubrificante', String(rel.valor(CAB - 1, 6)));
+ok('a faixa não escreve por cima da placa',
+  !rel.valor(CAB - 1, 1), String(rel.valor(CAB - 1, 1)));
 
-console.log('\n4. O total');
-// O índice do total já andou uma casa quando a Loja entrou na frente. Aqui a
-// prova é posicional: o total fica sob o cabeçalho que o promete.
-const linhaTotalDep = 4 + 4 + 1;   // cabeçalho + 4 veículos com depreciação + 1
-ok('a linha de total da depreciação diz TOTAL',
-  dep.valor(linhaTotalDep, 1) === 'TOTAL', String(dep.valor(linhaTotalDep, 1)));
-ok('e soma os quatro valores', dep.valor(linhaTotalDep, 4) === 7000,
-  String(dep.valor(linhaTotalDep, 4)));
-const linhaTotalMan = 4 + 5 + 1;
-// Toda a despesa menos depreciação e IPVA: 1400+150+3900+100+600 = 6150.
-ok('o total das despesas fica sob o cabeçalho "Despesa"',
-  man.valor(4, 9) === 'Despesa' && man.valor(linhaTotalMan, 9) === 6150,
-  man.valor(4, 9) + ' = ' + man.valor(linhaTotalMan, 9));
-ok('e não é o total dos pneus',
-  man.valor(linhaTotalMan, 7) === 200, String(man.valor(linhaTotalMan, 7)));
-ok('o IPVA não está em lugar nenhum da aba',
-  man.valor(linhaTotalMan, 9) !== 6150 + 150, String(man.valor(linhaTotalMan, 9)));
-ok('o combustível entra na soma', man.valor(linhaTotalMan, 5) === 1400,
-  String(man.valor(linhaTotalMan, 5)));
-ok('e o pedágio entra em "Outros"', man.valor(linhaTotalMan, 8) === 150,
-  String(man.valor(linhaTotalMan, 8)));
-ok('o total também é número', typeof dep.valor(linhaTotalDep, 4) === 'number');
-ok('a célula de total tem formato de moeda',
-  dep.formato(linhaTotalDep, 4) === 'R$ #,##0.00');
+console.log('\n4. A ordem e o setor');
+ok('a primeira linha é a Loja 01', rel.valor(PRIMEIRA, 23) === 'Loja 01',
+  String(rel.valor(PRIMEIRA, 23)));
+ok('ordena por setor, não por valor',
+  [rel.valor(5, 23), rel.valor(6, 23), rel.valor(7, 23), rel.valor(8, 23)].join(',') ===
+  'Loja 01,Loja 02,Loja 02,Loja 10',
+  [rel.valor(5, 23), rel.valor(6, 23), rel.valor(7, 23), rel.valor(8, 23)].join(','));
+ok('dentro do setor, por placa',
+  rel.valor(6, 1) === 'AAA 0001' && rel.valor(7, 1) === 'CCC 0003',
+  rel.valor(6, 1) + ',' + rel.valor(7, 1));
+ok('veículo sem centro de custo sai avisando, no fim',
+  rel.valor(9, 23) === '⚠ sem loja', String(rel.valor(9, 23)));
+ok('todo veículo do Resumo aparece, inclusive sem gasto nenhum',
+  rel.valor(TOTAL, 1) === 'TOTAL', String(rel.valor(TOTAL, 1)));
 
-console.log('\n5. A capa');
+console.log('\n5. O total e a capa');
+// 2400 + 850 + 8900 + 400 + 600, sem os 150 de IPVA.
+ok('o TOTAL soma as rubricas sem o IPVA', rel.valor(TOTAL, 22) === 13150,
+  String(rel.valor(TOTAL, 22)));
+ok('com o IPVA daria outro número', rel.valor(TOTAL, 22) !== 13150 + 150);
+ok('a depreciação entra no total', rel.valor(TOTAL, 18) === 7000,
+  String(rel.valor(TOTAL, 18)));
+ok('as médias não são somadas no rodapé',
+  (rel.valor(TOTAL, 20) === '' || rel.valor(TOTAL, 20) === undefined) &&
+  (rel.valor(TOTAL, 21) === '' || rel.valor(TOTAL, 21) === undefined),
+  rel.valor(TOTAL, 20) + ' / ' + rel.valor(TOTAL, 21));
+ok('o total também é número', typeof rel.valor(TOTAL, 22) === 'number');
+
 const capa = planilha.getSheets()[0];
 function procurarNaCapa(rotulo) {
   for (let l = 1; l <= 20; l++) if (capa.valor(l, 1) === rotulo) return capa.valor(l, 2);
   return undefined;
 }
 ok('a capa traz a competência', procurarNaCapa('Competência') === '2026-10');
-ok('a capa traz a depreciação como número', procurarNaCapa('Depreciação R$') === 7000);
-ok('a capa traz as despesas como número',
-  procurarNaCapa('Despesas R$ (exceto depreciação)') === 6150,
-  String(procurarNaCapa('Despesas R$ (exceto depreciação)')));
-ok('e diz o que ficou fora da seção 2',
-  /IPVA/.test(String(procurarNaCapa('Fora da seção 2'))),
-  String(procurarNaCapa('Fora da seção 2')));
-ok('e o que há dentro de "Outros"',
-  String(procurarNaCapa('Dentro de "Outros"')).indexOf('pedágio') !== -1,
-  String(procurarNaCapa('Dentro de \"Outros\"')));
-ok('os totais da capa batem com os das abas',
-  procurarNaCapa('Depreciação R$') === dep.valor(linhaTotalDep, 4) &&
-  procurarNaCapa('Despesas R$ (exceto depreciação)') === man.valor(linhaTotalMan, 9));
+ok('a capa traz o total como número', procurarNaCapa('Total da frota R$') === 13150,
+  String(procurarNaCapa('Total da frota R$')));
+ok('e bate com o rodapé da aba',
+  procurarNaCapa('Total da frota R$') === rel.valor(TOTAL, 22));
+ok('a capa diz por que não há IPVA',
+  /embutido/.test(String(procurarNaCapa('IPVA'))), String(procurarNaCapa('IPVA')));
+ok('e o que o TOTAL soma',
+  /multa/.test(String(procurarNaCapa('TOTAL'))), String(procurarNaCapa('TOTAL')));
 
 console.log('\n6. A exportação e a planilha temporária');
 ok('pede a exportação em xlsx',

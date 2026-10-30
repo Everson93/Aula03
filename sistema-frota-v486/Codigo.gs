@@ -549,7 +549,16 @@ const COL_VEIC = {
   // V4.7.2: IPVA anual. O 1/12 é gerado todo mês pela mesma máquina da depreciação.
   // Acrescentado no fim de propósito: assim nenhuma coluna existente se desloca.
   IPVA: 13,
+  // V4.29: combustivel do veiculo, para a coluna "Tipo Com." do relatorio
+  // operacional. No fim pelo mesmo motivo de sempre: nenhuma coluna existente
+  // muda de letra, e formula de aba antiga continua valendo.
+  COMBUSTIVEL: 14,
 };
+
+/** Combustiveis do cadastro. A letra e o que sai no relatorio operacional. */
+const COMBUSTIVEIS_VEICULO = ['Gasolina', 'Diesel', 'Flex', 'Etanol', 'GNV', 'Elétrico'];
+const LETRA_COMBUSTIVEL_ = { 'Gasolina': 'G', 'Diesel': 'D', 'Flex': 'F', 'Etanol': 'E',
+  'GNV': 'GNV', 'Elétrico': 'EL' };
 
 const TOTAL_COL_VEIC = totalColunas_(COL_VEIC);
 
@@ -597,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.28.0';
+const VERSAO_SISTEMA = '4.29.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1595,7 +1604,7 @@ const CABECALHOS = {};
 CABECALHOS[ABAS.CENTROS] = ['Centro de Custo', '% Rateio Depósito', 'Recebe Rateio'];
 CABECALHOS[ABAS.VEICULOS] = ['Placa / ID', 'Descrição', 'Categoria', 'Centro de Custo',
   'Código Patrimônio', 'Depreciação Mensal', 'Emplacamento', 'Seguro', 'Bônus',
-  'Preço Comb. Próprio', 'Ativo', 'Aba de Origem', 'IPVA Anual'];
+  'Preço Comb. Próprio', 'Ativo', 'Aba de Origem', 'IPVA Anual', 'Combustível'];
 CABECALHOS[ABAS.LANCAMENTOS] = ['Data', 'Placa / ID', 'Tipo de Despesa', 'Litros',
   'Valor R$', 'NF / Documento / OS', 'Observação', 'Centro de Custo',
   'Categoria', 'Período', 'ID Lançamento', 'Natureza da Oficina', 'Detalhe da Peça / Serviço',
@@ -1618,7 +1627,7 @@ CABECALHOS[ABAS.COMPROVANTES] = ['Data do Abastecimento', 'Placa / ID', 'Tipo de
 
 const LARGURAS = {};
 LARGURAS[ABAS.CENTROS] = [180, 140, 120];
-LARGURAS[ABAS.VEICULOS] = [110, 200, 170, 150, 130, 140, 130, 100, 80, 140, 70, 130, 110];
+LARGURAS[ABAS.VEICULOS] = [110, 200, 170, 150, 130, 140, 130, 100, 80, 140, 70, 130, 110, 110];
 LARGURAS[ABAS.LANCAMENTOS] = [95, 110, 190, 90, 110, 145, 220, 150, 150, 90, 155, 190, 300, 190, 145];
 LARGURAS[ABAS.ODOMETRO] = [95, 110, 130];
 LARGURAS[ABAS.FORNECEDORES] = [230, 160, 190, 70, 300];
@@ -2567,6 +2576,9 @@ function aplicarValidacoes_() {
   odometro.getRange(2, 2, odometro.getMaxRows() - 1, 1).setDataValidation(regraPlaca);
   veiculos.getRange(2, COL_VEIC.CENTRO, veiculos.getMaxRows() - 1, 1).setDataValidation(regraCentro);
   veiculos.getRange(2, COL_VEIC.ATIVO, veiculos.getMaxRows() - 1, 1).setDataValidation(regraSimNao);
+  veiculos.getRange(2, COL_VEIC.COMBUSTIVEL, veiculos.getMaxRows() - 1, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(COMBUSTIVEIS_VEICULO, true)
+      .setAllowInvalid(true).build());
   // V4.8: dropdown de categoria (inclui "Carro Novo"); aceita outra categoria digitada.
   veiculos.getRange(2, COL_VEIC.CATEGORIA, veiculos.getMaxRows() - 1, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(listaCategorias_(), true)
@@ -3483,6 +3495,7 @@ function dadosFormulario() {
     fornecedores: listaFornecedores_(true),
     tiposFornecedor: TIPOS_FORNECEDOR,
     produtosBomba: PRODUTOS_BOMBA,
+    combustiveis: COMBUSTIVEIS_VEICULO,
     mes: mesRef,
     inicio: Utilities.formatDate(periodo.inicio, tz, 'yyyy-MM-dd'),
     fim: Utilities.formatDate(periodo.fim, tz, 'yyyy-MM-dd'),
@@ -6691,6 +6704,28 @@ const CATALOGO_RELATORIOS = {
     ],
   },
 
+  'Relatório Operacional dos Veículos': {
+    descricao: 'O relatório que vai para a contabilidade, no formato da planilha antiga: ' +
+      'uma linha por veículo, todas as rubricas em colunas e o setor no fim. O IPVA não ' +
+      'tem coluna: já vem embutido no valor da depreciação.',
+    somenteApp: true,
+    fonte: 'resumo',
+    filtros: ['centro', 'categoria', 'veiculoResumo'],
+    colunas: [
+      ['Placa', '@', 100], ['Tipo', '@', 170],
+      ['Comb. litros', '#,##0.000', 95], ['Comb. R$', 'R$ #,##0.00', 105], ['Tipo com.', '@', 70],
+      ['Lubrif. litros', '#,##0.000', 95], ['Lubrif. R$', 'R$ #,##0.00', 105],
+      ['Lavação/graxa R$', 'R$ #,##0.00', 115], ['Oficina R$', 'R$ #,##0.00', 105],
+      ['Pneus R$', 'R$ #,##0.00', 100], ['Arla 32 R$', 'R$ #,##0.00', 100],
+      ['Gás R$', 'R$ #,##0.00', 95], ['Emplacam. R$', 'R$ #,##0.00', 105],
+      ['Multa R$', 'R$ #,##0.00', 95], ['Seguro R$', 'R$ #,##0.00', 100],
+      ['Pedágio R$', 'R$ #,##0.00', 100], ['Veículo novo R$', 'R$ #,##0.00', 110],
+      ['Depreciação R$', 'R$ #,##0.00', 115], ['KM rodado', '#,##0', 95],
+      ['KM/litro', '#,##0.00', 85], ['R$ por KM', 'R$ #,##0.000', 95],
+      ['TOTAL R$', 'R$ #,##0.00', 120], ['Setor', '@', 140],
+    ],
+  },
+
   'Despesas por veículo (exceto depreciação)': {
     descricao: 'Todo o gasto do veículo na competência menos a depreciação. O IPVA ' +
       'não entra: já vem embutido no valor da depreciação. É a seção 2 do documento ' +
@@ -8271,6 +8306,14 @@ function estiloPdf_() {
     'table.dados tbody tr:nth-child(even) td { background: #faf9f8; }' +
     'tr.orfao td { background: ' + CORES.VERMELHO + ' !important; }' +
     'tr.loja td { background: ' + CORES.LARANJA_CLARO + ' !important; font-weight: bold; }' +
+    // 23 colunas numa folha A4 deitada: sem isto a tabela estoura a margem e
+    // o navegador corta a direita sem avisar.
+    'table.compacta th { font-size: 5.6pt; padding: 5px 3px; letter-spacing: 0; }' +
+    'table.compacta td { font-size: 6.4pt; padding: 3px 3px; }' +
+    'table.compacta tr.total td { font-size: 7pt; padding-top: 5px; }' +
+    // Sem isto o navegador quebra "R$ 1.234,00" em duas linhas dentro da
+    // celula estreita, e a tabela fica ilegivel sem dar erro nenhum.
+    'table.compacta td.n, table.compacta th.n { white-space: nowrap; }' +
     '.centro { font-weight: bold; }' +
     '.tag { font-size: 6.5pt; font-weight: normal; text-transform: uppercase; letter-spacing: .5px; ' +
       'background: ' + CORES.VERMELHO + '; color: #8a1c1c; padding: 1px 5px; margin-left: 6px; border-radius: 2px; }' +
@@ -8433,7 +8476,7 @@ function tipoEhNumerico_(tipo) {
   return TIPOS_NUMERICOS_RELATORIO_.indexOf(tipo) !== -1;
 }
 
-function tabelaRelatorioPdf_(rel) {
+function tabelaRelatorioPdf_(rel, opcoes) {
   function celula(valor, tipo, forte) {
     const numerico = tipoEhNumerico_(tipo);
     let texto;
@@ -8468,7 +8511,8 @@ function tabelaRelatorioPdf_(rel) {
       }).join('') + '</tr>'
     : '';
 
-  return '<table class="dados"><thead><tr>' + cabecalho + '</tr></thead><tbody>' +
+  const classe = 'dados' + (opcoes && opcoes.compacta ? ' compacta' : '');
+  return '<table class="' + classe + '"><thead><tr>' + cabecalho + '</tr></thead><tbody>' +
     (corpo || '<tr><td colspan="' + rel.colunas.length + '">Nenhum lançamento no período.</td></tr>') +
     totais + '</tbody></table>';
 }
@@ -8498,22 +8542,24 @@ function dadosFechamento_(mesRef) {
       'corrente — gerá-lo para ' + alvo + ' produziria um documento com o cabeçalho de ' +
       'um mês e os valores de outro.');
   }
-  const dep = relatorioDepreciacaoPorBem_(null, null, null);
-  const man = relatorioDespesasPorVeiculo_(null, null, null);
+  const op = relatorioOperacionalVeiculos_(null, null, null);
+  const iTotal = op.colunas.length - 2;      // a ultima coluna e o Setor
+  const iDep = op.colunas.length - 6;
   return {
     competencia: alvo,
     periodo: periodoDoMes_(alvo),
-    dep: dep,
-    man: man,
-    totalDep: Number(dep.totais[dep.totais.length - 1]) || 0,
-    totalMan: Number(man.totais[man.totais.length - 1]) || 0,
+    op: op,
+    total: Number(op.totais[iTotal]) || 0,
+    totalDep: Number(op.totais[iDep]) || 0,
+    veiculos: op.linhas.length,
   };
 }
 
-const SUB_DEPRECIACAO_FECHAMENTO_ = 'Um veículo por linha, com a loja a que ele pertence. ' +
-  'Valores lançados na competência.';
-const SUB_MANUTENCAO_FECHAMENTO_ = 'Todo o gasto de cada veículo na competência, exceto a ' +
-  'depreciação. Por loja e, dentro dela, do maior gasto para o menor.';
+const SUB_FECHAMENTO_ = 'Uma linha por veículo, com todas as rubricas da competência. ' +
+  'Ordenado por setor e, dentro dele, pela placa.';
+const NOTA_IPVA_FECHAMENTO_ = 'O IPVA não tem coluna: já vem embutido no valor da ' +
+  'depreciação que a contabilidade envia. O TOTAL é a soma das colunas de valor deste ' +
+  'relatório, inclusive multa e depreciação; "Veículo novo" é imobilizado e fica fora.';
 
 /**
  * Documento unico do fechamento em PDF, para a contabilidade.
@@ -8523,27 +8569,20 @@ function htmlFechamentoPdf_(mesRef) {
 
   return '<!doctype html><html><head><meta charset="utf-8"><style>' + estiloPdf_() +
     '</style></head><body>' +
-    cabecalhoPdf_('Fechamento da Frota', d.competencia, d.periodo) +
+    cabecalhoPdf_('Relatório Operacional dos Veículos', d.competencia, d.periodo) +
 
     '<table class="kpis"><tr>' +
-      '<td><div class="rot">Depreciação</div><div class="val">' + brlPdf_(d.totalDep) + '</div>' +
-        '<div class="rot">' + numBR_(d.dep.linhas.length, 0) + ' bens</div></td>' +
-      '<td><div class="rot">Despesas</div><div class="val">' + brlPdf_(d.totalMan) + '</div>' +
-        '<div class="rot">' + numBR_(d.man.linhas.length, 0) + ' veículos • exceto depreciação</div></td>' +
+      '<td><div class="rot">Total da frota</div><div class="val">' + brlPdf_(d.total) + '</div>' +
+        '<div class="rot">' + numBR_(d.veiculos, 0) + ' veículos</div></td>' +
+      '<td><div class="rot">Depreciação no total</div><div class="val">' + brlPdf_(d.totalDep) + '</div>' +
+        '<div class="rot">IPVA embutido</div></td>' +
     '</tr></table>' +
 
-    '<div class="secao"><h2>1. Depreciação</h2>' +
-      '<p class="sub" style="margin:0 0 8px">' + escHtml_(SUB_DEPRECIACAO_FECHAMENTO_) + '</p>' +
-      tabelaRelatorioPdf_(d.dep) + '</div>' +
+    '<p class="sub" style="margin:0 0 8px">' + escHtml_(SUB_FECHAMENTO_) + '</p>' +
+    tabelaRelatorioPdf_(d.op, { compacta: true }) +
 
-    '<div class="secao quebra"><h2>2. Despesas da frota</h2>' +
-      '<p class="sub" style="margin:0 0 8px">' + escHtml_(SUB_MANUTENCAO_FECHAMENTO_) + '</p>' +
-      tabelaRelatorioPdf_(d.man) + '</div>' +
-
-    rodapePdf_('As duas seções são da mesma competência e do mesmo Resumo. ' +
-      'Cada veículo é vinculado à loja pelo centro de custo do cadastro. ' +
-      '"Outros" reúne ' + escHtml_(rubricasDeOutros_().join(', ')) + '. ' +
-      'O IPVA não aparece na seção 2 porque já está embutido no valor da depreciação.') +
+    rodapePdf_('Cada veículo é vinculado ao setor pelo centro de custo do cadastro. ' +
+      escHtml_(NOTA_IPVA_FECHAMENTO_)) +
     '</body></html>';
 }
 
@@ -8559,6 +8598,8 @@ function formatoPlanilha_(tipo) {
   if (tipo === 'moeda3') return 'R$ #,##0.000';
   if (tipo === 'numero') return '#,##0';
   if (tipo === 'decimal') return '#,##0.00"%"';
+  if (tipo === 'litros') return '#,##0.000';
+  if (tipo === 'media') return '#,##0.00';
   return '@';
 }
 
@@ -8584,9 +8625,28 @@ function escreverRelatorioNaAba_(aba, rel, titulo, subtitulo) {
   aba.getRange(2, 1, 1, nCols).merge().setValue(subtitulo)
     .setFontColor(CORES.GRAFITE).setWrap(true);
 
+  // Faixa de grupo sobre as colunas que o modelo da contabilidade agrupa
+  // ("Combustível" por cima de litros e R$). Vai na linha de cima do
+  // cabecalho, que ate aqui ficava vazia.
+  const grupos = (rel.grupos || []).filter(function (g) {
+    return g.ate >= g.de && g.ate <= nCols;
+  });
+  if (grupos.length) {
+    // A linha inteira numa escrita so, e depois so as junções: escrita de
+    // planilha dentro de laco e o custo mais caro do Apps Script.
+    const faixaGrupo = new Array(nCols).fill('');
+    grupos.forEach(function (g) { faixaGrupo[g.de - 1] = g.titulo; });
+    aba.getRange(LINHA_CAB - 1, 1, 1, nCols).setValues([faixaGrupo])
+      .setHorizontalAlignment('center').setFontWeight('bold')
+      .setBackground(CORES.LARANJA_CLARO);
+    grupos.forEach(function (g) {
+      if (g.ate > g.de) aba.getRange(LINHA_CAB - 1, g.de, 1, g.ate - g.de + 1).merge();
+    });
+  }
+
   aba.getRange(LINHA_CAB, 1, 1, nCols)
     .setValues([rel.colunas.map(function (c) { return c.titulo; })])
-    .setBackground(CORES.LARANJA).setFontColor(CORES.PRETO).setFontWeight('bold');
+    .setBackground(CORES.LARANJA).setFontColor(CORES.PRETO).setFontWeight('bold').setWrap(true);
 
   if (rel.linhas.length) {
     aba.getRange(LINHA_CAB + 1, 1, rel.linhas.length, nCols).setValues(rel.linhas);
@@ -8633,20 +8693,21 @@ function capaPlanilhaFechamento_(aba, d) {
     ['Gerado em', Utilities.formatDate(agora, timezone_(), 'dd/MM/yyyy HH:mm:ss')],
     ['Gerado por', emailContextoAtual_()],
     ['Versão do sistema', VERSAO_SISTEMA],
-    ['Depreciação R$', d.totalDep],
-    ['Veículos com depreciação', d.dep.linhas.length],
-    ['Despesas R$ (exceto depreciação)', d.totalMan],
-    ['Veículos com despesa', d.man.linhas.length],
-    ['Origem', 'Aba Resumo da competência aberta. As duas abas são do mesmo Resumo.'],
-    ['Alocação', 'Cada veículo é vinculado à loja pelo centro de custo do cadastro.'],
-    ['Fora da seção 2', 'IPVA (já embutido na depreciação) e a própria depreciação.'],
-    ['Dentro de "Outros"', rubricasDeOutros_().join(', ')],
+    ['Total da frota R$', d.total],
+    ['Veículos', d.veiculos],
+    ['Depreciação dentro do total R$', d.totalDep],
+    ['Origem', 'Aba Resumo da competência aberta.'],
+    ['Alocação', 'Cada veículo é vinculado ao setor pelo centro de custo do cadastro.'],
+    ['IPVA', 'Sem coluna: já vem embutido no valor da depreciação enviado pela contabilidade.'],
+    ['TOTAL', 'Soma das colunas de valor, inclusive multa e depreciação. "Veículo novo" ' +
+      'é imobilizado e fica fora.'],
   ];
   prepararAbaExportacao_(aba, valores, 1);
   aba.getRange('A1:B1').setBackground(CORES.PRETO).setFontColor(CORES.BRANCO).setFontWeight('bold');
   aba.getRange(2, 1, valores.length - 1, 1).setFontWeight('bold');
   aba.getRange('B8').setNumberFormat('R$ #,##0.00');
   aba.getRange('B10').setNumberFormat('R$ #,##0.00');
+  aba.getRange('B9').setNumberFormat('#,##0');
   aba.setColumnWidth(1, 230);
   aba.setColumnWidth(2, 520);
 }
@@ -8668,12 +8729,9 @@ function gerarXlsxFechamento_(mesRef) {
     const capa = temp.getSheets()[0];
     capa.setName('0_Informacoes');
     capaPlanilhaFechamento_(capa, d);
-    escreverRelatorioNaAba_(temp.insertSheet('1_Depreciacao'), d.dep,
-      '1. Depreciação — ' + d.competencia, SUB_DEPRECIACAO_FECHAMENTO_);
-    escreverRelatorioNaAba_(temp.insertSheet('2_Despesas'), d.man,
-      '2. Despesas da frota — ' + d.competencia, SUB_MANUTENCAO_FECHAMENTO_ +
-      ' "Outros" reúne ' + rubricasDeOutros_().join(', ') + '. O IPVA não entra: já está ' +
-      'embutido no valor da depreciação.');
+    escreverRelatorioNaAba_(temp.insertSheet('Relatorio'), d.op,
+      'Relatório Operacional dos Veículos — ' + d.competencia,
+      SUB_FECHAMENTO_ + ' ' + NOTA_IPVA_FECHAMENTO_);
     temp.setActiveSheet(capa);
     SpreadsheetApp.flush();
 
@@ -9607,6 +9665,7 @@ function relatorioPorTipo_(tipo, centro, categoria, placa, termo) {
   switch (tipo) {
     case 'Gerencial por Centro de Custo': return relatorioGerencial_(centro, categoria, placa);
     case 'Depreciação por veículo': return relatorioDepreciacaoPorBem_(centro, categoria, placa);
+    case 'Relatório Operacional dos Veículos': return relatorioOperacionalVeiculos_(centro, categoria, placa);
     case 'Despesas por veículo (exceto depreciação)': return relatorioDespesasPorVeiculo_(centro, categoria, placa);
     case 'Manutenção por veículo': return relatorioManutencaoPorVeiculo_(centro, categoria, placa);
     case 'Depreciação por loja': return relatorioDepreciacaoPorLoja_(centro, categoria, placa);
@@ -9787,6 +9846,125 @@ function rubricasDeOutros_() {
 }
 
 /**
+ * Litros de lubrificante por placa na competencia.
+ *
+ * O Resumo soma o VALOR do lubrificante, nao os litros — litros so entram
+ * para combustivel e gas. O modelo da contabilidade tem a coluna, entao ela
+ * sai de Lancamentos, numa passagem so. Fica vazia quando o operador nao
+ * preencheu os litros, que e a verdade: o sistema nao sabe.
+ */
+function litrosLubrificantePorPlaca_(periodo) {
+  const p = periodo || periodoAtual_();
+  const mapa = {};
+  lerLancamentos_().forEach(function (l) {
+    if (String(l[L_.TIPO] || '') !== 'Lubrificante') return;
+    const data = l[L_.DATA];
+    if (Object.prototype.toString.call(data) !== '[object Date]') return;
+    if (data < p.inicio || data > p.fim) return;
+    const chave = '#' + normalizaPlaca_(l[L_.PLACA]);
+    mapa[chave] = (mapa[chave] || 0) + (Number(l[L_.LITROS]) || 0);
+  });
+  return mapa;
+}
+
+/** Letra do combustivel do cadastro: G, D, F... Vazio quando nao cadastrado. */
+function letraCombustivelVeiculo_(placa) {
+  const v = mapaVeiculosPorPlaca_()[normalizaPlaca_(placa)];
+  const nome = v ? String(v.combustivel || '').trim() : '';
+  return LETRA_COMBUSTIVEL_[nome] || (nome ? nome.charAt(0).toUpperCase() : '');
+}
+
+/**
+ * Rubricas que o TOTAL do relatorio operacional soma.
+ *
+ * Derivadas de `R_COMPOEM_TOTAL_` menos o IPVA — que o contabil ja embute no
+ * valor da depreciacao que manda. A DEPRECIACAO entra: neste relatorio ela e
+ * uma coluna, nao uma secao a parte.
+ *
+ * O TOTAL e somado das colunas que aparecem no papel, nao copiado de
+ * `R_.TOTAL`: a coluna do Resumo inclui o IPVA, e um TOTAL que nao fecha com
+ * a soma das colunas visiveis e a pior coisa que um relatorio contabil pode
+ * ter. Quem confere vai somar na calculadora.
+ */
+const R_TOTAL_OPERACIONAL_ = R_COMPOEM_TOTAL_.filter(function (n) { return n !== 'IPVA'; });
+
+/**
+ * Relatorio Operacional dos Veiculos — o formato que vai para a contabilidade.
+ *
+ * Reproduz o relatorio da planilha antiga: uma linha por veiculo, todas as
+ * rubricas em colunas, o setor no fim. Duas diferencas, as duas de propósito:
+ *
+ * - entram ARLA 32 e GAS, que nao existiam quando o modelo foi feito. Deixar
+ *   de fora seria perder dinheiro de vista no papel que vai assinado;
+ * - a MULTA entra no TOTAL. No modelo a coluna aparecia e a formula nao a
+ *   somava; decisao do usuario em 30/10/2026.
+ */
+function relatorioOperacionalVeiculos_(centro, categoria, placa) {
+  const periodo = periodoAtual_();
+  const litrosLub = litrosLubrificantePorPlaca_(periodo);
+  const linhas = filtrarResumo_(centro, categoria, placa).map(function (l) {
+    const total = somarColunasDoResumo_(l, R_TOTAL_OPERACIONAL_);
+    const km = Number(l[R_.KM]) || 0;
+    return [
+      String(l[R_.PLACA] || ''),
+      String(l[R_.DESCRICAO] || ''),
+      Number(l[R_.LITROS]) || 0,
+      Number(l[R_.COMBUSTIVEL]) || 0,
+      letraCombustivelVeiculo_(l[R_.PLACA]),
+      litrosLub['#' + normalizaPlaca_(l[R_.PLACA])] || 0,
+      Number(l[R_.LUBRIFICANTE]) || 0,
+      Number(l[R_.LAVACAO]) || 0,
+      Number(l[R_.OFICINA]) || 0,
+      Number(l[R_.PNEUS]) || 0,
+      Number(l[R_.ARLA]) || 0,
+      Number(l[R_.GAS]) || 0,
+      Number(l[R_.EMPLACAMENTO]) || 0,
+      Number(l[R_.MULTA]) || 0,
+      Number(l[R_.SEGURO]) || 0,
+      Number(l[R_.PEDAGIO]) || 0,
+      Number(l[R_.OFICINA_ATIVO]) || 0,
+      Number(l[R_.DEPRECIACAO]) || 0,
+      km,
+      Number(l[R_.KM_LITRO]) || 0,
+      km > 0 ? total / km : 0,
+      total,
+      lojaDaLinhaResumo_(l),
+    ];
+  }).sort(function (a, b) {
+    const porLoja = compararLojaResumo_(a[22], b[22]);
+    return porLoja !== 0 ? porLoja : compararCentroNatural_(a[0], b[0]);
+  });
+
+  const colunas = [
+    col_('Placa'), col_('Tipo'),
+    col_('Comb. litros', 'litros'), col_('Comb. R$', 'moeda'), col_('Tipo com.'),
+    col_('Lubrif. litros', 'litros'), col_('Lubrif. R$', 'moeda'),
+    col_('Lavação/graxa R$', 'moeda'), col_('Oficina R$', 'moeda'), col_('Pneus R$', 'moeda'),
+    col_('Arla 32 R$', 'moeda'), col_('Gás R$', 'moeda'),
+    col_('Emplacam. R$', 'moeda'), col_('Multa R$', 'moeda'), col_('Seguro R$', 'moeda'),
+    col_('Pedágio R$', 'moeda'), col_('Veículo novo R$', 'moeda'),
+    col_('Depreciação R$', 'moeda'),
+    col_('KM rodado', 'numero'), col_('KM/litro', 'media'), col_('R$ por KM', 'moeda3'),
+    col_('TOTAL R$', 'moeda'), col_('Setor'),
+  ];
+
+  // Soma coluna a coluna, sem lista paralela de indices: uma coluna nova no
+  // meio deslocaria uma lista escrita a mao e o rodape passaria a somar a
+  // rubrica vizinha, sem erro nenhum.
+  const totais = colunas.map(function (c, i) {
+    if (!tipoEhNumerico_(c.tipo)) return null;
+    if (i === 19 || i === 20) return null;   // media por veiculo nao se soma
+    return linhas.reduce(function (t, l) { return t + (Number(l[i]) || 0); }, 0);
+  });
+
+  return { colunas: colunas, linhas: linhas, totais: totais,
+    grupos: [
+      { titulo: 'Combustível', de: 3, ate: 5 },
+      { titulo: 'Lubrificante', de: 6, ate: 7 },
+    ] };
+}
+
+/**
  * Despesa de cada veiculo na competencia, EXCETO depreciacao.
  *
  * E a secao 2 do documento da contabilidade. Combustivel, oficina e pneus tem
@@ -9949,9 +10127,9 @@ function relatorioAbastecimento_(centro, categoria, placa) {
     .filter(function (l) { return Number(l[R_.LITROS]) > 0; })
     .sort(function (a, b) { return Number(b[R_.COMBUSTIVEL]) - Number(a[R_.COMBUSTIVEL]); });
   return {
-    colunas: [col_('Placa'), col_('Veículo'), col_('Categoria'), col_('Litros', 'decimal'),
+    colunas: [col_('Placa'), col_('Veículo'), col_('Categoria'), col_('Litros', 'litros'),
       col_('Valor', 'moeda'), col_('Preço/litro', 'moeda3'), col_('KM', 'numero'),
-      col_('KM/litro', 'decimal'), col_('R$/KM', 'moeda3'), col_('IPVA (1/12)', 'moeda')],
+      col_('KM/litro', 'media'), col_('R$/KM', 'moeda3'), col_('IPVA (1/12)', 'moeda')],
     linhas: dados.map(function (l) {
       const litros = Number(l[R_.LITROS]) || 0;
       const valor = Number(l[R_.COMBUSTIVEL]) || 0;
@@ -10305,7 +10483,7 @@ function relatorioHistoricoKm_(centro, categoria, placa) {
   return {
     colunas: [col_('Veículo'), col_('Data', 'data'), col_('Leitura (KM)', 'numero'),
       col_('Rodou desde a anterior', 'numero'), col_('Dias', 'numero'),
-      col_('KM/dia', 'decimal'), col_('Observação')],
+      col_('KM/dia', 'media'), col_('Observação')],
     linhas: linhas,
     refs: refs,
     mensagem: ordenados.length + ' veículo(s) • ' +
@@ -10597,7 +10775,7 @@ function relatorioExtrato_(centro, categoria, placa) {
 
   return {
     colunas: [col_('Data', 'data'), col_('Placa'), col_('Categoria'), col_('Tipo de Despesa'),
-      col_('Natureza da Oficina'), col_('Detalhe da Peça / Serviço'), col_('Litros', 'decimal'),
+      col_('Natureza da Oficina'), col_('Detalhe da Peça / Serviço'), col_('Litros', 'litros'),
       col_('Valor', 'moeda'), col_('Centro de Custo'), col_('Fornecedor'), col_('NF / Documento / OS'), col_('ID Lançamento')],
     linhas: dados.map(function (l) {
       return [formatarData_(l[L_.DATA]), l[L_.PLACA], l[L_.CATEGORIA], l[L_.TIPO],
@@ -11819,10 +11997,11 @@ function webVeiculos(token, busca) {
     });
   return {
     colunas: [col_('Placa'), col_('Patrimônio'), col_('Descrição'), col_('Categoria'), col_('Centro de Custo'),
-      col_('Depreciação', 'moeda'), col_('Emplacamento', 'moeda'), col_('Seguro', 'moeda'),
-      col_('IPVA anual', 'moeda'), col_('Ativo')],
+      col_('Combustível'), col_('Depreciação', 'moeda'), col_('Emplacamento', 'moeda'),
+      col_('Seguro', 'moeda'), col_('IPVA anual', 'moeda'), col_('Ativo')],
     linhas: dados.map(function (l) {
-      return [l[0], l[4], l[1], l[2], l[3], l[5], l[6], l[7], Number(l[12]) || 0, l[10]];
+      return [l[0], l[4], l[1], l[2], l[3], l[COL_VEIC.COMBUSTIVEL - 1] || '',
+        l[5], l[6], l[7], Number(l[12]) || 0, l[10]];
     }),
   };
 }
@@ -11885,6 +12064,7 @@ function webSalvarVeiculo(token, dados) {
     numerosVeiculo.depreciacao, numerosVeiculo.emplacamento, numerosVeiculo.seguro,
     numerosVeiculo.bonus, numerosVeiculo.precoCombustivel,
     dados.ativo === false ? 'NAO' : 'SIM', abaOrigem, numerosVeiculo.ipva,
+    String(manter(dados.combustivel, COL_VEIC.COMBUSTIVEL - 1, '') || '').trim().slice(0, 30),
   ];
 
   if (indice === -1) {
@@ -11918,6 +12098,7 @@ function webVeiculo(token, placaOuPatrimonio) {
     depreciacao: l[5], emplacamento: l[6], seguro: l[7], bonus: l[8],
     precoCombustivel: l[9], ativo: String(l[10]).toUpperCase() !== 'NAO',
     aba: l[11], ipva: Number(l[12]) || 0,
+    combustivel: String(l[COL_VEIC.COMBUSTIVEL - 1] || ''),
   };
 }
 
@@ -14254,8 +14435,8 @@ function webTanques(token) {
     return [produto, e.litros, e.valor, e.custoMedio, e.litrosSemLastro];
   });
   return {
-    colunas: [col_('Produto'), col_('Saldo (L)', 'decimal'), col_('Valor em estoque', 'moeda'),
-      col_('Custo médio R$/L', 'moeda3'), col_('Saída sem carga (L)', 'decimal')],
+    colunas: [col_('Produto'), col_('Saldo (L)', 'litros'), col_('Valor em estoque', 'moeda'),
+      col_('Custo médio R$/L', 'moeda3'), col_('Saída sem carga (L)', 'litros')],
     linhas: linhas,
     mensagem: 'Custo médio ponderado móvel: cada carga recalcula o saldo inteiro.',
   };
@@ -14274,7 +14455,7 @@ function webCargasBomba(token, limite) {
         ajuste: ehAjusteEstoque_(c[COL_CARGA.DOCUMENTO - 1]) };
     }),
     colunas: [col_('Data', 'data'), col_('NF / Documento'), col_('Produto'),
-      col_('Quantidade (L)', 'decimal'), col_('Valor', 'moeda'), col_('R$ / Litro', 'moeda3'),
+      col_('Quantidade (L)', 'litros'), col_('Valor', 'moeda'), col_('R$ / Litro', 'moeda3'),
       col_('Observação')],
     linhas: dados.map(function (c) {
       const litros = Number(c[COL_CARGA.QUANTIDADE - 1]) || 0;
@@ -15676,7 +15857,7 @@ function webComprovantes(token, situacaoFiltro) {
       };
     }),
     colunas: [col_('Data do abastecimento'), col_('Placa'), col_('Competência'),
-      col_('Tipo'), col_('Litros', 'decimal'), col_('Valor', 'moeda'),
+      col_('Tipo'), col_('Litros', 'litros'), col_('Valor', 'moeda'),
       col_('KM do comprovante', 'numero'), col_('NF / Documento'), col_('Centro'),
       col_('Situação')],
     linhas: visiveis.map(function (c) {
