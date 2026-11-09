@@ -1750,45 +1750,6 @@ delas gravando no vizinho.
 
 ---
 
-# Pendente
-
-- **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026
-  que o IPVA **já vem embutido na depreciação** que a contabilidade envia. O
-  relatório operacional (V4.29) tira o IPVA do TOTAL por isso. Mas a coluna
-  `TOTAL R$` do **Resumo** continua somando os dois, e o sistema ainda gera a
-  parcela de 1/12 a partir do IPVA anual do cadastro. Se a premissa vale para
-  toda a frota, o Resumo está inflado em um IPVA por veículo por mês. Não
-  mexi: esse número fecha o Histórico de todos os meses já encerrados, e
-  corrigi-lo muda o passado. **Decisão pendente do usuário:** parar de gerar
-  a parcela, zerar o IPVA anual do cadastro, ou manter como está.
-
-- **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
-  origem na migração das 170 abas, e **nada no código atual lê ou escreve nela**.
-  Pode já conter um agrupamento útil da planilha antiga; vale olhar antes de
-  descartar.
-- **Suíte do fechamento** — coberta em parte pela V4.26.1
-  (`conferir_irreversiveis.js`): `webFecharPeriodo`, `webExcluirVeiculo` e
-  `webAjustarEstoqueBomba` têm provas. Faltam **`webCorrigirLancamento`** (o
-  desfazer: o original tem de voltar com o mesmo ID quando o novo não salva)
-  e **`webGerarDepreciacao`**.
-- **Formatação condicional do Resumo** ainda usa a regra antiga (2× a média da
-  frota no R$/km) e segue pintando todo caminhão. Ver V4.9.5.
-- **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo
-  controla saldo e custo, não vencimento.
-- **Manutenção preventiva** — o KM é capturado no abastecimento, mas o lançamento
-  de oficina não guarda o odômetro do momento. Sem isso não dá para alertar
-  "próxima troca em X km". Desenho já acordado para a próxima versão: campo KM em
-  todo lançamento de oficina, **pré-preenchido** com o último odômetro conhecido
-  da placa (o operador confirma, não digita), opcional em geral e **obrigatório
-  quando o serviço está no plano** — sem KM, a troca não ancora o próximo ciclo.
-  O KM fica **só em Lançamentos**: mandá-lo para a aba Odômetro mexeria em KM,
-  KM/litro e R$/km do Resumo sem ninguém ter mudado um lançamento. Falta definir
-  o plano (a cada quantos km cada serviço, por categoria ou por veículo).
-- **Key stretching na senha** — `hashSenha_` é SHA-256 de uma rodada com salt.
-  O salt impede rainbow table; falta custo contra força bruta.
-- **Sessão em `CacheService`** — pode ser despejada antes do TTL de 6 h, e o
-  sintoma é o usuário deslogar sozinho sem padrão.
-
 ## V4.15.3 — o alerta diz do que é feito o custo
 
 A SXC 9I77 (Saveiro, patrimônio 10042709) apareceu no bloco *"Consumo fora da
@@ -3934,3 +3895,126 @@ Eles só são revalorizados quando a carga daquele período for corrigida. Se a
 contabilidade quiser a competência inteira pelo critério novo, é rodar uma
 revalorização do mês — que o sistema sabe fazer, mas hoje só é disparada por
 correção de carga.
+
+## V4.35.0 — o histórico abre lendo o fim da base, não a base inteira
+
+*"a uma lentidão ao carregar o histórico"*.
+
+O painel de abastecimentos (V4.33) abria em duas etapas, e cada uma lia a aba
+`Lançamentos` **inteira**:
+
+| | leituras | células lidas |
+|---|---|---|
+| `webUltimoOdometro` (a dica "última leitura") | 1 | 24 mil |
+| `webHistoricoAbastecimentos` (o painel) | 2 | 144 mil |
+| **abrir o painel, antes** | **2 idas** | **324 mil** |
+| **abrir o painel, agora** | **1 ida** | **144 mil** |
+
+Os números saem de `medir_modulos.js`, que ganhou um dublê de aba que **conta
+as leituras e as células**. Medir tempo de JS aqui enganaria: no Apps Script o
+que custa é o `getValues()`, não a conta.
+
+### Duas economias, não uma
+
+**1. A janela.** `lerLancamentosRecentes_(n)` lê só as últimas `n` linhas da
+aba. O histórico mostra 30 abastecimentos de uma placa — a base de 2024 não
+tem nada a dizer sobre isso. `JANELAS_HISTORICO_ = [8000, 30000]`: tenta
+8.000, amplia só se não achou o suficiente **e** a janela ainda não chegou ao
+começo. Sem a segunda condição, quem tem poucos abastecimentos ampliaria
+sempre, de graça. O primeiro degrau que escrevi era 3.000 e saiu **pior**: com
+170 veículos lançando, 3.000 linhas quase nunca têm 30 abastecimentos da
+mesma placa, e quase toda abertura pagava as duas janelas.
+
+A janela procura `quantos + 1`, não `quantos`: o abastecimento mais antigo que
+**vai aparecer** precisa do anterior a ele para ter percurso. Com a conta
+exata, a última linha da tela sairia sempre sem KM percorrido — e sem erro
+nenhum, só um traço onde deveria haver número. A prova fixa um veículo com
+exatamente 3 abastecimentos na janela e um quarto antes dela; o mutante
+`>= quantos` é pego por ela.
+
+**2. A ida.** O histórico passou a devolver `ultimaLeitura` junto, e a tela
+aproveita em vez de chamar `webUltimoOdometro`. Cada `google.script.run` é uma
+**execução nova**, que relê a planilha do zero: o custo fixo da ida pesa mais
+que a conta que ela faz. O estorno também não volta ao servidor só pela dica —
+o histórico que ele devolve já vem atualizado.
+
+`ultimoOdometro` deixou de ter `getValues()` próprio e passou a usar
+`ultimaLeituraOdometro_` sobre `lerOdometro_()`, que tem cache de execução. O
+endpoint continua existindo (a tela usa ao trocar de placa), mas agora as duas
+telas respondem a **mesma** última leitura por construção, não por coincidência
+— e a prova confronta os dois lados.
+
+### O que mudou de comportamento: o rodapé
+
+Os totais do painel (litros, valor, percurso, média, retrocessos) passaram a
+ser **dos abastecimentos que aparecem**, não da base inteira. Não é um efeito
+colateral aceito de má vontade: totalizar a base inteira obriga a lê-la
+inteira — que é justamente o que deixava o painel lento — e dava um número que
+**não fecha com nenhuma coluna da tela**. A tela antiga que o usuário usava
+rotulava isso "Média no período", e é o que ele conferia. Quando a lista é uma
+janela, a mensagem diz: *"30 abastecimento(s) mostrado(s) • janela dos
+lançamentos mais recentes"*.
+
+### Suíte
+
+`conferir_historico_abastecimento.js` — 48 → **53 provas**. As novas: a janela
+lê uma vez quando a base cabe; para na primeira janela numa base de 20.000;
+**amplia** quando o veículo só aparece no começo; procura a folga do percurso;
+o rodapé fecha com as colunas da tela; e as duas pontas da economia da ida (o
+servidor manda `ultimaLeitura`, a tela aproveita, o estorno não pede de novo).
+
+Por mutação, 12 defeitos reintroduzidos, **12 pegos**. Os dois que
+sobreviveram na primeira rodada foram justamente os dois acima — a folga do
+`+1` e a tela voltar a fazer a segunda chamada —, e os dois são do tipo que
+mais voltou neste projeto: **um lado de um contrato que tem dois**. A prova do
+servidor mandando o dado passava sozinha com a tela ignorando ele.
+
+### Instalação
+
+`Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
+sistema*: nada de aba, coluna, gatilho ou parâmetro mudou.
+
+---
+
+# Pendente
+
+- **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026
+  que o IPVA **já vem embutido na depreciação** que a contabilidade envia. O
+  relatório operacional (V4.29) tira o IPVA do TOTAL por isso. Mas a coluna
+  `TOTAL R$` do **Resumo** continua somando os dois, e o sistema ainda gera a
+  parcela de 1/12 a partir do IPVA anual do cadastro. Se a premissa vale para
+  toda a frota, o Resumo está inflado em um IPVA por veículo por mês. Não
+  mexi: esse número fecha o Histórico de todos os meses já encerrados, e
+  corrigi-lo muda o passado. **Decisão pendente do usuário:** parar de gerar
+  a parcela, zerar o IPVA anual do cadastro, ou manter como está.
+
+- **Revalorizar a competência inteira pelo novo critério (V4.34)** — os
+  abastecimentos internos já gravados continuam com o valor da média móvel; só
+  são revalorizados quando a carga do período é corrigida. Ofereci um botão
+  "revalorizar o mês"; sem resposta do usuário.
+- **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
+  origem na migração das 170 abas, e **nada no código atual lê ou escreve nela**.
+  Pode já conter um agrupamento útil da planilha antiga; vale olhar antes de
+  descartar.
+- **Suíte do fechamento** — coberta em parte pela V4.26.1
+  (`conferir_irreversiveis.js`): `webFecharPeriodo`, `webExcluirVeiculo` e
+  `webAjustarEstoqueBomba` têm provas. Faltam **`webCorrigirLancamento`** (o
+  desfazer: o original tem de voltar com o mesmo ID quando o novo não salva)
+  e **`webGerarDepreciacao`**.
+- **Formatação condicional do Resumo** ainda usa a regra antiga (2× a média da
+  frota no R$/km) e segue pintando todo caminhão. Ver V4.9.5.
+- **ARLA no tanque sem controle de validade** — o produto tem prazo; o módulo
+  controla saldo e custo, não vencimento.
+- **Manutenção preventiva** — o KM é capturado no abastecimento, mas o lançamento
+  de oficina não guarda o odômetro do momento. Sem isso não dá para alertar
+  "próxima troca em X km". Desenho já acordado para a próxima versão: campo KM em
+  todo lançamento de oficina, **pré-preenchido** com o último odômetro conhecido
+  da placa (o operador confirma, não digita), opcional em geral e **obrigatório
+  quando o serviço está no plano** — sem KM, a troca não ancora o próximo ciclo.
+  O KM fica **só em Lançamentos**: mandá-lo para a aba Odômetro mexeria em KM,
+  KM/litro e R$/km do Resumo sem ninguém ter mudado um lançamento. Falta definir
+  o plano (a cada quantos km cada serviço, por categoria ou por veículo).
+- **Key stretching na senha** — `hashSenha_` é SHA-256 de uma rodada com salt.
+  O salt impede rainbow table; falta custo contra força bruta.
+- **Sessão em `CacheService`** — pode ser despejada antes do TTL de 6 h, e o
+  sintoma é o usuário deslogar sozinho sem padrão.

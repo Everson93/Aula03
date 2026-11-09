@@ -31,6 +31,7 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     gruposIpvaDaPlaca_, kmDoDia_, classificacaoVeiculoAtual_, resolverVeiculo_,
+    historicoAbastecimentos_, ultimoOdometro,
     alertasConsumo_, alertasOdometroEIpva_, alertasManutencao_, mediana_,
     classificacaoVeiculoAtualSemMemo_,
     calcularLinhasResumo_, custoVariavelResumo_,
@@ -43,13 +44,26 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   param_ = function (n) { if (n === 'DIA_FIM_PERIODO') return 25; if (n === 'DIA_INICIO_PERIODO') return 26; return '2026-07'; };
   paramOuPadrao_ = function (n, p) { return p; };
   dadosVeiculosExecucao_ = function () { return __veic; };
-  lerLancamentos_ = function () { return __lanc; };
-  lerOdometro_ = function () { return __odo; };
+  // lerLancamentos_ e lerOdometro_ ficam REAIS: sao eles que fazem a
+  // leitura da planilha, e e a leitura que custa. Dublá-los aqui media um
+  // mundo onde o Sheets e de graça — e o painel ficou lento exatamente por
+  // causa do que esse mundo esconde.
+  ultimaLinhaLancamentoReal_ = function () { return __lanc.length + 1; };
+  quantidadeLancamentosReais_ = function () { return __lanc.length; };
   lerResumo_ = function () { return __resumo; };
   estadoTanque_ = function () { return { litros: 9999, valor: 0, custoMedio: 0, litrosSemLastro: 0 }; };
   contarPendenciasConferencia_ = function () { return 0; };
   lerComprovantes_ = function () { return []; };
   periodoAtual_ = function () { return { inicio: new Date(2026, 6, 1), fim: new Date(2026, 6, 31) }; };
+  // Dublê de aba que CONTA leitura. No Apps Script o custo nao e o laco de
+  // JavaScript: e cada getValues(), que e uma ida ao servidor do Sheets.
+  // Medir so CPU aqui esconderia exatamente o que deixa a tela lenta.
+  aba_ = function (nome) { return __abaFalsa(nome); };
+  ss_ = function () { return { getSheetByName: function (n) { return __abaFalsa(n); },
+    getSpreadsheetTimeZone: function () { return 'America/Sao_Paulo'; },
+    getId: function () { return 'id'; }, getName: function () { return 'planilha'; } }; };
+  timezone_ = function () { return 'America/Sao_Paulo'; };
+  isoDoDia_ = function (d) { return '2026-07-' + ('0' + d.getDate()).slice(-2); };
   periodoDoMes_ = function () { return { inicio: new Date(2026, 6, 1), fim: new Date(2026, 6, 31) }; };
   formatarData_ = function () { return '01/07/2026'; };
   // Zera TUDO que e cache de execucao. Esquecer um indice aqui mede indice
@@ -64,6 +78,39 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
 `, ctx);
 
 const D = vm.runInContext('(function (a,m,d) { return new Date(a,m,d); })', ctx);
+
+const LEITURAS = { n: 0, celulas: 0 };
+ctx.__abaFalsa = function (nome) {
+  const fonte = nome === 'Odômetro' ? ctx.__odo
+    : (nome === 'Lançamentos' ? ctx.__lanc : []);
+  return {
+    getLastRow: function () { return fonte.length + 1; },
+    getMaxRows: function () { return fonte.length + 1; },
+    getRange: function (linha, coluna, nL, nC) {
+      nL = nL || 1; nC = nC || 1;
+      return {
+        getValues: function () {
+          LEITURAS.n++; LEITURAS.celulas += nL * nC;
+          const saida = [];
+          for (let i = 0; i < nL; i++) {
+            const l = fonte[linha - 2 + i] || [];
+            saida.push(l.slice(coluna - 1, coluna - 1 + nC));
+          }
+          return saida;
+        },
+        getDisplayValues: function () { return this.getValues(); },
+      };
+    },
+  };
+};
+function medirLeituras(nome, fn) {
+  ctx.__zerarCaches();
+  vm.runInContext('LANCAMENTOS_EXEC_CACHE_ = null; ODOMETRO_EXEC_CACHE_ = null;', ctx);
+  LEITURAS.n = 0; LEITURAS.celulas = 0;
+  try { fn(); } catch (e) { console.log(pad(nome) + '  — não mediu: ' + e.message); return; }
+  console.log(pad(nome) + '  ' + String(LEITURAS.n).padStart(4) + ' leitura(s), ' +
+    (LEITURAS.celulas / 1000).toFixed(0).padStart(7) + ' mil células');
+}
 
 function placaDe(i) { return 'AAA' + (1000 + (i % VEICULOS)); }
 
@@ -172,6 +219,35 @@ console.log('\n— Alerta diário');
 r.consumo = medir('alertasConsumo_', function () { ctx.alertasConsumo_(); });
 r.manut = medir('alertasManutencao_', function () { ctx.alertasManutencao_(); });
 r.odoIpva = medir('alertasOdometroEIpva_', function () { ctx.alertasOdometroEIpva_(); });
+
+console.log('\n— Histórico de abastecimentos (painel do lançamento)');
+r.hist = medir('historicoAbastecimentos_ (uma placa)', function () {
+  ctx.historicoAbastecimentos_(placaDe(5), 30);
+}, 10);
+r.ultimoOdo = medir('ultimoOdometro (dica da tela)', function () {
+  ctx.ultimoOdometro(placaDe(5));
+}, 10);
+r.abrePainel = medir('o que a tela faz ao abrir o painel', function () {
+  ctx.ultimoOdometro(placaDe(5));
+  ctx.historicoAbastecimentos_(placaDe(5), 30);
+}, 10);
+
+console.log('\n— Leituras de planilha (o que custa no Apps Script)');
+medirLeituras('webUltimoOdometro (1ª chamada da tela)', function () {
+  ctx.ultimoOdometro(placaDe(5));
+});
+medirLeituras('webHistoricoAbastecimentos (2ª chamada)', function () {
+  ctx.historicoAbastecimentos_(placaDe(5), 30);
+});
+medirLeituras('abrir o painel HOJE: uma chamada só', function () {
+  ctx.historicoAbastecimentos_(placaDe(5), 30);
+});
+medirLeituras('  como era antes: duas chamadas', function () {
+  ctx.ultimoOdometro(placaDe(5));
+  vm.runInContext('LANCAMENTOS_EXEC_CACHE_ = null; ODOMETRO_EXEC_CACHE_ = null; ODOMETRO_INDICE_EXEC_ = null;', ctx);
+  ctx.lerLancamentos_ ? 0 : 0;
+  vm.runInContext('(function(){ var t = aba_("Lançamentos").getRange(2,1,quantidadeLancamentosReais_(),TOTAL_COL_LANC).getValues(); return t.length; })()', ctx);
+});
 
 console.log('\n— Resumo');
 r.resumo = medir('calcularLinhasResumo_', function () { ctx.calcularLinhasResumo_(); });

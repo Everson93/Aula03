@@ -1569,6 +1569,18 @@
     caixa.innerHTML = '<div class="carregando">carregando o histórico…</div>';
     google.script.run.withSuccessHandler(function (h) {
       HIST_ABAST = h;
+      // O histórico já traz a última leitura: aproveitar aqui evita uma
+      // SEGUNDA ida ao servidor só para a dica. Cada google.script.run é uma
+      // execução nova, que relê a planilha do zero — o custo fixo da ida
+      // pesa mais que a conta.
+      if (h && h.ultimaLeitura !== undefined) {
+        ULTIMO_ODOMETRO = h.ultimaLeitura;
+        if (el('dicaKm')) {
+          el('dicaKm').textContent = h.ultimaLeitura
+            ? 'Última leitura: ' + num(h.ultimaLeitura.km) + ' em ' + h.ultimaLeitura.data
+            : 'Sem leitura anterior registrada.';
+        }
+      }
       desenharHistoricoAbastecimento(aviso);
     }).withFailureHandler(function (e) {
       caixa.innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
@@ -1663,7 +1675,10 @@
       if (r.ok && r.historico) { HIST_ABAST = r.historico; desenharHistoricoAbastecimento(''); }
       else abrirHistoricoAbastecimento('');
       avisoHistorico(r.mensagem, r.ok);
-      if (r.ok) { consultarOdometro(); carregarUltimos(); }
+      // `consultarOdometro` não entra aqui: o histórico que acabou de voltar
+      // já atualizou a dica. Chamá-lo seria uma terceira ida ao servidor
+      // para saber o que já está na tela.
+      if (r.ok) carregarUltimos();
     }).withFailureHandler(function (e) {
       abrirHistoricoAbastecimento('');
       avisoHistorico(e.message, false);

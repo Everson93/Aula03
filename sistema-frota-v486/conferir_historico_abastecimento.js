@@ -23,7 +23,7 @@ function ok(nome, cond, detalhe) {
   console.log('  FALHA ' + nome + (detalhe ? '\n        ' + detalhe : ''));
 }
 
-const diario = { excluidos: [] };
+const diario = { excluidos: [], janelas: [] };
 const ctx = {
   console: { log: () => {}, error: () => {} },
   PropertiesService: { getDocumentProperties: () => ({ getProperty: () => null, setProperty: () => {} }),
@@ -44,7 +44,9 @@ ctx.globalThis = ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, { historicoAbastecimentos_, webHistoricoAbastecimentos,
-    webEstornarAbastecimento, L_, TIPOS_COMBUSTIVEL, ABASTECIMENTO_INTERNO });
+    webEstornarAbastecimento, ultimoOdometro, ultimaLeituraOdometro_,
+    lerLancamentosRecentes_, JANELAS_HISTORICO_,
+    L_, TIPOS_COMBUSTIVEL, ABASTECIMENTO_INTERNO });
   exigirExecucaoLeitura_ = function () {};
   exigirExecucaoMutacao_ = function () {};
   exigirPerfilToken_ = function () {};
@@ -57,15 +59,36 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   periodoDoMes_ = function () { return periodoAtual_(); };
   formatarData_ = function (d) { const z = n => ('0'+n).slice(-2);
     return z(d.getDate()) + '/' + z(d.getMonth()+1) + '/' + d.getFullYear(); };
-  lerLancamentos_ = function () { return __lancamentos; };
   lerOdometro_ = function () { return __odometro; };
+  // A janela e o ponto da V4.35: o painel le so o FIM de Lancamentos. A
+  // dublê conta quantas linhas foram pedidas, para a prova ver a janela
+  // funcionando em vez de acreditar nela.
+  quantidadeLancamentosReais_ = function () { return __lancamentos.length; };
+  ultimaLinhaLancamentoReal_ = function () { return __lancamentos.length + 1; };
+  aba_ = function () {
+    return {
+      getLastRow: function () { return __lancamentos.length + 1; },
+      getRange: function (linha, coluna, nL, nC) {
+        return { getValues: function () {
+          __diario.janelas.push(nL);
+          const saida = [];
+          for (let i = 0; i < nL; i++) {
+            const l = __lancamentos[linha - 2 + i] || [];
+            saida.push(l.slice(coluna - 1, coluna - 1 + nC));
+          }
+          return saida;
+        } };
+      },
+    };
+  };
+  mesCompetenciaDaData_ = function () { return '2026-11'; };
+  resolverVeiculo_ = function (p) { return { ok: true, veiculo: { placa: String(p || '') } }; };
   excluirLancamento_ = function (id, motivo) {
     __diario.excluidos.push({ id: id, motivo: motivo });
     if (String(motivo || '').trim().length < 10) {
       return { ok: false, mensagem: 'Escreva uma justificativa com pelo menos 10 caracteres.' };
     }
     __lancamentos = __lancamentos.filter(function (l) { return String(l[L_.ID]) !== String(id); });
-    __odometro = __odometro.filter(function (o) { return true; });
     return { ok: true, mensagem: 'Lançamento excluído.' };
   };
 `, ctx);
@@ -164,10 +187,101 @@ ok('o limite corta os mais antigos, não os recentes', (function () {
   const v = ctx.historicoAbastecimentos_('AAA 0001', 2);
   return v.linhas.length === 2 && v.linhas[0].id === 'LAN-4' && v.linhas[1].id === 'LAN-3';
 })());
-ok('e o rodapé continua contando a base toda, não só o que aparece', (function () {
+// V4.35: o rodapé passou a ser dos que APARECEM, como na tela antiga
+// ("Média no período"). Totalizar a base inteira obrigaria a lê-la inteira
+// — que é o que deixava o painel lento — e daria um número que não fecha
+// com nenhuma coluna da tela.
+ok('o rodapé é do que aparece, e fecha com as linhas', (function () {
   const v = ctx.historicoAbastecimentos_('AAA 0001', 2);
-  return v.totais.abastecimentos === 4 && /mostrando os 2/.test(v.mensagem);
-})(), 'rodapé do pedaço visível daria um total menor que o do veículo');
+  const soma = v.linhas.reduce(function (t, l) { return t + l.litros; }, 0);
+  return v.totais.abastecimentos === 2 && v.totais.litros === soma;
+})(), 'rodapé que não fecha com as colunas da tela é pior que rodapé nenhum');
+
+console.log('\n4b. A janela: lê o fim da base, não a base inteira');
+montar();
+diario.janelas.length = 0;
+ctx.historicoAbastecimentos_('AAA 0001', 30);
+ok('uma leitura só quando a base cabe na primeira janela',
+  diario.janelas.length === 1, JSON.stringify(diario.janelas));
+ok('e ela não pede mais linhas do que existem',
+  diario.janelas[0] === ctx.__lancamentos.length, String(diario.janelas[0]));
+// Base grande: a janela tem de parar na primeira quando ja achou o
+// suficiente, senao a economia some.
+ok('numa base grande, para na primeira janela quando já achou', (function () {
+  const grande = [];
+  for (let i = 0; i < 20000; i++) {
+    grande.push(lanc(data(2026, 11, (i % 25) + 1), 'P' + (i % 170), 50, 300, 'L' + i));
+  }
+  ctx.__lancamentos = grande;
+  diario.janelas.length = 0;
+  const v = ctx.historicoAbastecimentos_('P5', 30);
+  return diario.janelas.length === 1 && diario.janelas[0] === 8000 && v.linhas.length === 30;
+})(), JSON.stringify(diario.janelas));
+ok('mas AMPLIA quando o veículo é raro no fim da base', (function () {
+  const grande = [];
+  // O veículo raro só aparece no começo: a primeira janela não o alcança.
+  for (let i = 0; i < 20000; i++) {
+    grande.push(lanc(data(2026, 11, (i % 25) + 1), i < 50 ? 'RARO 1' : 'P' + (i % 170),
+      50, 300, 'L' + i));
+  }
+  ctx.__lancamentos = grande;
+  diario.janelas.length = 0;
+  const v = ctx.historicoAbastecimentos_('RARO 1', 30);
+  return diario.janelas.length === 2 && v.linhas.length === 30;
+})(), JSON.stringify(diario.janelas));
+// A janela procura `quantos + 1`, nao `quantos`. O mais antigo que VAI
+// APARECER precisa do anterior a ele para ter percurso: parar com a conta
+// exata deixaria a ultima linha da tela sempre sem KM percorrido — e sem
+// erro nenhum, so um traco onde deveria haver numero.
+ok('procura um a mais, para o mais antigo da tela ter percurso', (function () {
+  const grande = [];
+  for (let i = 0; i < 20000; i++) {
+    grande.push(lanc(data(2026, 11, (i % 25) + 1), 'P' + (i % 170), 50, 300, 'L' + i));
+  }
+  // Exatamente 3 (= o limite pedido) na ultima janela de 8.000, e um quarto
+  // antes dela. Com a folga, a janela amplia e o 4º da o percurso do 3º.
+  grande[100] = lanc(data(2026, 11, 5), 'FOLGA 1', 100, 600, 'F-0');
+  grande[12000] = lanc(data(2026, 11, 10), 'FOLGA 1', 100, 600, 'F-1');
+  grande[15000] = lanc(data(2026, 11, 15), 'FOLGA 1', 100, 600, 'F-2');
+  grande[18000] = lanc(data(2026, 11, 20), 'FOLGA 1', 100, 600, 'F-3');
+  ctx.__lancamentos = grande;
+  ctx.__odometro = [
+    [data(2026, 11, 5), 'FOLGA 1', 100000],
+    [data(2026, 11, 10), 'FOLGA 1', 101000],
+    [data(2026, 11, 15), 'FOLGA 1', 102000],
+    [data(2026, 11, 20), 'FOLGA 1', 103000],
+  ];
+  vm.runInContext('ODOMETRO_EXEC_CACHE_ = null; ODOMETRO_INDICE_EXEC_ = null;', ctx);
+  diario.janelas.length = 0;
+  const v = ctx.historicoAbastecimentos_('FOLGA 1', 3);
+  // 3 linhas na tela (o 4º só serve de referência) e a mais antiga COM
+  // percurso.
+  return v.linhas.length === 3 && v.linhas[2].id === 'F-1' && v.linhas[2].percurso === 1000;
+})(), 'traço onde deveria haver percurso não dá erro, só esconde a conta');
+ok('e o rodapé conta o percurso dessa folga uma vez só', (function () {
+  const v = ctx.historicoAbastecimentos_('FOLGA 1', 3);
+  // 3 x 1.000: o do F-1 (contra o F-0, que não aparece) e os dois seguintes.
+  return v.totais.abastecimentos === 3 && v.totais.percurso === 3000 &&
+    v.totais.litros === 300;
+})());
+ok('e diz que o que mostrou é uma janela', (function () {
+  return /janela dos lançamentos/.test(ctx.historicoAbastecimentos_('P5', 30).mensagem);
+})());
+montar();
+ok('base pequena não é chamada de janela',
+  !/janela/.test(ctx.historicoAbastecimentos_('AAA 0001', 30).mensagem));
+
+console.log('\n4c. A última leitura vem junto, para a tela não pedir de novo');
+montar();
+const hh = ctx.historicoAbastecimentos_('AAA 0001', 30);
+ok('o histórico traz a última leitura do odômetro',
+  hh.ultimaLeitura && hh.ultimaLeitura.km === 101450,
+  JSON.stringify(hh.ultimaLeitura));
+ok('e é a MESMA que o endpoint antigo devolveria',
+  JSON.stringify(hh.ultimaLeitura) === JSON.stringify(ctx.ultimoOdometro('AAA 0001')),
+  JSON.stringify([hh.ultimaLeitura, ctx.ultimoOdometro('AAA 0001')]));
+ok('veículo sem leitura devolve nulo, não erro',
+  ctx.historicoAbastecimentos_('ZZZ 9999', 30).ultimaLeitura === null);
 
 console.log('\n5. Estornar');
 montar();
@@ -213,6 +327,20 @@ ok('e há um botão para abrir o painel a qualquer momento',
 ok('a alteração de KM usa o ajuste que já existia, com a referência estável',
   /webAjustarOdometro\(TOKEN, \{ placa: HIST_ABAST\.placa, data: l\.dataIso, km: l\.km \}/.test(app),
   'número de linha envelhece; placa + dia + valor não');
+// As DUAS pontas da economia da V4.35: o servidor manda `ultimaLeitura`
+// junto e a tela a aproveita. Provar so o servidor deixaria passar uma tela
+// que continua pedindo de novo — a ida extra volta sem quebrar nada.
+ok('o servidor manda a última leitura junto com o histórico',
+  /ultimaLeitura: ultimaLeituraOdometro_\(alvo\)/.test(fonte));
+ok('e a tela aproveita em vez de pedir outra vez',
+  /function abrirHistoricoAbastecimento[\s\S]{0,900}h\.ultimaLeitura !== undefined[\s\S]{0,120}ULTIMO_ODOMETRO = h\.ultimaLeitura/
+    .test(app),
+  'cada google.script.run relê a planilha do zero: a ida extra custa mais que a conta');
+const trechoEstorno = app.slice(app.indexOf('function estornarAbastecimento'),
+                                app.indexOf('function avisoHistorico'));
+ok('e nem o estorno volta ao servidor só pela dica',
+  /r\.ok && r\.historico/.test(trechoEstorno) && !/consultarOdometro\(\)/.test(trechoEstorno),
+  'o histórico que acabou de voltar já atualizou a dica');
 ok('linha sem leitura não oferece "alterar KM"',
   /l\.km === null \? '<span class="sub2">sem leitura<\/span>'/.test(app),
   'alterar o que não existe devolveria erro e pareceria defeito');

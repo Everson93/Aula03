@@ -606,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.34.0';
+const VERSAO_SISTEMA = '4.35.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -3602,26 +3602,35 @@ function webCustoBombaPlanilha(dataIso) {
 }
 
 /** Última leitura de odômetro registrada para a placa (para conferência no form). */
-function ultimoOdometro(placa) {
-  exigirExecucaoLeitura_();
-  const sheet = aba_(ABAS.ODOMETRO);
-  if (sheet.getLastRow() < 2) return null;
-  const dados = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
+/**
+ * Ultima leitura de odometro de uma placa JA normalizada.
+ *
+ * Le pelo cache de execucao (`lerOdometro_`), nao com um getValues proprio.
+ * A versao antiga abria a aba por conta propria: quando a mesma execucao
+ * tambem montava o historico, a aba de odometro era lida DUAS vezes.
+ */
+function ultimaLeituraOdometro_(placaNormalizada) {
   let melhor = null;
-  const resolvido = resolverVeiculo_(placa, false);
-  if (!resolvido.ok) return null;
-  const alvo = normalizaPlaca_(resolvido.veiculo.placa);
-  dados.forEach(function (linha) {
-    if (normalizaPlaca_(linha[1]) !== alvo || !(linha[0] instanceof Date) || isNaN(linha[0].getTime())) return;
+  lerOdometro_().forEach(function (linha) {
+    if (normalizaPlaca_(linha[1]) !== placaNormalizada) return;
+    const d = linha[0];
+    if (!(d instanceof Date) || isNaN(d.getTime())) return;
     const kmLinha = Number(linha[2]);
     if (!isFinite(kmLinha)) return;
-    if (!melhor || linha[0] > melhor.data ||
-        (linha[0].getTime() === melhor.data.getTime() && kmLinha > melhor.km)) {
-      melhor = { data: linha[0], km: kmLinha };
+    if (!melhor || d > melhor.data ||
+        (d.getTime() === melhor.data.getTime() && kmLinha > melhor.km)) {
+      melhor = { data: d, km: kmLinha };
     }
   });
   if (!melhor) return null;
   return { data: formatarData_(melhor.data), km: melhor.km };
+}
+
+function ultimoOdometro(placa) {
+  exigirExecucaoLeitura_();
+  const resolvido = resolverVeiculo_(placa, false);
+  if (!resolvido.ok) return null;
+  return ultimaLeituraOdometro_(normalizaPlaca_(resolvido.veiculo.placa));
 }
 
 /**
@@ -6762,6 +6771,49 @@ function webUltimoOdometro(token, placa) {
 }
 
 /**
+ * As ULTIMAS N linhas de Lancamentos, sem ler a base inteira.
+ *
+ * O painel de abastecimentos precisa dos 30 ultimos de UM veiculo, e pagava
+ * por 20 mil linhas x 15 colunas para isso: 300 mil celulas por abertura.
+ * Como o lancamento e sempre acrescentado no fim, o recente esta no fim.
+ *
+ * Nao substitui `lerLancamentos_` nem alimenta o cache dele: quem precisa da
+ * base inteira continua lendo a base inteira. Isto e uma JANELA, e quem usa
+ * tem de saber lidar com ela — por isso devolve `completo`, dizendo se a
+ * janela alcancou a primeira linha.
+ */
+function lerLancamentosRecentes_(quantasLinhas) {
+  exigirExecucaoLeitura_();
+  // Com a base inteira ja em memoria nesta execucao, nao ha o que economizar.
+  if (LANCAMENTOS_EXEC_CACHE_) {
+    return { linhas: LANCAMENTOS_EXEC_CACHE_, completo: true };
+  }
+  const n = quantidadeLancamentosReais_();
+  if (n < 1) return { linhas: [], completo: true };
+  const quantas = Math.max(1, Math.min(Number(quantasLinhas) || 0, n));
+  const primeira = n - quantas + 2;          // +2: cabecalho e base 1
+  const linhas = aba_(ABAS.LANCAMENTOS).getRange(primeira, 1, quantas, TOTAL_COL_LANC)
+    .getValues()
+    .map(function (linha, i) { linha.linhaPlanilha = primeira + i; return linha; })
+    .filter(function (linha) { return linha[L_.PLACA]; });
+  linhas.forEach(function (linha) {
+    linha[L_.PERIODO] = mesCompetenciaDaData_(linha[L_.DATA]);
+  });
+  return { linhas: linhas, completo: quantas >= n };
+}
+
+/**
+ * Degraus da janela do historico: tenta a menor, amplia so se faltar.
+ *
+ * A primeira tem de caber os 30 abastecimentos de UM veiculo numa frota
+ * inteira intercalada. Com ~170 veiculos e ~8 abastecimentos por mes cada,
+ * 30 abastecimentos de um deles cabem em cerca de 5 mil linhas. 8 mil da
+ * folga; menor que isso, a janela amplia quase sempre e sai mais caro do
+ * que ler a base de uma vez.
+ */
+const JANELAS_HISTORICO_ = [8000, 30000];
+
+/**
  * Historico de abastecimentos de UM veiculo, no formato da tela antiga.
  *
  * Uma linha por abastecimento, com o odometro daquele dia, o percurso desde
@@ -6782,11 +6834,32 @@ function historicoAbastecimentos_(placa, limite) {
   const alvo = normalizaPlaca_(placa);
   if (!alvo) return { placa: '', linhas: [], totais: null, mensagem: 'Informe o veículo.' };
   const quantos = Math.min(Math.max(Number(limite) || 30, 1), 200);
-  const itens = lerLancamentos_().filter(function (l) {
-    return TIPOS_COMBUSTIVEL.indexOf(String(l[L_.TIPO])) !== -1 &&
-      normalizaPlaca_(l[L_.PLACA]) === alvo &&
-      Object.prototype.toString.call(l[L_.DATA]) === '[object Date]';
-  }).map(function (l) {
+  function doVeiculo(linhas) {
+    return linhas.filter(function (l) {
+      return TIPOS_COMBUSTIVEL.indexOf(String(l[L_.TIPO])) !== -1 &&
+        normalizaPlaca_(l[L_.PLACA]) === alvo &&
+        Object.prototype.toString.call(l[L_.DATA]) === '[object Date]';
+    });
+  }
+
+  // Tenta a janela menor primeiro. Amplia so quando nao achou abastecimentos
+  // suficientes E a janela ainda nao chegou ao comeco da base — parar sem
+  // essa segunda condicao devolveria lista curta para quem simplesmente tem
+  // poucos abastecimentos.
+  //
+  // Procura `quantos + 1`: o mais antigo que VAI APARECER precisa do
+  // anterior a ele para ter percurso. Sem essa folga, a primeira linha da
+  // tela sairia sempre sem KM percorrido.
+  let crus = [];
+  let completo = false;
+  for (let i = 0; i < JANELAS_HISTORICO_.length; i++) {
+    const janela = lerLancamentosRecentes_(JANELAS_HISTORICO_[i]);
+    crus = doVeiculo(janela.linhas);
+    completo = janela.completo;
+    if (completo || crus.length > quantos) break;
+  }
+
+  const itens = crus.map(function (l) {
     const data = l[L_.DATA];
     // `kmDoDia_` e o dono da regra: devolve vazio quando ha mais de uma
     // leitura no dia. Reimplementar a consulta aqui era a chance de este
@@ -6818,9 +6891,13 @@ function historicoAbastecimentos_(placa, limite) {
   });
 
   const recentes = itens.slice(-quantos).reverse();
-  const litros = itens.reduce(function (t, i) { return t + i.litros; }, 0);
-  const valor = itens.reduce(function (t, i) { return t + i.valor; }, 0);
-  const percurso = itens.reduce(function (t, i) { return t + (i.percurso > 0 ? i.percurso : 0); }, 0);
+  // Os totais sao dos que APARECEM, como na tela antiga ("Média no
+  // período"). Totalizar a base inteira obrigaria a le-la inteira — que e
+  // justamente o que deixava o painel lento — e daria um numero que nao
+  // fecha com nenhuma coluna da tela.
+  const litros = recentes.reduce(function (t, i) { return t + i.litros; }, 0);
+  const valor = recentes.reduce(function (t, i) { return t + i.valor; }, 0);
+  const percurso = recentes.reduce(function (t, i) { return t + (i.percurso > 0 ? i.percurso : 0); }, 0);
 
   return {
     placa: String(placa || ''),
@@ -6828,17 +6905,21 @@ function historicoAbastecimentos_(placa, limite) {
     // A media do periodo e percurso total / litros totais. Media das medias
     // daria outro numero: um abastecimento de 40 L pesaria igual a um de 500.
     totais: {
-      abastecimentos: itens.length,
+      abastecimentos: recentes.length,
       litros: litros,
       valor: valor,
       percurso: percurso,
       media: litros > 0 ? percurso / litros : 0,
-      retrocessos: itens.filter(function (i) { return i.retrocedeu; }).length,
-      semLeitura: itens.filter(function (i) { return i.km === null; }).length,
+      retrocessos: recentes.filter(function (i) { return i.retrocedeu; }).length,
+      semLeitura: recentes.filter(function (i) { return i.km === null; }).length,
     },
-    mensagem: itens.length
-      ? itens.length + ' abastecimento(s) em toda a base' +
-        (recentes.length < itens.length ? ' • mostrando os ' + recentes.length + ' mais recentes' : '') + '.'
+    // Vai junto para a tela nao precisar de uma SEGUNDA chamada so para a
+    // dica "última leitura". Cada google.script.run e uma execucao nova, que
+    // rele a planilha do zero — o custo fixo da ida pesa mais que a conta.
+    ultimaLeitura: ultimaLeituraOdometro_(alvo),
+    mensagem: recentes.length
+      ? recentes.length + ' abastecimento(s) mostrado(s)' +
+        (completo ? '' : ' • janela dos lançamentos mais recentes') + '.'
       : 'Nenhum abastecimento registrado para este veículo.',
   };
 }
