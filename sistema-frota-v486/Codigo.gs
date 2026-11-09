@@ -606,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.33.0';
+const VERSAO_SISTEMA = '4.34.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1802,6 +1802,22 @@ function produtoDoTipo_(tipo) {
  * ainda nao esta na base, entao chamar isto antes de gravar devolve exatamente
  * o custo que ele deve receber.
  */
+/**
+ * Preco do litro de UMA carga. Dono unico da divisao.
+ *
+ * Existe para a regra nao ficar escrita em dois lugares: `estadoTanque_` e
+ * `recalcularAbastecimentosInternos_` simulam o MESMO tanque, cada um no seu
+ * laco. Quando o preco cobrado mudou de media para ultima carga, mexer num
+ * so faria o valor gravado no abastecimento divergir do valor que o
+ * recalculo poria no lugar — sem erro, so um numero que muda sozinho na
+ * proxima carga.
+ */
+function precoLitroCarga_(litros, valor) {
+  const l = Number(litros) || 0;
+  const v = Number(valor) || 0;
+  return l > 0 ? v / l : 0;
+}
+
 function estadoTanque_(produto, dataReferencia) {
   const alvo = String(produto || PRODUTO_DIESEL).trim().toUpperCase();
   const limite = dataReferencia instanceof Date && !isNaN(dataReferencia.getTime())
@@ -1841,11 +1857,22 @@ function estadoTanque_(produto, dataReferencia) {
   let valor = 0;
   let custoMedio = 0;
   let litrosSemLastro = 0;
+  // V4.34: o litro sai do tanque pelo preco da ULTIMA carga, nao pela media.
+  // `custoMedio` continua sendo o que foi de fato PAGO pelo que esta no
+  // tanque — e por isso o saldo em R$ nao muda. A diferenca entre os dois
+  // criterios vira um numero proprio, em vez de ficar escondida dentro do
+  // custo de cada veiculo.
+  let precoLitro = 0;
+  let diferencaValorizacao = 0;
   movimentos.forEach(function (m) {
     if (m.entrada) {
       litros += m.litros;
       valor += m.valor;
       custoMedio = litros > 0 ? valor / litros : custoMedio;
+      // Ajuste de estoque entra com litros negativos (perda medida) e nao
+      // redefine o preco: `precoLitroCarga_` devolve 0 para litro nao
+      // positivo, e o `||` mantem o preco da ultima carga de verdade.
+      precoLitro = precoLitroCarga_(m.litros, m.valor) || precoLitro;
       return;
     }
     if (litros <= 0) {
@@ -1857,6 +1884,7 @@ function estadoTanque_(produto, dataReferencia) {
     }
     const consumidos = Math.min(m.litros, litros);
     litrosSemLastro += m.litros - consumidos;
+    diferencaValorizacao += consumidos * (precoLitro - custoMedio);
     valor -= consumidos * custoMedio;
     litros -= consumidos;
     if (litros <= 0.0001) { litros = 0; valor = 0; }
@@ -1867,6 +1895,9 @@ function estadoTanque_(produto, dataReferencia) {
     litros: litros,
     valor: valor,
     custoMedio: custoMedio,
+    // O que o tanque COBRA de um abastecimento interno.
+    precoLitro: precoLitro,
+    diferencaValorizacao: Math.round(diferencaValorizacao * 100) / 100,
     litrosSemLastro: litrosSemLastro,
   };
 }
@@ -3562,9 +3593,11 @@ function webCustoBombaPlanilha(dataIso) {
   const tanque = estadoTanque_(PRODUTO_DIESEL, data);
   return {
     produto: PRODUTO_DIESEL,
-    custoMedio: tanque.custoMedio,
+    custoMedio: tanque.precoLitro,
+    custoMedioEstoque: tanque.custoMedio,
+    diferencaValorizacao: tanque.diferencaValorizacao,
     saldo: tanque.litros,
-    disponivel: tanque.custoMedio > 0,
+    disponivel: tanque.precoLitro > 0,
   };
 }
 
@@ -3767,7 +3800,7 @@ function salvarLancamento_(dados, opcoesSalvar) {
     if (saiDoTanque && tipoAbastecimento === ABASTECIMENTO_INTERNO && litros > 0) {
       const produtoTanque = produtoDoTipo_(dados.tipo) || PRODUTO_DIESEL;
       const tanque = estadoTanque_(produtoTanque, data);
-      if (!(tanque.custoMedio > 0)) {
+      if (!(tanque.precoLitro > 0)) {
         return {
           ok: false,
           mensagem: 'Não há carga de ' + produtoTanque + ' registrada até ' +
@@ -3783,7 +3816,7 @@ function salvarLancamento_(dados, opcoesSalvar) {
             ' L deste abastecimento. Confira a carga da bomba ou a quantidade lançada.',
         };
       }
-      custoBomba = tanque.custoMedio;
+      custoBomba = tanque.precoLitro;
       valorFinal = Math.round(litros * custoBomba * 100) / 100;
     }
 
@@ -15145,7 +15178,7 @@ function webTanques(token) {
   exigirPerfilToken_(token, PERFIS_ACESSO);
   const linhas = PRODUTOS_BOMBA.map(function (produto) {
     const e = estadoTanque_(produto, null);
-    return [produto, e.litros, e.valor, e.custoMedio, e.litrosSemLastro];
+    return [produto, e.litros, e.valor, e.precoLitro, e.litrosSemLastro];
   });
   return {
     colunas: [col_('Produto'), col_('Saldo (L)', 'litros'), col_('Valor em estoque', 'moeda'),
@@ -15241,10 +15274,13 @@ function webSalvarCargaBomba(token, dados) {
       ok: true,
       mensagem: 'Carga registrada: ' + quantidade.toFixed(3).replace('.', ',') + ' L de ' +
         produto + ' a R$ ' + (valor / quantidade).toFixed(4).replace('.', ',') + '/L. ' +
-        'Saldo do tanque: ' + tanque.litros.toFixed(3).replace('.', ',') + ' L, custo médio R$ ' +
+        'Saldo do tanque: ' + tanque.litros.toFixed(3).replace('.', ',') + ' L. ' +
+        'A partir de agora o litro sai a R$ ' + tanque.precoLitro.toFixed(4).replace('.', ',') +
+        ' (preço desta carga); custo médio do estoque R$ ' +
         tanque.custoMedio.toFixed(4).replace('.', ',') + '/L.',
       saldo: tanque.litros,
-      custoMedio: tanque.custoMedio,
+      custoMedio: tanque.precoLitro,
+      custoMedioEstoque: tanque.custoMedio,
     };
   } finally {
     lock.releaseLock();
@@ -15258,9 +15294,14 @@ function webCustoBomba(token, dataIso) {
   const tanque = estadoTanque_(PRODUTO_DIESEL, data);
   return {
     produto: PRODUTO_DIESEL,
-    custoMedio: tanque.custoMedio,
+    // `custoMedio` aqui e o preco que o tanque COBRA (ultima carga). O nome
+    // ficou por causa da tela, que ja le essa chave; o custo medio do
+    // estoque vai ao lado, com nome proprio.
+    custoMedio: tanque.precoLitro,
+    custoMedioEstoque: tanque.custoMedio,
+    diferencaValorizacao: tanque.diferencaValorizacao,
     saldo: tanque.litros,
-    disponivel: tanque.custoMedio > 0,
+    disponivel: tanque.precoLitro > 0,
   };
 }
 
@@ -17916,12 +17957,19 @@ function recalcularAbastecimentosInternos_(produto, desde) {
   });
 
   let litros = 0, valor = 0, custoMedio = 0;
+  // Mesma regra de `estadoTanque_`: o litro sai pelo preco da ULTIMA carga.
+  // Este laco e a segunda copia da simulacao do tanque; as duas cobram pelo
+  // mesmo criterio, senao o valor gravado na hora e o valor que o recalculo
+  // poe no lugar seriam diferentes. `conferir_bomba_ultimo_preco.js` guarda
+  // isso com uma regra estatica.
+  let precoLitro = 0;
   const colValor = valores.map(function (l) { return [l[L_.VALOR]]; });
   let alterados = 0, diferenca = 0;
   movimentos.forEach(function (m) {
     if (m.entrada) {
       litros += m.litros; valor += m.valor;
       if (litros > 0.0001) custoMedio = valor / litros; else { litros = 0; valor = 0; }
+      precoLitro = precoLitroCarga_(m.litros, m.valor) || precoLitro;
       return;
     }
     const d = m.data;
@@ -17930,8 +17978,8 @@ function recalcularAbastecimentosInternos_(produto, desde) {
     // digitado antes do controle da bomba) nunca são alterados.
     const explicito = String(valores[m.indice][L_.TIPO_ABASTECIMENTO] || '').trim().toUpperCase() ===
       ABASTECIMENTO_INTERNO.toUpperCase();
-    if (explicito && (!limiteData || d >= limiteData) && d >= periodo.inicio && d <= periodo.fim && custoMedio > 0) {
-      const novo = Math.round(m.litros * custoMedio * 100) / 100;
+    if (explicito && (!limiteData || d >= limiteData) && d >= periodo.inicio && d <= periodo.fim && precoLitro > 0) {
+      const novo = Math.round(m.litros * precoLitro * 100) / 100;
       const antigo = Number(colValor[m.indice][0]) || 0;
       if (Math.abs(novo - antigo) >= 0.005) {
         colValor[m.indice][0] = novo;
@@ -17961,7 +18009,8 @@ function finalizarCorrecaoBomba_(produtos, acao, detalhe, desde) {
     diferenca.toFixed(2) : ''));
   const tanques = produtos.filter(function (p, i) { return p && produtos.indexOf(p) === i; }).map(function (p) {
     const e = estadoTanque_(p, null);
-    return p + ': saldo ' + e.litros.toFixed(3).replace('.', ',') + ' L a R$ ' + e.custoMedio.toFixed(4).replace('.', ',') + '/L';
+    return p + ': saldo ' + e.litros.toFixed(3).replace('.', ',') + ' L, litro a R$ ' +
+      e.precoLitro.toFixed(4).replace('.', ',') + ' (última carga)';
   }).join(' • ');
   return (alterados
     ? ' ' + alterados + ' abastecimento(s) interno(s) do período aberto foram revalorizados (diferença total R$ ' +
@@ -18067,11 +18116,14 @@ function webAjustarEstoqueBomba(token, produto, saldoReal, dataIso, justificativ
     const e = estadoTanque_(prod, data);
     const diferenca = Math.round((real - e.litros) * 1000) / 1000;
     if (Math.abs(diferenca) < 0.001) return { ok: true, mensagem: 'O saldo do sistema já é ' + real.toFixed(3).replace('.', ',') + ' L. Nada a ajustar.' };
-    if (!(e.custoMedio > 0) && diferenca > 0) {
-      return { ok: false, mensagem: 'O tanque de ' + prod + ' ainda não tem custo médio (nenhuma carga com valor). ' +
+    if (!(e.precoLitro > 0) && diferenca > 0) {
+      return { ok: false, mensagem: 'O tanque de ' + prod + ' ainda não tem preço de litro (nenhuma carga com valor). ' +
         'Para entrada de produto, registre a carga com a NF.' };
     }
-    const valorAjuste = Math.round(diferenca * e.custoMedio * 100) / 100;
+    // Pelo mesmo criterio do abastecimento: um ajuste valorizado pela media
+    // e um abastecimento valorizado pela ultima carga sairiam do mesmo
+    // tanque a precos diferentes.
+    const valorAjuste = Math.round(diferenca * e.precoLitro * 100) / 100;
     const sheet = aba_(ABAS.CARGA_BOMBA);
     const linha = Math.max(sheet.getLastRow() + 1, 2);
     garantirLinhas_(sheet, linha);

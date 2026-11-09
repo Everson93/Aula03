@@ -3866,3 +3866,71 @@ de 31.500, o número é menor que o último por um instante.
 
 `conferir_historico_abastecimento.js` — **39 provas**, mutação **15 de 15**.
 Total do projeto: 1.267 → **1.306**, em 35 suítes.
+
+## V4.34.0 — o litro sai pelo preço da última carga
+
+*"sempre pegar o último custo do diesel, não calcular média"*.
+
+O abastecimento interno era valorizado pelo **custo médio** do tanque. Agora
+é pelo preço da **última carga** até a data do abastecimento.
+
+### A mudança estava em dois lugares, não um
+
+A simulação do tanque existe em **dois laços**: `estadoTanque_`, que
+valoriza na hora de gravar, e `recalcularAbastecimentosInternos_`, que
+revaloriza quando uma carga é corrigida. Mexer num só faria o valor gravado
+divergir do valor que o recálculo põe no lugar — e o número mudaria sozinho
+na próxima correção de carga, sem erro nenhum.
+
+`precoLitroCarga_` é o dono da divisão, e há regra estática conferindo que
+os dois laços derivam o preço dele. Os outros consumidores foram junto: a
+dica da tela, o ajuste de estoque e o alerta diário. Uma prova verifica que
+**nenhum** consumidor ficou valorizando pela média.
+
+### O que NÃO mudou, de propósito
+
+O saldo em R$ do tanque continua sendo o que foi **pago** pelo que está lá
+dentro. O critério muda o que se cobra do veículo, não o dinheiro que
+entrou. A consequência — cobrar acima ou abaixo do que o estoque custou —
+vira um número próprio, `diferencaValorizacao`, em vez de ficar diluída
+dentro do custo de cada veículo:
+
+> 1.000 L a R$ 6,00 e 1.000 L a R$ 8,00. Média 7,00, última carga 8,00. Um
+> abastecimento de 500 L sai por R$ 4.000 em vez de R$ 3.500: R$ 500 de
+> diferença, declarada.
+
+A tela do lançamento mostra **"Litro a R$ 8,0000 (última carga)"** e, ao
+lado, o custo médio do estoque quando os dois diferem.
+
+### O ajuste de estoque não redefine o preço
+
+Ele entra na mesma aba das cargas, com litros negativos. Se redefinisse o
+preço, o litro passaria a sair por um número que nunca foi preço de nota
+nenhuma. Quem barra isso é `precoLitroCarga_`, que devolve 0 para litro não
+positivo — e por isso o laço pode somar sem um `if` próprio.
+
+> Aqui a mutação ensinou algo: a primeira versão tinha **duas** guardas, um
+> `if (m.litros > 0)` no laço e a do dono. O mutante que tirava a de fora
+> sobrevivia — eram redundantes. Em vez de inventar uma prova, tirei a
+> guarda duplicada e provei a que sobrou, onde ela mora.
+
+### E o teste estava estourando sem eu ver
+
+O bloco 8 da suíte nova tinha um regex com escape a mais e **derrubava o
+arquivo**. Como eu filtrava a saída procurando `FALHA`, lia como verde — o
+erro de leitura que o próprio `CLAUDE.md` manda evitar: *olhe o código de
+saída, não a contagem de FALHA*. Quase passou.
+
+`conferir_bomba_ultimo_preco.js` — **33 provas**, mutação **8 de 8**. O
+tanque nunca tinha tido suíte própria, e é o cálculo que define quanto cada
+veículo paga por litro.
+
+Total do projeto: 1.306 → **1.339**, em 36 suítes.
+
+### Pendente que isto cria
+
+Os abastecimentos internos **já gravados** continuam com o valor da média.
+Eles só são revalorizados quando a carga daquele período for corrigida. Se a
+contabilidade quiser a competência inteira pelo critério novo, é rodar uma
+revalorização do mês — que o sistema sabe fazer, mas hoje só é disparada por
+correção de carga.

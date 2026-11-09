@@ -1430,9 +1430,18 @@
         return;
       }
       CUSTO_BOMBA = r.custoMedio;
-      el('dicaBomba').textContent = 'Custo médio do tanque: R$ ' +
-        Number(r.custoMedio).toFixed(4).replace('.', ',') + '/L • saldo ' +
-        num(r.saldo) + ' L de ' + r.produto + '.';
+      // V4.34: o litro sai pelo preço da ÚLTIMA carga. O custo médio do
+      // estoque continua ao lado porque é o que diz se o tanque está sendo
+      // cobrado acima ou abaixo do que foi pago por ele.
+      var medio = Number(r.custoMedioEstoque || 0);
+      var cobrado = Number(r.custoMedio || 0);
+      el('dicaBomba').innerHTML = 'Litro a <b>R$ ' +
+        cobrado.toFixed(4).replace('.', ',') + '</b> (última carga) • saldo ' +
+        num(r.saldo) + ' L de ' + esc(r.produto) +
+        (medio > 0 && Math.abs(medio - cobrado) >= 0.0001
+          ? ' • <span class="sub2">custo médio do estoque R$ ' +
+            medio.toFixed(4).replace('.', ',') + '</span>'
+          : '') + '.';
       atualizarValorInterno();
     }).withFailureHandler(function () {
       if (el('dicaBomba')) el('dicaBomba').textContent = '';
