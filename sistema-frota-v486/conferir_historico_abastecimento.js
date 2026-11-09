@@ -283,6 +283,27 @@ ok('e é a MESMA que o endpoint antigo devolveria',
 ok('veículo sem leitura devolve nulo, não erro',
   ctx.historicoAbastecimentos_('ZZZ 9999', 30).ultimaLeitura === null);
 
+console.log('\n4d. Nada sai da tela num "carregando" eterno');
+montar();
+// Uma Date INVALIDA passa no toString(): o filtro antigo a deixava entrar, e
+// ela quebrava a serializacao da resposta. Quando isso acontece o
+// google.script.run nao chama nem o sucesso nem a falha — a tela fica no
+// "carregando" para sempre, sem erro em lugar nenhum.
+ctx.__lancamentos.push(lanc(vm.runInContext('new Date("x")', ctx), 'AAA 0001', 50, 300, 'LAN-RUIM'));
+const hd = ctx.historicoAbastecimentos_('AAA 0001', 30);
+ok('data inválida não entra na resposta',
+  hd.linhas.every(function (l) { return l.id !== 'LAN-RUIM'; }),
+  JSON.stringify(hd.linhas.map(function (l) { return l.id; })));
+ok('e nenhuma linha sai com data vazia',
+  hd.linhas.every(function (l) { return !!l.dataIso && !!l.dataBR; }));
+ok('a Date crua não vai no payload: a tela usa dataBR/dataIso',
+  hd.linhas.every(function (l) { return l.data === undefined; }),
+  'objeto que a tela não lê é payload a mais e uma porta a mais de serialização');
+ok('a resposta diz quanto tempo levou e que janela usou',
+  hd.diagnostico && typeof hd.diagnostico.ms === 'number' &&
+  hd.diagnostico.completo === true && hd.diagnostico.lidos >= 1,
+  JSON.stringify(hd.diagnostico));
+
 console.log('\n5. Estornar');
 montar();
 let r = ctx.webEstornarAbastecimento('t', 'LAN-2', 'odômetro digitado errado, refazer', 'AAA 0001');
@@ -332,9 +353,11 @@ ok('a alteração de KM usa o ajuste que já existia, com a referência estável
 // que continua pedindo de novo — a ida extra volta sem quebrar nada.
 ok('o servidor manda a última leitura junto com o histórico',
   /ultimaLeitura: ultimaLeituraOdometro_\(alvo\)/.test(fonte));
+const trechoAbrirHist = app.slice(app.indexOf('function abrirHistoricoAbastecimento'),
+                                  app.indexOf('function fecharHistoricoAbastecimento'));
 ok('e a tela aproveita em vez de pedir outra vez',
-  /function abrirHistoricoAbastecimento[\s\S]{0,900}h\.ultimaLeitura !== undefined[\s\S]{0,120}ULTIMO_ODOMETRO = h\.ultimaLeitura/
-    .test(app),
+  /h\.ultimaLeitura !== undefined[\s\S]{0,120}ULTIMO_ODOMETRO = h\.ultimaLeitura/.test(trechoAbrirHist) &&
+  !/webUltimoOdometro/.test(trechoAbrirHist),
   'cada google.script.run relê a planilha do zero: a ida extra custa mais que a conta');
 const trechoEstorno = app.slice(app.indexOf('function estornarAbastecimento'),
                                 app.indexOf('function avisoHistorico'));
@@ -344,6 +367,36 @@ ok('e nem o estorno volta ao servidor só pela dica',
 ok('linha sem leitura não oferece "alterar KM"',
   /l\.km === null \? '<span class="sub2">sem leitura<\/span>'/.test(app),
   'alterar o que não existe devolveria erro e pareceria defeito');
+
+// Tres caminhos deixavam o "carregando" na tela para sempre: o servidor que
+// nao responde, a resposta vazia e o erro ao desenhar. Nenhum deles aparecia
+// em lugar nenhum — o do desenho so no console do navegador.
+const trechoAbrir = trechoAbrirHist;
+ok('o painel desiste e avisa quando o servidor não responde',
+  /setTimeout\(function \(\)/.test(trechoAbrir) && /erroHistorico\(/.test(trechoAbrir) &&
+  /clearTimeout\(relogio\)/.test(trechoAbrir),
+  'spinner eterno não diz se o servidor morreu ou se a tela quebrou');
+ok('e o relógio é desarmado nos dois desfechos', (function () {
+  return (trechoAbrir.match(/clearTimeout\(relogio\)/g) || []).length === 2;
+})(), 'desarmar só no sucesso faz o aviso aparecer por cima do erro já mostrado');
+ok('resposta vazia vira mensagem, não silêncio',
+  /if \(!h\) \{ erroHistorico\(/.test(trechoAbrir));
+ok('erro ao desenhar vira mensagem, não silêncio', (function () {
+  const caught = trechoAbrir.slice(trechoAbrir.indexOf('} catch (err) {'));
+  return /erroHistorico\('A resposta veio, mas a tela falhou ao desenhar/.test(caught);
+})(), 'sem isso a causa fica só no console do navegador');
+ok('e uma resposta atrasada não sobrescreve a tela de outra placa', (function () {
+  // Os TRES desfechos tem de respeitar a vez: o relogio, o sucesso e a falha.
+  // Trocar de placa com uma resposta em voo desenharia o histórico do
+  // veículo anterior sob o nome do novo.
+  return (trechoAbrir.match(/tentativa !== HIST_ABAST_SEQ/g) || []).length === 3 &&
+    /var tentativa = \+\+HIST_ABAST_SEQ;/.test(trechoAbrir);
+})(), String((trechoAbrir.match(/tentativa !== HIST_ABAST_SEQ/g) || []).length));
+ok('desenhar sem histórico também avisa',
+  /if \(!h\) \{ erroHistorico\('Não há histórico carregado\.'\); return; \}/.test(app),
+  'o return calado era o que deixava o "carregando" na tela');
+ok('e o rodapé mostra o tempo do servidor',
+  /h\.diagnostico\.ms\) \+ ' ms no servidor'/.test(app));
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S) de ' + provas : '\nTUDO OK: ' + provas + ' provas');
 process.exit(falhas ? 1 : 0);

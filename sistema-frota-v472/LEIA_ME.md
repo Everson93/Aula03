@@ -3974,6 +3974,69 @@ servidor mandando o dado passava sozinha com a tela ignorando ele.
 `Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
 sistema*: nada de aba, coluna, gatilho ou parâmetro mudou.
 
+## V4.35.1 — o "carregando o histórico…" que não saía
+
+O usuário abriu o painel e ele ficou no *carregando* para sempre: **nenhuma
+mensagem, nenhum erro**. Esse é o pior sintoma possível, porque não distingue
+três causas diferentes — e no código havia um caminho silencioso para cada
+uma:
+
+| o que aconteceu | o que a tela mostrava |
+|---|---|
+| o servidor não respondeu (execução derrubada) | "carregando…" para sempre |
+| a resposta voltou vazia | "carregando…" para sempre |
+| a resposta voltou e **o desenho quebrou** | "carregando…", e o erro só no console do navegador |
+
+O `withFailureHandler` cobria só o primeiro caso, e mesmo assim não cobre o
+pior: quando a execução do Apps Script morre ou a **resposta não serializa**,
+o `google.script.run` não chama nem o sucesso nem a falha. Ninguém avisa nada.
+
+### A causa provável, e ela é a assimetria de sempre
+
+O filtro do histórico aceitava a data assim:
+
+```js
+Object.prototype.toString.call(l[L_.DATA]) === '[object Date]'
+```
+
+**Uma `Date` inválida passa nesse teste.** Ela não dá erro ao ser montada, nem
+ao ser ordenada: quebra na hora de serializar a resposta — e aí o
+`google.script.run` some sem chamar handler nenhum. `ultimaLeituraOdometro_`
+já checava `isNaN(d.getTime())`; este lado, não. É a quinta vez neste projeto
+que o defeito é **um lado de um contrato que tem dois**.
+
+Junto com isso, a `Date` crua saiu do payload: ela já tinha servido (ordenar e
+calcular o percurso) e **ninguém na tela a lê** — a tela usa `dataBR` e
+`dataIso`. Menos payload e uma porta a menos de serialização.
+
+### E a tela nunca mais fica muda
+
+- **Relógio de 60 s**: se nada voltou, o painel diz que o servidor não
+  respondeu e oferece *tentar de novo*. Desarmado nos **dois** desfechos —
+  desarmar só no sucesso faria o aviso aparecer por cima de um erro já
+  mostrado.
+- **Resposta vazia** e **erro ao desenhar** viram mensagem na caixa, não
+  `return` calado. O `if (!h) return;` do `desenharHistoricoAbastecimento` era
+  literalmente uma das portas de saída silenciosas.
+- **A vez da resposta** (`HIST_ABAST_SEQ`): trocar de placa com uma resposta
+  em voo desenhava o histórico do veículo anterior sob o nome do novo. Os três
+  desfechos respeitam a vez.
+- O rodapé passou a mostrar **`N ms no servidor`**. Quando voltar a demorar,
+  dá para ver se o tempo é do servidor ou da tela, em vez de adivinhar.
+
+### Suíte
+
+`conferir_historico_abastecimento.js` — 53 → **64 provas**. Por mutação, 13
+defeitos reintroduzidos, **13 pegos**. Dois sobreviveram na primeira rodada e
+os dois eram prova minha mal escrita, não defeito do código: um regex que
+casava com o `catch` mesmo depois de a mensagem sair dele, e outro que
+aceitava **uma** verificação de vez onde o contrato tem três.
+
+### Instalação
+
+`Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
+sistema*.
+
 ---
 
 # Pendente

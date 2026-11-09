@@ -1559,6 +1559,14 @@
   }
 
   var HIST_ABAST = null;
+  var HIST_ABAST_SEQ = 0;
+
+  function erroHistorico(texto) {
+    var caixa = el('histAbast');
+    if (!caixa) return;
+    caixa.innerHTML = '<div class="erro-caixa">' + esc(texto) +
+      ' <a href="#" onclick="abrirHistoricoAbastecimento();return false">tentar de novo</a></div>';
+  }
 
   function abrirHistoricoAbastecimento(aviso) {
     var caixa = el('histAbast');
@@ -1567,23 +1575,44 @@
     if (!placa) { caixa.innerHTML = '<div class="erro-caixa">Informe o veículo primeiro.</div>'; return; }
     caixa.setAttribute('data-aberto', '1');
     caixa.innerHTML = '<div class="carregando">carregando o histórico…</div>';
+    // Um "carregando" que nunca sai nao diz NADA: nao se sabe se o servidor
+    // morreu, se a resposta voltou vazia ou se esta tela quebrou ao desenhar.
+    // Cada um desses tres caminhos agora termina em mensagem.
+    var tentativa = ++HIST_ABAST_SEQ;
+    var relogio = setTimeout(function () {
+      if (tentativa !== HIST_ABAST_SEQ) return;
+      erroHistorico('O servidor não respondeu em 60 s. A base pode estar grande demais ' +
+        'para uma execução só, ou o Apps Script derrubou a chamada.');
+    }, 60000);
     google.script.run.withSuccessHandler(function (h) {
-      HIST_ABAST = h;
-      // O histórico já traz a última leitura: aproveitar aqui evita uma
-      // SEGUNDA ida ao servidor só para a dica. Cada google.script.run é uma
-      // execução nova, que relê a planilha do zero — o custo fixo da ida
-      // pesa mais que a conta.
-      if (h && h.ultimaLeitura !== undefined) {
-        ULTIMO_ODOMETRO = h.ultimaLeitura;
-        if (el('dicaKm')) {
-          el('dicaKm').textContent = h.ultimaLeitura
-            ? 'Última leitura: ' + num(h.ultimaLeitura.km) + ' em ' + h.ultimaLeitura.data
-            : 'Sem leitura anterior registrada.';
+      clearTimeout(relogio);
+      if (tentativa !== HIST_ABAST_SEQ) return;
+      try {
+        if (!h) { erroHistorico('O servidor respondeu vazio.'); return; }
+        HIST_ABAST = h;
+        // O histórico já traz a última leitura: aproveitar aqui evita uma
+        // SEGUNDA ida ao servidor só para a dica. Cada google.script.run é uma
+        // execução nova, que relê a planilha do zero — o custo fixo da ida
+        // pesa mais que a conta.
+        if (h.ultimaLeitura !== undefined) {
+          ULTIMO_ODOMETRO = h.ultimaLeitura;
+          if (el('dicaKm')) {
+            el('dicaKm').textContent = h.ultimaLeitura
+              ? 'Última leitura: ' + num(h.ultimaLeitura.km) + ' em ' + h.ultimaLeitura.data
+              : 'Sem leitura anterior registrada.';
+          }
         }
+        desenharHistoricoAbastecimento(aviso);
+      } catch (err) {
+        // Sem este catch, um erro aqui deixa o "carregando" na tela e a causa
+        // so no console do navegador, onde ninguem vai olhar.
+        erroHistorico('A resposta veio, mas a tela falhou ao desenhar: ' +
+          ((err && err.message) || err) + '.');
       }
-      desenharHistoricoAbastecimento(aviso);
     }).withFailureHandler(function (e) {
-      caixa.innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      clearTimeout(relogio);
+      if (tentativa !== HIST_ABAST_SEQ) return;
+      erroHistorico((e && e.message) || 'Falha sem mensagem no servidor.');
     }).webHistoricoAbastecimentos(TOKEN, placa, 30);
   }
 
@@ -1596,7 +1625,8 @@
   function desenharHistoricoAbastecimento(aviso) {
     var h = HIST_ABAST;
     var caixa = el('histAbast');
-    if (!h) return;
+    if (!caixa) return;
+    if (!h) { erroHistorico('Não há histórico carregado.'); return; }
     var t = h.totais || {};
     var podeMexer = SESSAO && ['OPERADOR', 'ADMIN'].indexOf(SESSAO.perfil) !== -1;
     var linhas = (h.linhas || []).map(function (l, i) {
@@ -1637,6 +1667,7 @@
       '<div class="sub2" style="margin-top:6px">' + esc(h.mensagem) +
         (t.retrocessos ? ' • <b>' + num(t.retrocessos) + ' leitura(s) menor(es) que a anterior</b>, em vermelho' : '') +
         (t.semLeitura ? ' • ' + num(t.semLeitura) + ' sem leitura de KM no dia' : '') +
+        (h.diagnostico ? ' • ' + num(h.diagnostico.ms) + ' ms no servidor' : '') +
       ' — <a href="#" onclick="fecharHistoricoAbastecimento();return false">fechar</a></div>';
   }
 

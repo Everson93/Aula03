@@ -606,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.35.0';
+const VERSAO_SISTEMA = '4.35.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -6831,6 +6831,7 @@ const JANELAS_HISTORICO_ = [8000, 30000];
  * percurso inventado em cima dela.
  */
 function historicoAbastecimentos_(placa, limite) {
+  const comecou = Date.now();
   const alvo = normalizaPlaca_(placa);
   if (!alvo) return { placa: '', linhas: [], totais: null, mensagem: 'Informe o veículo.' };
   const quantos = Math.min(Math.max(Number(limite) || 30, 1), 200);
@@ -6838,7 +6839,12 @@ function historicoAbastecimentos_(placa, limite) {
     return linhas.filter(function (l) {
       return TIPOS_COMBUSTIVEL.indexOf(String(l[L_.TIPO])) !== -1 &&
         normalizaPlaca_(l[L_.PLACA]) === alvo &&
-        Object.prototype.toString.call(l[L_.DATA]) === '[object Date]';
+        Object.prototype.toString.call(l[L_.DATA]) === '[object Date]' &&
+        // Uma Date INVALIDA passa no toString acima. Ela nao da erro aqui:
+        // quebra na serializacao da resposta, e o google.script.run some sem
+        // chamar nem o sucesso nem a falha — a tela fica no "carregando" para
+        // sempre. `ultimaLeituraOdometro_` ja checava isso; este lado nao.
+        !isNaN(l[L_.DATA].getTime());
     });
   }
 
@@ -6852,10 +6858,12 @@ function historicoAbastecimentos_(placa, limite) {
   // tela sairia sempre sem KM percorrido.
   let crus = [];
   let completo = false;
+  let janelaUsada = 0;
   for (let i = 0; i < JANELAS_HISTORICO_.length; i++) {
     const janela = lerLancamentosRecentes_(JANELAS_HISTORICO_[i]);
     crus = doVeiculo(janela.linhas);
     completo = janela.completo;
+    janelaUsada = janela.linhas.length;
     if (completo || crus.length > quantos) break;
   }
 
@@ -6891,6 +6899,10 @@ function historicoAbastecimentos_(placa, limite) {
   });
 
   const recentes = itens.slice(-quantos).reverse();
+  // A Date crua ja serviu (ordenar e calcular percurso) e nao e lida por
+  // ninguem na tela, que usa `dataBR` e `dataIso`. Tirar do payload encolhe
+  // a resposta e fecha a porta da serializacao.
+  recentes.forEach(function (i) { delete i.data; });
   // Os totais sao dos que APARECEM, como na tela antiga ("Média no
   // período"). Totalizar a base inteira obrigaria a le-la inteira — que e
   // justamente o que deixava o painel lento — e daria um numero que nao
@@ -6917,6 +6929,14 @@ function historicoAbastecimentos_(placa, limite) {
     // dica "última leitura". Cada google.script.run e uma execucao nova, que
     // rele a planilha do zero — o custo fixo da ida pesa mais que a conta.
     ultimaLeitura: ultimaLeituraOdometro_(alvo),
+    // Vai na resposta para a tela poder dizer onde o tempo foi, em vez de o
+    // usuario so ver "esta lento".
+    diagnostico: {
+      ms: Date.now() - comecou,
+      lidos: crus.length,
+      janela: janelaUsada,
+      completo: completo,
+    },
     mensagem: recentes.length
       ? recentes.length + ' abastecimento(s) mostrado(s)' +
         (completo ? '' : ' • janela dos lançamentos mais recentes') + '.'
