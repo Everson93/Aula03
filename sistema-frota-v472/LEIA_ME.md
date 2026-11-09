@@ -3731,3 +3731,86 @@ catálogo têm de bater com as do relatório, na mesma ordem**. Catálogo fora d
 ordem não dá erro — produz uma planilha exportada com o cabeçalho trocado.
 
 Total do projeto: 1.154 → **1.194**, em 32 suítes.
+
+## V4.32.0 — unificação das duas linhagens
+
+O código instalado na planilha tinha andado por fora: **4.30.0 mais cinco
+funcionalidades** que nunca passaram por este repositório. O repositório
+estava na 4.31.0. Nenhum dos dois continha o outro, e colar um por cima do
+outro apagaria trabalho.
+
+A unificação partiu do arquivo **instalado** e aplicou a 4.31 por cima — não
+o contrário. O delta da 4.31 é pequeno e conhecido; o delta de fora não era,
+e reconstruí-lo à mão era a chance de perder uma linha sem perceber.
+
+> Um detalhe que custou meia hora: o arquivo veio do editor do Apps Script
+> com **CRLF**, e o `diff` acusava o arquivo inteiro como diferente. Com as
+> quebras normalizadas, eram 36 blocos.
+
+### O que veio de fora, e o que já valia
+
+Todas as seis regras estáticas passaram no código de lá sem um ajuste. Duas
+das cinco funcionalidades são **conserto de defeito real**:
+
+1. **`chaveTipoDespesa_` + mapa normalizado.** O Resumo casava o tipo do
+   lançamento por igualdade de string. Um "Gás" com o acento **decomposto**
+   (a + U+0301, que o Sheets grava ao colar de certos lugares) não casava,
+   caía no `indice === undefined` e **o valor sumia do Resumo** — sem erro,
+   sem aviso, só o total menor. Agora as chaves são normalizadas.
+2. **`diagnosticarGasNoResumo`** — lista os tipos do período que o Resumo
+   não soma. É a rede de segurança do item 1.
+3. **Índice do total na exportação.** Lia `resumo.valores[2][19]`, que é
+   **KM/litro**, não o TOTAL (coluna 21). Passou a `R_.TOTAL`.
+4. **`casarAnteriores_` em duas etapas**, com `chaveEstavelPendencia_`: o
+   status sobrevive quando o texto do detalhe muda por recálculo, mas nunca
+   atravessa para outro veículo — só casa por grupo quando a cardinalidade
+   bate.
+5. **Confirmação da data da depreciação** (`DATA INCORRETA` → carimbo
+   `[DATA CONFIRMADA … ]` na observação), com menu e botão.
+
+E uma regressão: o `Lancamento.html` instalado era **anterior à V4.14** e
+tinha perdido a calculadora de botijões. Voltou.
+
+### A exceção ficou visível
+
+`resolvidoSobrevive_` virou `return true` lá fora: RESOLVIDO passou a ser
+exceção aprovada, não conserto, e não é mais desfeito pela revalidação.
+Decisão do usuário, mantida.
+
+O que ela trazia junto é que a pendência saía da contagem **e da vista**: o
+mês fechava com o dado errado e ninguém via. Agora sai da conta que bloqueia
+e **não** sai da vista:
+
+- `estadoConferencia_` lê a aba uma vez e devolve `{pendentes, excecoes}` —
+  as duas coisas do mesmo passe, porque dois passes são duas chances de o
+  número e a lista discordarem;
+- a tela de Fechamento ganha o indicador **"Aceitas como exceção"** e a
+  lista nomeada, com placa, problema e a observação de quem aceitou, **antes**
+  de o botão de fechar aparecer;
+- a mensagem do fechamento diz quantas foram;
+- e cada uma vai **nomeada para o Log**. Esse é o ponto: a aba de conferência
+  é reescrita na validação seguinte, e com ela sumiria o rastro de quem
+  aceitou o quê.
+
+### Provas para o que não tinha nenhuma
+
+- `conferir_tipo_despesa.js` — **30 provas**. A central prova o defeito do
+  acento: três grafias de "Gás", inclusive a decomposta, entrando no Resumo.
+- `conferir_data_depreciacao.js` — **33 provas**. Código que escreve na aba
+  de Lançamentos: a fixture tem o alvo no meio, cercado de vizinhos que o
+  laço precisa pular (outro tipo, outra placa, outro mês, data já correta).
+- `conferir_pendencias_estado.js` reescrita para a política nova, e
+  `conferir_irreversiveis.js` ganhou o bloco da exceção no fechamento.
+- `conferir_ipva_parcelas.js` consultava o mapa pela chave literal e ficou
+  verde por acidente quando o mapa mudou de formato. Corrigida.
+
+Mutação: **26 de 26**.
+
+> **Um dublê mais estrito que o original esconde guarda.** O meu
+> `periodoDoMes_` terminava o período à meia-noite; o real termina às
+> 23:59:59.999. Com isso o lançamento do próprio dia 25 caía fora do laço, e
+> a guarda de "já está na data certa" podia ser removida do código sem
+> nenhuma prova reclamar. É parente da armadilha do `Date` entre realms:
+> o dublê mente e o teste passa por motivo errado.
+
+Total do projeto: 1.194 → **1.267** provas, em 34 suítes.

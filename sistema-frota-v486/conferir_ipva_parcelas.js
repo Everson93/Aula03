@@ -22,7 +22,7 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     dividirEmParcelas_, somarMesesCompetencia_, PARCELAS_IPVA_,
-    TIPOS_DESPESA, mapaTipoColunaResumo_, R_, normalizarMesReferencia_,
+    TIPOS_DESPESA, mapaTipoColunaResumo_, chaveTipoDespesa_, R_, normalizarMesReferencia_,
   });
 `, ctx);
 
@@ -69,10 +69,18 @@ ck('nenhuma repete, nenhuma pula',
 console.log('');
 console.log('--- IPVA virou tipo de despesa e alimenta a coluna certa ---');
 ck('IPVA em TIPOS_DESPESA', ctx.TIPOS_DESPESA.includes('IPVA'));
-ck('tipo IPVA -> coluna R_.IPVA', ctx.mapaTipoColunaResumo_()['IPVA'] === ctx.R_.IPVA,
-  'indice ' + ctx.mapaTipoColunaResumo_()['IPVA']);
+// O mapa passou a ser indexado pela CHAVE normalizada (sem acento, sem caixa),
+// para "Gás", "Gas" e o "a" com acento combinante caírem na mesma coluna.
+// Consultar por nome literal aqui deixava a prova verde por acidente.
+const coluna = function (tipo) { return ctx.mapaTipoColunaResumo_()[ctx.chaveTipoDespesa_(tipo)]; };
+ck('tipo IPVA -> coluna R_.IPVA', coluna('IPVA') === ctx.R_.IPVA, 'indice ' + coluna('IPVA'));
 ck('Emplacamento continua em coluna propria',
-  ctx.mapaTipoColunaResumo_()['Emplacamento/IPVA/Seguro'] === ctx.R_.EMPLACAMENTO);
+  coluna('Emplacamento/IPVA/Seguro') === ctx.R_.EMPLACAMENTO);
+ck('"Gas" sem acento cai na coluna do gas', coluna('Gas') === ctx.R_.GAS);
+ck('"GÁS" em caixa alta tambem', coluna('GÁS') === ctx.R_.GAS);
+ck('e o "a" com acento combinante, que o Sheets grava ao colar',
+  coluna('Ga\u0301s') === ctx.R_.GAS, 'era descartado em silencio pelo indice undefined');
+ck('tipo que nao existe continua sem coluna', coluna('Inventado') === undefined);
 
 console.log('');
 console.log('--- o cadastro NAO alimenta mais o mapa ---');

@@ -3203,6 +3203,7 @@
   var DEP_COMPETENCIA = '';
   var DEP_ANALISE = null;
   var DEP_DIVERG = null;
+  var DEP_FORA = [];   // veículos com depreciação fora do último dia, aguardando confirmação de data
 
   function telaDepreciacao(mes) {
     carregando('conferindo depreciação…');
@@ -3242,7 +3243,8 @@
           '<td>' + esc(i.centro || '') + '</td><td class="num">' + brl(i.valorMensal) +
           (reserva ? '<div class="sub2">reserva do cadastro</div>' : '') + '</td>' +
           '<td class="num">' + brl(Number(i.lancado || 0) + Number(i.lancadoForaData || 0)) + '</td>' +
-          '<td><span class="chip">' + esc(i.situacao) + '</span></td></tr>';
+          '<td><span class="chip">' + esc(i.situacao) + '</span>' +
+          (i.dataConfirmada ? '<div class="sub2">data confirmada</div>' : '') + '</td></tr>';
       }).join('');
 
     // A divergência vem com a tela: o botão já nasce dizendo quantas são, em
@@ -3257,6 +3259,15 @@
           '⚖️ ' + num(DEP_DIVERG.total) + ' divergência(s) manual(is)</button>';
     }
 
+    // Depreciação lançada na planilha, com valor, mas em outra data do período: o
+    // sistema marca DATA INCORRETA e bloqueia o fechamento. O botão confirma a data
+    // como está (nada é regravado) e o fechamento deixa de ser bloqueado por isso.
+    DEP_FORA = (st.itens || []).filter(function (i) { return i.situacao === 'DATA INCORRETA'; });
+    var botaoConfirmarData = (naAberta && DEP_FORA.length)
+      ? '<button class="dash-refresh" onclick="depConfirmarData(this)">' +
+        '✔️ Confirmar data de ' + num(DEP_FORA.length) + ' veículo(s)</button>'
+      : '';
+
     var botaoGerar = !naAberta
       ? '<button class="dash-refresh" disabled title="Só a competência aberta gera lançamento">Gerar pendentes</button>'
       : (liberada
@@ -3268,11 +3279,17 @@
         '<h2>Depreciação mensal</h2><p>' + esc(st.mesExtenso || '') + ' • ' + esc(st.periodo || '') + '</p></div>' +
         '<div class="dash-acoes">' +
           '<select id="depMes" onchange="telaDepreciacao(this.value)" style="max-width:200px">' + opcoes + '</select> ' +
-          botaoDivergencias + ' ' + botaoGerar + '</div></div>' +
+          botaoConfirmarData + ' ' + botaoDivergencias + ' ' + botaoGerar + '</div></div>' +
 
       (!liberada && naAberta
         ? '<div class="ok-caixa"><b>Regra da competência:</b> a depreciação só vira lançamento no último dia do período, em ' +
           esc(st.dataLancamento || '') + '. Até lá os veículos ficam como <b>AGUARDANDO</b> e não contam como pendência.</div>'
+        : '') +
+
+      (naAberta && DEP_FORA.length
+        ? '<div class="aviso"><b>' + num(DEP_FORA.length) + ' veículo(s)</b> com a depreciação lançada fora do dia ' +
+          esc(st.dataLancamento || '') + '. O valor já está no custo do período, mas o fechamento fica bloqueado até a data ' +
+          'ser aceita. Use <b>Confirmar data</b> para manter o lançamento como está.</div>'
         : '') +
 
       '<div class="dash-kpis">' +
@@ -3335,6 +3352,32 @@
           linhasVeic + '</tbody></table></div></div>';
 
     if (DEP_DIVERG) renderDivergencias(DEP_DIVERG);
+  }
+
+  /**
+   * Confirma a data da depreciação lançada fora do último dia do período.
+   * Não altera data nem valor: grava a confirmação na observação do lançamento
+   * (e no Log). O valor continua sendo conferido — divergência de valor segue
+   * aparecendo como divergência.
+   */
+  function depConfirmarData(botao) {
+    var fora = DEP_FORA || [];
+    if (!fora.length) { status('Nenhuma depreciação com data incorreta.'); return; }
+    var lista = fora.slice(0, 10).map(function (i) {
+      return '• ' + i.placa + ' — ' + brl(i.lancadoForaData);
+    }).join('\n') + (fora.length > 10 ? '\n… e mais ' + (fora.length - 10) + ' veículo(s)' : '');
+    if (!confirm('Confirmar a data de ' + fora.length + ' veículo(s)?\n\n' + lista +
+      '\n\nO lançamento fica exatamente como está (data e valor). A confirmação é registrada ' +
+      'na observação de cada lançamento e no Log.')) return;
+    comVigia(botao, 'Confirmando…', function (pronto, erro) {
+      google.script.run.withSuccessHandler(function (r) {
+        pronto();
+        status(r.mensagem || '');
+        INICIO_CLIENTE = null;
+        if (r.dados) renderDepreciacao(r.dados);
+        else telaDepreciacao(DEP_COMPETENCIA);
+      }).withFailureHandler(erro).webDepreciacaoConfirmarData(TOKEN, []);
+    });
   }
 
   /**
@@ -3622,12 +3665,30 @@
       var dep = p.depreciacao || {previstos:0,concluidos:0,pendentes:0,divergentes:0,aguardando:0,valorPrevisto:0,valorLancado:0,liberada:true};
       var depLiberada = dep.liberada !== false;
       var depOk = depLiberada && Number(dep.pendentes||0)===0 && Number(dep.divergentes||0)===0;
+      // RESOLVIDO não bloqueia mais o fechamento: é exceção aprovada, não
+      // conserto. Mas sair da contagem não pode ser sumir — quem assina o mês
+      // vê aqui o que está aceitando, nomeado, antes de o botão aparecer.
+      var exc = p.excecoes || [];
+      var blocoExcecoes = exc.length
+        ? '<div class="aviso" style="margin-top:10px"><b>' + num(exc.length) +
+            ' pendência(s) aceita(s) como exceção</b> — não bloqueiam o fechamento, ' +
+            'mas o dado continua como está. Vão nomeadas para o Log.' +
+            '<ul style="margin:8px 0 0;padding-left:18px">' +
+            exc.map(function (e) {
+              return '<li>' + esc(e.origem) + ' • <b>' + esc(e.placa || '—') + '</b> • ' +
+                esc(e.problema) +
+                (e.observacao ? ' <span class="sub2">— "' + esc(e.observacao) + '"</span>'
+                              : ' <span class="sub2">— sem observação</span>') + '</li>';
+            }).join('') + '</ul></div>'
+        : '';
       el('tela').innerHTML =
         '<h2 class="titulo">Fechamento do período</h2>' +
         '<p class="sub">' + esc(p.mesExtenso) + ' • ' + esc(p.periodo) + '</p>' +
         '<div class="kpis">' +
           '<div class="kpi"><div class="rotulo">Total apurado</div><div class="valor">' + brl(p.total) + '</div></div>' +
           '<div class="kpi"><div class="rotulo">Pendências</div><div class="valor">' + p.pendencias + '</div></div>' +
+          '<div class="kpi"><div class="rotulo">Aceitas como exceção</div><div class="valor"' +
+            (exc.length ? ' style="color:#A66300"' : '') + '>' + num(exc.length) + '</div></div>' +
           '<div class="kpi"><div class="rotulo">Depreciação</div><div class="valor" style="font-size:16px">' + (depOk?'OK':(!depLiberada?'Aguardando '+esc(dep.dataLancamento||'dia 25'):(dep.pendentes+dep.divergentes)+' revisar')) + '</div></div>' +
           '<div class="kpi"><div class="rotulo">Próximo período</div><div class="valor" style="font-size:15px">' + esc(p.proximo) + '</div></div>' +
         '</div>' +
@@ -3635,6 +3696,7 @@
           '<p class="sub" style="margin:6px 0 10px">Centralize inconsistências de cadastro, lançamentos, odômetro e depreciação.</p>' +
           '<button class="acao secundaria" onclick="abrir(\'pendencias\')">⚠️ Abrir pendências</button> ' +
           '<button class="acao secundaria" onclick="rodarValidacao()">✅ Revalidar dados</button>' +
+          blocoExcecoes +
           '<div id="saidaValidacao" style="margin-top:12px"></div></div>' +
         '<div class="cartao"><b>2. Conferir a depreciação mensal</b>'+
           '<p class="sub" style="margin:6px 0 10px">'+num(dep.concluidos)+' de '+num(dep.previstos)+' veículos concluídos • previsto '+brl(dep.valorPrevisto)+' • lançado '+brl(dep.valorLancado)+'.</p>'+

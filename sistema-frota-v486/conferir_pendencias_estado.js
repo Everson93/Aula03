@@ -97,6 +97,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     chavePendencia_, casarAnteriores_, resolvidoSobrevive_, escreverConferencia_,
     webAtualizarPendencia, contarPendenciasConferencia_, specDaPendencia_, ABAS,
+    estadoConferencia_, resumirExcecoes_, chaveEstavelPendencia_,
   });
   exigirExecucaoMutacao_ = function () {};
   autorizarContextoWeb_ = function () { return { perfil: 'ADMIN' }; };
@@ -186,44 +187,77 @@ ok('a primeira mantém EM ANÁLISE e a segunda segue PENDENTE',
   ' — um mapa simples daria o mesmo status às duas');
 
 // ---- 4. RESOLVIDO não esconde problema que persiste ------------------------
-console.log('\n4. RESOLVIDO em problema que tem conserto');
+console.log('\n4. RESOLVIDO é exceção aprovada: sobrevive à revalidação');
+// Política mudada em 09/11/2026 a pedido do usuário. Antes, RESOLVIDO num
+// problema com conserto por campo voltava a PENDENTE na revalidação seguinte,
+// porque o dado continuava errado. Agora RESOLVIDO é a decisão consciente de
+// quem conferiu, e a decisão não é apagada pelo coletor.
+//
+// O preço disso é real e está provado no bloco 6: o dado SEGUE errado e o
+// fechamento destrava. É por isso que a exceção passou a ser contada e
+// nomeada — some da conta que bloqueia, não some da vista.
 PEND.length = 0;
 ctx.escreverConferencia_([problema(L, 'AAA1A11', 'Oficina sem detalhe da peça/serviço', 'linha 5 • descreva')]);
 marcar(0, 'RESOLVIDO', 'falei com o Marcos');
 ctx.escreverConferencia_([problema(L, 'AAA1A11', 'Oficina sem detalhe da peça/serviço', 'linha 5 • descreva')]);
 e = estado();
-ok('volta a PENDENTE, porque o coletor ainda o encontra', e[0].status === 'PENDENTE',
-  e[0].status + ' — o dado continua errado por mais que alguém tenha dito que não');
+ok('continua RESOLVIDO mesmo com o coletor achando de novo', e[0].status === 'RESOLVIDO',
+  e[0].status);
 ok('a observação do operador é preservada', /falei com o Marcos/.test(e[0].obs), e[0].obs);
-ok('e o motivo da volta é anotado', /continua na base/.test(e[0].obs), e[0].obs);
+ok('e NÃO é carimbada com o aviso de reversão', !/continua na base/.test(e[0].obs), e[0].obs);
+ok('resolvidoSobrevive_ vale para os dois tipos de problema',
+  ctx.resolvidoSobrevive_('Sem nenhum custo no período') === true &&
+  ctx.resolvidoSobrevive_('Oficina sem detalhe da peça/serviço') === true);
 
-console.log('\n5. RESOLVIDO em problema de julgamento sobrevive');
+console.log('\n5. O julgamento também sobrevive, como antes');
 PEND.length = 0;
 ctx.escreverConferencia_([[ctx.ABAS.RESUMO, 'CCC3C33', 'Sem nenhum custo no período', 'parado']]);
 marcar(0, 'RESOLVIDO', 'veículo encostado, previsto');
 ctx.escreverConferencia_([[ctx.ABAS.RESUMO, 'CCC3C33', 'Sem nenhum custo no período', 'parado']]);
 e = estado();
 ok('continua RESOLVIDO', e[0].status === 'RESOLVIDO',
-  'não tem conserto por campo: é julgamento do operador, e repetir o aviso todo mês ' +
-  'ensina a ignorar a tela');
-ok('resolvidoSobrevive_ separa os dois casos',
-  ctx.resolvidoSobrevive_('Sem nenhum custo no período') === true &&
-  ctx.resolvidoSobrevive_('Oficina sem detalhe da peça/serviço') === false);
+  'repetir o aviso todo mês ensina a ignorar a tela');
 
-console.log('\n6. E some da contagem só quando é legítimo');
+console.log('\n6. Sai da conta que bloqueia, NÃO sai da vista');
 PEND.length = 0;
 ctx.escreverConferencia_([
   problema(L, 'AAA1A11', 'Oficina sem detalhe da peça/serviço', 'linha 5 • descreva'),
   [ctx.ABAS.RESUMO, 'CCC3C33', 'Sem nenhum custo no período', 'parado'],
+  problema(L, 'BBB2B22', 'Valor negativo', 'linha 9'),
 ]);
-marcar(0, 'RESOLVIDO', '');
+marcar(0, 'RESOLVIDO', 'falei com o Marcos');
 marcar(1, 'RESOLVIDO', '');
 ctx.escreverConferencia_([
   problema(L, 'AAA1A11', 'Oficina sem detalhe da peça/serviço', 'linha 5 • descreva'),
   [ctx.ABAS.RESUMO, 'CCC3C33', 'Sem nenhum custo no período', 'parado'],
+  problema(L, 'BBB2B22', 'Valor negativo', 'linha 9'),
 ]);
-ok('a contagem volta a enxergar o que tem conserto', ctx.contarPendenciasConferencia_() === 1,
-  String(ctx.contarPendenciasConferencia_()) + ' — o de julgamento continua fora da conta');
+const est = ctx.estadoConferencia_();
+ok('só o que não foi aceito bloqueia', est.pendentes === 1, String(est.pendentes));
+ok('e a contagem antiga continua dando o mesmo número',
+  ctx.contarPendenciasConferencia_() === est.pendentes,
+  'duas contagens diferentes do mesmo fato é a receita de um número mentir');
+// A exceção fora da conta E fora da vista era o risco de trocar a política.
+ok('as duas aceitas voltam NOMEADAS', est.excecoes.length === 2,
+  JSON.stringify(est.excecoes.map(function (x) { return x.placa; })));
+ok('com placa, problema e a observação de quem aceitou',
+  est.excecoes[0].placa === 'AAA1A11' &&
+  /Oficina sem detalhe/.test(est.excecoes[0].problema) &&
+  /falei com o Marcos/.test(est.excecoes[0].observacao),
+  JSON.stringify(est.excecoes[0]));
+ok('quem aceitou sem escrever nada aparece assim mesmo',
+  est.excecoes[1].observacao === '', JSON.stringify(est.excecoes[1]));
+ok('a linha do Log nomeia cada exceção',
+  ctx.resumirExcecoes_(est.excecoes).length === 2 &&
+  /AAA1A11/.test(ctx.resumirExcecoes_(est.excecoes)[0]) &&
+  /sem observação/.test(ctx.resumirExcecoes_(est.excecoes)[1]),
+  ctx.resumirExcecoes_(est.excecoes).join(' | '));
+ok('sem exceção nenhuma, a lista vem vazia', (function () {
+  PEND.length = 0;
+  ctx.escreverConferencia_([problema(L, 'AAA1A11', 'Valor negativo', 'linha 5')]);
+  const x = ctx.estadoConferencia_();
+  return x.pendentes === 1 && x.excecoes.length === 0;
+})());
 
 // ---- 7. gravar status no item certo ----------------------------------------
 console.log('\n7. Salvar status com a lista mudada por baixo');
@@ -247,10 +281,10 @@ r = ctx.webAtualizarPendencia('t', 4, 'EM ANÁLISE', 'x', '');
 ok('sem o esperado, continua funcionando (compatível com tela antiga)', r.ok === true,
   JSON.stringify(r));
 
-console.log('\n8. O laço do RESOLVIDO, fechado na origem');
-// O operador marcava RESOLVIDO numa pendência com conserto, o item sumia pelo
-// filtro, e voltava como PENDENTE na revalidação seguinte — porque o problema
-// continua na base. Resolver e desfazer pelas costas é pior que recusar na hora.
+console.log('\n8. Marcar RESOLVIDO é aceito em qualquer pendência');
+// Antes o servidor RECUSAVA marcar RESOLVIDO onde havia conserto por campo,
+// porque a revalidação desfaria. Com a política nova não desfaz, então
+// recusar seria impedir a exceção que o usuário quis poder registrar.
 PEND.length = 0;
 ctx.escreverConferencia_([
   problema(L, 'AAA1A11', 'Oficina sem detalhe da peça/serviço', 'linha 5 • descreva'),
@@ -258,29 +292,19 @@ ctx.escreverConferencia_([
 ]);
 let rr = ctx.webAtualizarPendencia('t', 3, 'RESOLVIDO', 'feito',
   'Oficina sem detalhe da peça/serviço');
-ok('RECUSA resolver o que tem conserto por campo', rr.ok === false, JSON.stringify(rr));
-ok('e manda usar o botão Corrigir', /bot[ãa]o "Corrigir"/.test(rr.mensagem || ''), rr.mensagem);
-ok('explica por que não adianta marcar',
-  /traz o item de volta/.test(rr.mensagem || ''), rr.mensagem);
-ok('sugere EM ANÁLISE como alternativa honesta',
-  /EM AN[ÁA]LISE/.test(rr.mensagem || ''), rr.mensagem);
-ok('e o status na base não mudou', PEND[0][4] !== 'RESOLVIDO', JSON.stringify(PEND[0]));
-
+ok('aceita no problema que tem conserto por campo', rr.ok === true, JSON.stringify(rr));
+ok('e grava', PEND[0][4] === 'RESOLVIDO', JSON.stringify(PEND[0]));
+rr = ctx.webAtualizarPendencia('t', 4, 'RESOLVIDO', 'veículo encostado',
+  'Sem nenhum custo no período');
+ok('e no de julgamento também', rr.ok === true && PEND[1][4] === 'RESOLVIDO', JSON.stringify(rr));
 rr = ctx.webAtualizarPendencia('t', 3, 'EM ANÁLISE', 'cobrando a oficina',
   'Oficina sem detalhe da peça/serviço');
 ok('EM ANÁLISE continua aceito', rr.ok === true && PEND[0][4] === 'EM ANÁLISE',
   JSON.stringify(rr));
-
-rr = ctx.webAtualizarPendencia('t', 4, 'RESOLVIDO', 'veículo encostado',
-  'Sem nenhum custo no período');
-ok('mas RESOLVIDO segue valendo no que é julgamento', rr.ok === true,
-  JSON.stringify(rr));
-ok('e grava', PEND[1][4] === 'RESOLVIDO', JSON.stringify(PEND[1]));
-
-// A mesma regra dos dois lados: o que o servidor recusa, a revalidação também
-// reverteria. Se divergissem, um deles estaria mentindo.
+// A mesma regra dos dois lados: o que o servidor aceita, a revalidação
+// mantém. Se divergissem, um deles estaria mentindo.
 ok('a regra é a mesma de resolvidoSobrevive_',
-  ctx.resolvidoSobrevive_('Oficina sem detalhe da peça/serviço') === false &&
+  ctx.resolvidoSobrevive_('Oficina sem detalhe da peça/serviço') === true &&
   ctx.resolvidoSobrevive_('Sem nenhum custo no período') === true);
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));

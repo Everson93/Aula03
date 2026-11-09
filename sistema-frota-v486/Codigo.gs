@@ -606,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.31.0';
+const VERSAO_SISTEMA = '4.32.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -2695,7 +2695,7 @@ function textoSemErro_(valor) {
 
 /** Tipo de despesa -> índice (R_) da coluna de valor no Resumo. */
 function mapaTipoColunaResumo_() {
-  const m = {};
+  const m = {};  // chaves de exibição; abaixo vira mapa por chave normalizada
   m['Combustivel Proprio'] = R_.COMBUSTIVEL;
   m['Combustivel Terceiros'] = R_.COMBUSTIVEL;
   m['Lubrificante'] = R_.LUBRIFICANTE;
@@ -2714,7 +2714,20 @@ function mapaTipoColunaResumo_() {
   m['Diaria/Pedagio'] = R_.PEDAGIO;
   m['Depreciação'] = R_.DEPRECIACAO;
   m['Depreciacao'] = R_.DEPRECIACAO;
-  return m;
+  // As chaves saem NORMALIZADAS (sem acento, sem caixa): "Gás", "Gas", "GÁS" e o "a"
+  // decomposto (a + acento combinante, que o Sheets grava ao colar de alguns lugares)
+  // caem todos na mesma coluna. Antes, qualquer grafia diferente de "Gás" era
+  // descartada em silêncio pelo `indice === undefined` de calcularLinhasResumo_.
+  const normalizado = {};
+  Object.keys(m).forEach(function (k) { normalizado[chaveTipoDespesa_(k)] = m[k]; });
+  return normalizado;
+}
+
+/** Chave de comparação de um tipo de despesa: sem acento, sem caixa, sem espaço sobrando. */
+function chaveTipoDespesa_(tipo) {
+  return String(tipo == null ? '' : tipo)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 /** Colunas que compõem o TOTAL (Ativo fica de fora: é imobilizado, não despesa). */
@@ -2754,6 +2767,9 @@ function calcularLinhasResumo_(periodo) {
   });
 
   const colunaDoTipo = mapaTipoColunaResumo_();
+  const chavesCombustivel = TIPOS_COMBUSTIVEL.map(chaveTipoDespesa_);
+  const chaveGas = chaveTipoDespesa_('Gás');
+  const memoChave = {};
   lerLancamentos_().forEach(function (lanc) {
     const data = lanc[L_.DATA];
     if (!(data instanceof Date)) return;
@@ -2762,11 +2778,12 @@ function calcularLinhasResumo_(periodo) {
     const l = porPlaca[normalizaPlaca_(lanc[L_.PLACA])];
     if (!l) return;
     const tipo = String(lanc[L_.TIPO] || '').trim();
-    const indice = colunaDoTipo[tipo];
+    const chave = memoChave[tipo] !== undefined ? memoChave[tipo] : (memoChave[tipo] = chaveTipoDespesa_(tipo));
+    const indice = colunaDoTipo[chave];
     if (indice === undefined) return;
     l[indice] += Number(lanc[L_.VALOR]) || 0;
-    if (TIPOS_COMBUSTIVEL.indexOf(tipo) !== -1) l[R_.LITROS] += Number(lanc[L_.LITROS]) || 0;
-    if (tipo === 'Gás') l[R_.GAS_KG] += Number(lanc[L_.LITROS]) || 0;
+    if (chavesCombustivel.indexOf(chave) !== -1) l[R_.LITROS] += Number(lanc[L_.LITROS]) || 0;
+    if (chave === chaveGas) l[R_.GAS_KG] += Number(lanc[L_.LITROS]) || 0;
   });
 
   // KM rodado = maior - menor leitura do período (exige pelo menos 2 leituras).
@@ -2808,6 +2825,32 @@ function calcularLinhasResumo_(periodo) {
     l[R_.RS_KM] = l[R_.KM] > 0 ? l[R_.TOTAL] / l[R_.KM] : 0;
   });
   return linhas;
+}
+
+/**
+ * Diagnóstico: por que o Gás não entrou no TOTAL?
+ * Lista os "tipos" gravados em Lançamentos que o Resumo não reconhece e o valor
+ * que cada um deixaria de somar. Rodar pelo editor do Apps Script (ou menu, se quiser).
+ */
+function diagnosticarGasNoResumo() {
+  exigirExecucaoMutacao_();
+  const periodo = periodoAtual_();
+  const conhecidos = mapaTipoColunaResumo_();
+  const contagem = {};
+  lerLancamentos_().forEach(function (l) {
+    const d = l[L_.DATA];
+    if (!(d instanceof Date) || d < periodo.inicio || d > periodo.fim) return;
+    const tipo = String(l[L_.TIPO] || '').trim();
+    if (conhecidos[chaveTipoDespesa_(tipo)] !== undefined) return;
+    const c = contagem[tipo] || (contagem[tipo] = { n: 0, valor: 0 });
+    c.n++; c.valor += Number(l[L_.VALOR]) || 0;
+  });
+  const nomes = Object.keys(contagem);
+  alerta_('Diagnóstico do Resumo', nomes.length
+    ? 'Tipos no período que o Resumo NÃO soma:\n\n' + nomes.map(function (t) {
+        return '• "' + t + '" — ' + contagem[t].n + ' lançamento(s), R$ ' + numBR_(contagem[t].valor, 2);
+      }).join('\n')
+    : 'Todos os lançamentos do período têm um tipo que o Resumo reconhece.');
 }
 
 /**
@@ -4186,12 +4229,12 @@ function validarFechamentoCompleto_() {
   }
   const problemas = coletarProblemas_({ fechamento: true });
   escreverConferencia_(problemas);
-  const pendencias = contarPendenciasConferencia_();
-  if (pendencias > 0) {
-    return { ok: false, mensagem: 'Fechamento bloqueado: existem ' + pendencias +
+  const estado = estadoConferencia_();
+  if (estado.pendentes > 0) {
+    return { ok: false, mensagem: 'Fechamento bloqueado: existem ' + estado.pendentes +
       ' pendência(s) ativa(s). Resolva ou marque como RESOLVIDO após conferência e revalide os dados.' };
   }
-  return { ok: true, depreciacao: dep, pendencias: 0 };
+  return { ok: true, depreciacao: dep, pendencias: 0, excecoes: estado.excecoes };
 }
 
 function executarFechamentoCritico_(mesRef) {
@@ -4223,8 +4266,18 @@ function executarFechamentoCritico_(mesRef) {
     reconstruirRelatorios_();
     escreverConferencia_(coletarProblemas_());
     invalidarCacheInicio_();
-    registrarLog_('Fechar período', mesRef + ' • R$ ' + Number(total).toFixed(2) + ' • backup ' + backup.nome);
-    return { ok: true, total: Number(total) || 0, backup: backup, exportacao: exportacao };
+    // As excecoes aceitas vao para o Log NOMEADAS, junto do fechamento. E o
+    // unico lugar onde isso fica depois: a aba de conferencia e reescrita na
+    // proxima validacao, e com ela some o rastro de quem aceitou o que.
+    const excecoes = (validacao.excecoes || []);
+    registrarLog_('Fechar período', mesRef + ' • R$ ' + Number(total).toFixed(2) +
+      ' • backup ' + backup.nome +
+      (excecoes.length ? ' • ' + excecoes.length + ' exceção(ões) aceita(s)' : ''));
+    if (excecoes.length) {
+      registrarLog_('Exceções do fechamento ' + mesRef, resumirExcecoes_(excecoes).join(' | ').slice(0, 2000));
+    }
+    return { ok: true, total: Number(total) || 0, backup: backup, exportacao: exportacao,
+      excecoes: excecoes };
   } finally { lock.releaseLock(); }
 }
 
@@ -4867,18 +4920,55 @@ function depreciacaoPodeContarComoPendencia_() {
   try { return depreciacaoLiberada_(periodoAtual_()) === true; } catch (e) { return false; }
 }
 
-function contarPendenciasConferencia_() {
+/**
+ * Le a aba de conferencia UMA vez e separa o que bloqueia do que foi aceito.
+ *
+ * RESOLVIDO nao bloqueia o fechamento (`resolvidoSobrevive_` devolve true: e
+ * uma excecao aprovada, nao um conserto). Mas sair da contagem nao pode ser a
+ * mesma coisa que sumir: um dado que continua errado passando calado pelo
+ * fechamento e pior que um bloqueio. Entao as excecoes voltam NOMEADAS, e
+ * quem fecha assina sabendo quantas e quais.
+ *
+ * A contagem e a lista saem do MESMO passe de propósito: dois passes
+ * separados sao duas chances de o numero e a lista discordarem.
+ */
+function estadoConferencia_() {
   const sheet = garantirAbaPendencias_(false);
-  if (!sheet || sheet.getLastRow() < 3) return 0;
-  const dados = sheet.getRange(3, 1, sheet.getLastRow() - 2, 5).getDisplayValues();
+  if (!sheet || sheet.getLastRow() < 3) return { pendentes: 0, excecoes: [] };
+  const dados = sheet.getRange(3, 1, sheet.getLastRow() - 2, 6).getDisplayValues();
   const contarDepreciacao = depreciacaoPodeContarComoPendencia_();
-  return dados.reduce(function (total, linha) {
+  const excecoes = [];
+  let pendentes = 0;
+  dados.forEach(function (linha) {
     const origem = String(linha[0] || '').trim();
-    if (!origem || origem === 'Nenhum problema encontrado.') return total;
-    if (!contarDepreciacao && ehPendenciaDepreciacao_(linha[2])) return total;
+    if (!origem || origem === 'Nenhum problema encontrado.') return;
+    if (!contarDepreciacao && ehPendenciaDepreciacao_(linha[2])) return;
     const status = String(linha[4] || 'PENDENTE').trim().toUpperCase();
-    return status === 'RESOLVIDO' ? total : total + 1;
-  }, 0);
+    if (status === 'RESOLVIDO') {
+      excecoes.push({
+        origem: origem,
+        placa: String(linha[1] || ''),
+        problema: String(linha[2] || ''),
+        detalhe: String(linha[3] || ''),
+        observacao: String(linha[5] || ''),
+      });
+      return;
+    }
+    pendentes++;
+  });
+  return { pendentes: pendentes, excecoes: excecoes };
+}
+
+function contarPendenciasConferencia_() {
+  return estadoConferencia_().pendentes;
+}
+
+/** Uma linha por excecao, para o Log e para o e-mail do fechamento. */
+function resumirExcecoes_(excecoes) {
+  return (excecoes || []).map(function (e) {
+    return e.origem + ' • ' + (e.placa || '—') + ' • ' + e.problema +
+      (e.observacao ? ' • "' + e.observacao + '"' : ' • sem observação');
+  });
 }
 
 /**
@@ -4909,19 +4999,75 @@ function chavePendencia_(linha) {
  * mesmo veiculo, um mapa simples daria o mesmo status as duas, e marcar uma
  * como EM ANALISE marcaria a outra junto.
  */
-function casarAnteriores_(linhasAnteriores) {
-  const filas = {};
-  linhasAnteriores.forEach(function (linha) {
-    const k = chavePendencia_(linha);
-    (filas[k] || (filas[k] = [])).push({
-      status: String(linha[4] || 'PENDENTE').trim().toUpperCase(),
-      observacao: String(linha[5] || ''),
+function chaveEstavelPendencia_(linha) {
+  // Chave de fallback: identifica o mesmo tipo de ocorrência sem depender
+  // do texto do detalhe, que pode mudar quando o coletor recalcula valores.
+  return [linha[0], linha[1], linha[2]].map(function (x) {
+    return String(x == null ? '' : x).trim().toUpperCase();
+  }).join('||');
+}
+
+function casarAnteriores_(linhasAnteriores, problemasAtuais) {
+  // Preserva status/observacao em duas etapas:
+  // 1) correspondencia exata (origem + placa + problema + detalhe);
+  // 2) correspondencia por grupo estavel (origem + placa + problema),
+  //    somente quando a quantidade de ocorrencias restantes e igual.
+  // Assim, detalhes que mudam por recalculo nao apagam a aprovacao, mas uma
+  // aprovacao nunca atravessa para outro veiculo ou outro tipo de problema.
+  const filasExatas = Object.create(null);
+  const gruposAntigos = Object.create(null);
+  const gruposAtuais = Object.create(null);
+  const resultado = new Array((problemasAtuais || []).length);
+
+  function novoItem(linha) {
+    let status = String(linha[4] || 'PENDENTE').trim().toUpperCase();
+    if (['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO'].indexOf(status) === -1) status = 'PENDENTE';
+    return { status: status, observacao: String(linha[5] || ''), consumido: false };
+  }
+
+  (linhasAnteriores || []).forEach(function (linha) {
+    const item = novoItem(linha);
+    const exata = chavePendencia_(linha);
+    const estavel = chaveEstavelPendencia_(linha);
+    (filasExatas[exata] || (filasExatas[exata] = [])).push(item);
+    (gruposAntigos[estavel] || (gruposAntigos[estavel] = [])).push(item);
+  });
+
+  (problemasAtuais || []).forEach(function (p, indice) {
+    const estavel = chaveEstavelPendencia_(p);
+    (gruposAtuais[estavel] || (gruposAtuais[estavel] = [])).push(indice);
+
+    const fila = filasExatas[chavePendencia_(p)] || [];
+    while (fila.length && fila[0].consumido) fila.shift();
+    if (fila.length) {
+      const item = fila.shift();
+      item.consumido = true;
+      resultado[indice] = item;
+    }
+  });
+
+  // Para os itens que nao casaram exatamente, preserva por ordem de ocorrencia
+  // somente se a quantidade antiga e a atual restante for identica. Se a
+  // quantidade divergir, a associacao e ambigua e a nova ocorrencia fica PENDENTE.
+  Object.keys(gruposAtuais).forEach(function (grupo) {
+    const indicesNovos = gruposAtuais[grupo].filter(function (i) { return !resultado[i]; });
+    if (!indicesNovos.length) return;
+
+    const itensAntigos = (gruposAntigos[grupo] || []).filter(function (item) { return !item.consumido; });
+    if (itensAntigos.length !== indicesNovos.length) return;
+
+    // A ordem de coleta e a ordem de exibicao da conferencia. Emparelhar por
+    // ordem so e seguro aqui porque origem/placa/problema e cardinalidade batem.
+    indicesNovos.forEach(function (indice, posicao) {
+      const item = itensAntigos[posicao];
+      item.consumido = true;
+      resultado[indice] = item;
     });
   });
+
   return {
-    proximo: function (problema) {
-      const fila = filas[chavePendencia_(problema)];
-      return (fila && fila.length) ? fila.shift() : {};
+    proximo: function (problema, indice) {
+      return resultado[indice] || {};
     },
   };
 }
@@ -4941,7 +5087,11 @@ function casarAnteriores_(linhasAnteriores) {
  * PENDENTE, com a observacao preservada e o motivo anotado.
  */
 function resolvidoSobrevive_(problema) {
-  return !specDaPendencia_(problema);
+  // RESOLVIDO representa uma decisão consciente do responsável após análise.
+  // A existência de uma rotina de correção não deve apagar essa decisão.
+  // A correção do dado continua recomendada, mas não é condição para registrar
+  // uma exceção aprovada e permitir o fechamento.
+  return true;
 }
 
 /**
@@ -4957,7 +5107,7 @@ function escreverConferencia_(problemas) {
       return linha[0] && String(linha[0]).trim() !== 'Nenhum problema encontrado.';
     })
     : [];
-  const anteriores = casarAnteriores_(brutasAnteriores);
+  const anteriores = casarAnteriores_(brutasAnteriores, problemas);
 
   removerFiltro_(sheet);
   // A versão antiga tinha A1:D1 mesclado; desfaz antes de ampliar o cabeçalho para A1:G1.
@@ -4977,18 +5127,14 @@ function escreverConferencia_(problemas) {
 
   if (problemas.length) {
     const agora = new Date();
-    const linhas = problemas.map(function (p) {
-      const ant = anteriores.proximo(p);
+    const linhas = problemas.map(function (p, indice) {
+      const ant = anteriores.proximo(p, indice);
       let status = String(ant.status || 'PENDENTE').toUpperCase();
       if (['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO'].indexOf(status) === -1) status = 'PENDENTE';
       let observacao = ant.observacao || '';
-      // O problema foi coletado DE NOVO: se ele tem conserto por campo, não está
-      // resolvido, por mais que alguém tenha dito que estava.
-      if (status === 'RESOLVIDO' && !resolvidoSobrevive_(p[2])) {
-        status = 'PENDENTE';
-        observacao = ('↩ marcado como resolvido, mas o problema continua na base. ' +
-          observacao).trim().slice(0, 500);
-      }
+      // Uma pendência RESOLVIDA permanece como exceção conferida mesmo que o
+      // coletor continue identificando a condição. A aprovação não corrige o
+      // lançamento de origem; apenas registra que o responsável analisou o caso.
       return [p[0], p[1], p[2], p[3], status, observacao, agora];
     });
     sheet.getRange(3, 1, linhas.length, 7).setValues(linhas);
@@ -5266,6 +5412,7 @@ function onOpen() {
     .addItem('⚠️ Pendências de conferência', 'irParaPendencias')
     .addItem('✅ Validar dados', 'validarDados')
     .addItem('📉 Gerar depreciação mensal', 'gerarDepreciacaoMensalComAviso')
+    .addItem('✔️ Confirmar data da depreciação', 'confirmarDataDepreciacaoComAviso')
     .addItem('🔒 Fechar período', 'fecharPeriodo')
     .addItem('↩️ Reabrir mês anterior', 'reabrirMesAnterior')
     .addItem('📅 Alterar período aberto', 'alterarPeriodoPlanilha')
@@ -7524,7 +7671,7 @@ function executarAcaoCentral_(e) {
       centralStatus_('Relatórios atualizados.', false);
     } else if (a1 === CENTRAL_CEL_.VALIDAR) {
       autorizarContextoPlanilha_(e, 'ADMIN');
-      const problemas = coletarProblemas_();
+      const problemas = coletarProblemas_({ fechamento: true });
       escreverConferencia_(problemas);
       invalidarCacheInicio_();
       registrarLog_('Validar dados (Central Operacional)', problemas.length + ' ponto(s)');
@@ -7934,7 +8081,7 @@ function acaoAtualizar_() {
 
 function acaoValidar_() {
   exigirExecucaoMutacao_();
-  const problemas = coletarProblemas_();
+  const problemas = coletarProblemas_({ fechamento: true });
   escreverConferencia_(problemas);
   registrarLog_('Validar dados', problemas.length + ' ponto(s)');
   ss_().setActiveSheet(aba_(ABAS.CONFERENCIA));
@@ -8055,11 +8202,42 @@ function historicoAtePeriodo_(mesRef) {
   });
 }
 
+/**
+ * Na exportação, o Gás entra na coluna COMBUSTÍVEL do veículo que o lançou.
+ *
+ * No Resumo do sistema o gás tem coluna própria (Gás R$), mas na planilha que vai
+ * para fora ele é lido como combustível. Soma-se a coluna "Gás R$" à "Combustível R$"
+ * em cada veículo e na linha TOTAL GERAL. O TOTAL R$ NÃO muda: ele já inclui o gás,
+ * então o valor total do arquivo continua igual ao do Resumo.
+ *
+ * As colunas são achadas pelo ROTULO do cabeçalho, não por posição: fotografia
+ * antiga (aba "Fechado" de antes do gás) não tem a coluna e passa sem alteração.
+ * "Gás R$" e "Gás (kg)" ficam, só com o rótulo dizendo que já está somado, para a
+ * informação não se perder nem ser somada duas vezes por quem soma colunas.
+ */
+function resumoComGasNoCombustivel_(valores) {
+  if (!valores || valores.length < 3) return valores;
+  const cab = valores[1] || [];
+  const iComb = cab.indexOf('Combustível R$');
+  const iGas = cab.indexOf('Gás R$');
+  if (iComb === -1 || iGas === -1) return valores;
+  const saida = valores.map(function (l) { return l.slice(); });
+  for (let i = 2; i < saida.length; i++) {
+    const bruto = saida[i][iGas];
+    const gas = Number(bruto);
+    if (bruto === '' || bruto === null || !isFinite(gas) || gas === 0) continue;
+    saida[i][iComb] = Math.round(((Number(saida[i][iComb]) || 0) + gas) * 100) / 100;
+  }
+  saida[1][iComb] = 'Combustível + Gás R$';
+  saida[1][iGas] = 'Gás R$ (já somado em Combustível)';
+  return saida;
+}
+
 function resumoExportacaoPeriodo_(mesRef) {
   const atual=normalizarMesReferencia_(param_('MES_REFERENCIA'));
-  if (mesRef===atual) return { valores:valoresAbaSnapshot_(aba_(ABAS.RESUMO)), origem:'Resumo calculado da competência aberta' };
+  if (mesRef===atual) return { valores:resumoComGasNoCombustivel_(valoresAbaSnapshot_(aba_(ABAS.RESUMO))), origem:'Resumo calculado da competência aberta (gás somado em Combustível)' };
   const fechado=ss_().getSheetByName('Fechado '+mesRef);
-  if (fechado) return { valores:valoresAbaSnapshot_(fechado), origem:'Fotografia congelada Fechado '+mesRef };
+  if (fechado) return { valores:resumoComGasNoCombustivel_(valoresAbaSnapshot_(fechado)), origem:'Fotografia congelada Fechado '+mesRef };
   return { valores:[['Resumo indisponível'],['Não existe aba "Fechado '+mesRef+'". Os lançamentos brutos do período permanecem incluídos nesta exportação.']], origem:'Sem fotografia de Resumo' };
 }
 
@@ -8102,8 +8280,10 @@ function exportarPeriodoPlanilha_(mesRef, motivo) {
   const info=destino.getSheets()[0];
   info.setName('00_Informacoes');
   const totalLanc=lancamentos.reduce(function(s,l){return s+(String(l[COL_LANC.TIPO-1])==='Oficina Ativo'?0:(Number(l[COL_LANC.VALOR-1])||0));},0);
-  const totalResumo = resumo.valores && resumo.valores.length >= 3 && resumo.valores[2].length >= 20 && isFinite(Number(resumo.valores[2][19]))
-    ? Number(resumo.valores[2][19]) : totalLanc;
+  // Lia o índice 19 (coluna T), que desde a entrada de Arla/IPVA é o KM/Litro, e não o
+  // TOTAL. O "Total apurado" e o Histórico do arquivo recebiam o número errado.
+  const totalResumo = resumo.valores && resumo.valores.length >= 3 && resumo.valores[2].length > R_.TOTAL && isFinite(Number(resumo.valores[2][R_.TOTAL])) && Number(resumo.valores[2][R_.TOTAL]) > 0
+    ? Number(resumo.valores[2][R_.TOTAL]) : totalLanc;
   const infoValores=[
     ['EXPORTAÇÃO INDEPENDENTE DO PERÍODO',''],
     ['Empresa',String(param_('EMPRESA'))],
@@ -13138,11 +13318,12 @@ function statusDepreciacaoMensal_() {
   const veiculos = dadosVeiculosExecucao_();
   const lancados = {};
   const lancadosForaData = {};
+  const lancadosConfirmados = {};   // fora da data, mas com a data CONFIRMADA por alguém
   const sheet = aba_(ABAS.LANCAMENTOS);
 
   const qtdLancDep = quantidadeLancamentosReais_();
   if (qtdLancDep >= 1) {
-    sheet.getRange(2, 1, qtdLancDep, 5).getValues().forEach(function (l) {
+    sheet.getRange(2, 1, qtdLancDep, COL_LANC.OBSERVACAO).getValues().forEach(function (l) {
       const data = l[0];
       if (!(data instanceof Date) || data < periodo.inicio || data > periodo.fim) return;
       if (['Depreciação', 'Depreciacao'].indexOf(String(l[2] || '').trim()) === -1) return;
@@ -13151,6 +13332,8 @@ function statusDepreciacaoMensal_() {
       const valor = Number(l[4]) || 0;
       if (mesmaData_(data, dataLancamento)) {
         lancados[placa] = (lancados[placa] || 0) + valor;
+      } else if (observacaoConfirmaData_(l[COL_LANC.OBSERVACAO - 1])) {
+        lancadosConfirmados[placa] = (lancadosConfirmados[placa] || 0) + valor;
       } else {
         lancadosForaData[placa] = (lancadosForaData[placa] || 0) + valor;
       }
@@ -13175,7 +13358,10 @@ function statusDepreciacaoMensal_() {
       if (resolvido.origem === ORIGEM_DEP_CADASTRO_) deOrigemReserva++;
       else deOrigemArquivo++;
     }
-    const lancado = Number(lancados[placa] || 0);
+    // Data confirmada conta como lançada: o valor é validado normalmente (OK/DIVERGENTE),
+    // só a exigência de ser no último dia é dispensada.
+    const lancadoConfirmado = Number(lancadosConfirmados[placa] || 0);
+    const lancado = Number(lancados[placa] || 0) + lancadoConfirmado;
     const lancadoForaData = Number(lancadosForaData[placa] || 0);
     let situacao = 'SEM VALOR';
 
@@ -13220,6 +13406,8 @@ function statusDepreciacaoMensal_() {
       valorMensal: valorMensal,
       lancado: lancado,
       lancadoForaData: lancadoForaData,
+      lancadoConfirmado: lancadoConfirmado,
+      dataConfirmada: lancadoConfirmado > 0,
       situacao: situacao,
     });
   });
@@ -13232,6 +13420,9 @@ function statusDepreciacaoMensal_() {
     liberada: liberada,
     previstos: previstos, concluidos: concluidos, pendentes: pendentes,
     divergentes: divergentes, aguardando: aguardando, semValor: semValor,
+    // Quantos aguardam confirmação de data (o botão só aparece se > 0) e quantos já foram confirmados.
+    foraDeData: itens.filter(function (i) { return i.situacao === 'DATA INCORRETA'; }).length,
+    dataConfirmada: itens.filter(function (i) { return i.dataConfirmada; }).length,
     valorPrevisto: valorPrevisto, valorLancado: valorLancado,
     // Quantos valores vieram do arquivo da competência e quantos caíram na
     // reserva do cadastro. Sem isto a reserva seria indistinguível do
@@ -13239,6 +13430,144 @@ function statusDepreciacaoMensal_() {
     deOrigemArquivo: deOrigemArquivo, deOrigemReserva: deOrigemReserva,
     itens: itens
   };
+}
+
+/**
+ * Confirmar a DATA da depreciação (V4.22)
+ * ---------------------------------------
+ * A depreciação é exigida no último dia do período. Quando o lançamento está na
+ * planilha, com o valor certo, mas em outra data DENTRO da competência, o sistema
+ * dizia "DATA INCORRETA", contava como divergente e bloqueava o fechamento — mesmo
+ * com o custo já somado no Resumo (a soma depende só de a data estar no período).
+ *
+ * Confirmar = alguém atesta que aquela data está aceita. A confirmação fica GRAVADA
+ * NA PRÓPRIA LINHA (início da Observação), então:
+ *  - não há tabela nova para instalar, e a marca viaja com o lançamento;
+ *  - a data e o valor NÃO são alterados: o Resumo e os relatórios seguem idênticos;
+ *  - o valor continua sendo conferido: confirmar a data não esconde divergência.
+ */
+const MARCA_DATA_DEP_CONFIRMADA_ = '[DATA CONFIRMADA';
+
+function observacaoConfirmaData_(obs) {
+  return String(obs || '').indexOf(MARCA_DATA_DEP_CONFIRMADA_) !== -1;
+}
+
+/**
+ * Confirma a data dos lançamentos de depreciação em situação DATA INCORRETA.
+ * `placas` limita a confirmação; sem lista, confirma todas. Só a competência aberta.
+ */
+function confirmarDataDepreciacao_(placas) {
+  exigirExecucaoMutacao_();
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return { ok: false, confirmados: [], mensagem: 'Outra operação está em andamento. Tente de novo em alguns segundos.' };
+  }
+  try {
+    const status = statusDepreciacaoMensal_();
+    exigirCompetenciaAberta_(status.mes);
+    const periodo = periodoDoMes_(status.mes);
+    const dataCorreta = dataUltimoDiaPeriodo_(periodo);
+
+    const filtro = {};
+    let temFiltro = false;
+    (placas || []).forEach(function (p) { filtro['#' + normalizaPlaca_(p)] = true; temFiltro = true; });
+
+    const alvos = {};
+    let totalAlvos = 0;
+    status.itens.forEach(function (i) {
+      if (i.situacao !== 'DATA INCORRETA') return;
+      const chave = '#' + normalizaPlaca_(i.placa);
+      if (temFiltro && !filtro[chave]) return;
+      alvos[chave] = i;
+      totalAlvos++;
+    });
+    if (!totalAlvos) {
+      return { ok: false, confirmados: [], mensagem: 'Nenhuma depreciação com data incorreta para confirmar em ' + status.mesExtenso + '.' };
+    }
+
+    const sheet = aba_(ABAS.LANCAMENTOS);
+    const ultima = ultimaLinhaLancamentoReal_();
+    if (ultima < 2) return { ok: false, confirmados: [], mensagem: 'Não há lançamentos.' };
+    const n = ultima - 1;
+    const faixaObs = sheet.getRange(2, COL_LANC.OBSERVACAO, n, 1);
+    const obs = faixaObs.getValues();
+    const datas = sheet.getRange(2, COL_LANC.DATA, n, 1).getValues();
+    const placasCol = sheet.getRange(2, COL_LANC.PLACA, n, 1).getValues();
+    const tipos = sheet.getRange(2, COL_LANC.TIPO, n, 1).getValues();
+    const valores = sheet.getRange(2, COL_LANC.VALOR, n, 1).getValues();
+
+    const carimbo = Utilities.formatDate(new Date(), timezone_(), 'dd/MM/yyyy HH:mm');
+    const quem = String(emailContextoAtual_() || 'sistema');
+    const porPlaca = {};
+    let lancamentos = 0;
+
+    for (let i = 0; i < n; i++) {
+      const d = datas[i][0];
+      if (!(d instanceof Date) || d < periodo.inicio || d > periodo.fim) continue;
+      if (mesmaData_(d, dataCorreta)) continue;
+      if (['Depreciação', 'Depreciacao'].indexOf(String(tipos[i][0] || '').trim()) === -1) continue;
+      const chave = '#' + normalizaPlaca_(placasCol[i][0]);
+      if (!alvos[chave]) continue;
+      if (observacaoConfirmaData_(obs[i][0])) continue;
+      const marca = MARCA_DATA_DEP_CONFIRMADA_ + ' em ' + carimbo + ' por ' + quem +
+        ': lançada em ' + formatarData_(d) + ', exigido ' + formatarData_(dataCorreta) + ']';
+      // A marca vai NA FRENTE: o corte de 1000 caracteres tira o fim da observação
+      // antiga, nunca a confirmação.
+      obs[i][0] = (marca + (obs[i][0] ? ' ' + obs[i][0] : '')).slice(0, 1000);
+      const p = porPlaca[chave] || (porPlaca[chave] = { placa: alvos[chave].placa, lancamentos: 0, valor: 0 });
+      p.lancamentos++;
+      p.valor += Number(valores[i][0]) || 0;
+      lancamentos++;
+    }
+
+    if (!lancamentos) {
+      return { ok: false, confirmados: [], mensagem: 'Nenhum lançamento de depreciação com data fora do dia ' +
+        formatarData_(dataCorreta) + ' foi encontrado para as placas informadas.' };
+    }
+
+    faixaObs.setValues(obs);
+    SpreadsheetApp.flush();
+    invalidarCacheLancamentos_();
+    invalidarCacheInicio_();
+    escreverConferencia_(coletarProblemas_());
+
+    const confirmados = Object.keys(porPlaca).map(function (k) { return porPlaca[k]; });
+    registrarLog_('Confirmar data da depreciação', status.mes + ' • ' + confirmados.length + ' placa(s) • ' +
+      lancamentos + ' lançamento(s) • ' + confirmados.map(function (c) { return c.placa; }).join(', '));
+    return {
+      ok: true,
+      confirmados: confirmados,
+      mensagem: lancamentos + ' lançamento(s) de ' + confirmados.length + ' veículo(s) com data confirmada. ' +
+        'O valor continua sendo conferido: se ainda houver diferença, aparece como divergente.',
+      status: statusDepreciacaoMensal_(),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Menu Fechamento > Confirmar data da depreciação. */
+function confirmarDataDepreciacaoComAviso() {
+  exigirExecucaoMutacao_();
+  const ui = SpreadsheetApp.getUi();
+  const status = statusDepreciacaoMensal_();
+  const fora = status.itens.filter(function (i) { return i.situacao === 'DATA INCORRETA'; });
+  if (!fora.length) {
+    alerta_('Confirmar data da depreciação', 'Nenhuma depreciação com data incorreta em ' + status.mesExtenso + '.');
+    return;
+  }
+  const lista = fora.slice(0, 15).map(function (i) {
+    return '• ' + i.placa + ' — R$ ' + numBR_(i.lancadoForaData, 2);
+  }).join('\n') + (fora.length > 15 ? '\n… e mais ' + (fora.length - 15) + ' veículo(s)' : '');
+  const r = ui.alert('Confirmar data da depreciação',
+    fora.length + ' veículo(s) com depreciação lançada fora do dia ' + status.dataLancamento + ':\n\n' + lista +
+    '\n\nConfirmar mantém data e valor como estão (o custo já está no Resumo) e libera o fechamento ' +
+    'quanto à data. A confirmação fica registrada na Observação de cada lançamento e no Log.\n\nConfirma?',
+    ui.ButtonSet.YES_NO);
+  if (r !== ui.Button.YES) return;
+  const res = confirmarDataDepreciacao_();
+  alerta_(res.ok ? 'Data confirmada' : 'Nada confirmado', res.mensagem +
+    (res.status ? '\n\nPendentes: ' + res.status.pendentes + '\nDivergentes: ' + res.status.divergentes : ''));
 }
 
 function gerarDepreciacaoMensal_() {
@@ -13595,6 +13924,15 @@ function webGerarDepreciacao(token) {
   return r;
 }
 
+/** Confirma a data da depreciação fora do último dia (todas, ou só as `placas`). */
+function webDepreciacaoConfirmarData(token, placas) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  const r = confirmarDataDepreciacao_(placas);
+  invalidarCacheInicio_();
+  r.dados = webDepreciacao(token);
+  return r;
+}
+
 // ------------------------------------------------ pendências no Web App
 
 function webPendencias(token) {
@@ -13921,7 +14259,9 @@ const ACOES_PENDENCIA_ = {
   'Depreciação lançada fora do último dia do período': {
     tipo: 'atalho', tela: 'depreciacao', rotulo: 'Abrir depreciação mensal',
     explicacao: 'A data do lançamento é que está errada, e mudá-la pode trocar a ' +
-      'competência. Trate pela tela de depreciação.' },
+      'competência. Se a data está aceita, use “Confirmar data da depreciação” ' +
+      '(menu Fechamento ou tela de depreciação): o lançamento fica como está e a ' +
+      'pendência some.' },
   'Abasteceu mas não tem KM rodado no período': {
     tipo: 'atalho', tela: 'lancar', rotulo: 'Lançar leitura de odômetro',
     explicacao: 'Falta uma LEITURA nova, não um campo errado: o KM rodado precisa ' +
@@ -14320,8 +14660,11 @@ function invalidarCachesDaAba_(aba) {
 function revalidarPendenciasSeguro_() {
   // Sem forcar CONTEXTO_SISTEMA_INTERNO_: quem chama ja passou por
   // autorizarContextoWeb_, e manter o contexto do usuario preserva a autoria.
+  // Esta rotina e chamada pelo fluxo de correcao/revalidacao da tela de pendencias.
+  // Inclui as verificacoes exclusivas do fechamento para nao apagar da conferencia
+  // os avisos de KM/custo zero antes da validacao final da competencia.
   try {
-    const problemas = coletarProblemas_();
+    const problemas = coletarProblemas_({ fechamento: true });
     escreverConferencia_(problemas);
     return { ok: true, pendentes: contarPendenciasConferencia_(), problemas: problemas };
   } catch (e) {
@@ -14402,22 +14745,13 @@ function webAtualizarPendencia(token, linha, status, observacao, esperado) {
         'A tela vai recarregar.' };
   }
 
-  // RESOLVIDO em problema que tem conserto por campo e um beco sem saida: a
-  // V4.11.2 passou a reverter isso na revalidacao seguinte, porque o coletor
-  // ainda encontra o problema. O operador marcava, o item sumia pelo filtro, e
-  // voltava depois como PENDENTE — "eu resolvo e ela permanece ali". Em vez de
-  // aceitar e desfazer pelas costas, recusa na hora e diz o que fazer.
-  if (status === 'RESOLVIDO' && !resolvidoSobrevive_(atual)) {
-    return { ok: false, mensagem: 'Esta pendência tem conserto: use o botão ' +
-      '"Corrigir" acima, que grava o campo na base. Marcar como resolvida não ' +
-      'muda o dado — o sistema encontra o problema de novo na próxima ' +
-      'verificação e traz o item de volta. Se não for para corrigir agora, ' +
-      'deixe em "EM ANÁLISE".' };
-  }
+  // RESOLVIDO é aceito como exceção conferida. A inconsistência original
+  // permanece visível na descrição e no histórico de auditoria; não se altera
+  // automaticamente o lançamento de origem.
 
   sheet.getRange(linha, 5).setValue(status);
   sheet.getRange(linha, 6).setValue(String(observacao || ''));
-  registrarLog_('Atualizar pendência', 'linha ' + linha + ' • ' + atual + ' • ' + status);
+  registrarLog_('Atualizar pendência', 'linha ' + linha + ' • ' + atual + ' • ' + status + (observacao ? ' • ' + String(observacao).slice(0, 300) : ''));
 
   invalidarCacheInicio_();
   return { ok: true, mensagem: status === 'RESOLVIDO' ? 'Pendência marcada como resolvida.' : 'Pendência atualizada.' };
@@ -14425,7 +14759,9 @@ function webAtualizarPendencia(token, linha, status, observacao, esperado) {
 
 function webRevalidarPendencias(token) {
   autorizarContextoWeb_(token, 'ADMIN');
-  const problemas = coletarProblemas_();
+  // Revalidacao feita na tela de pendencias deve usar o mesmo escopo do fechamento.
+  // Sem fechamento:true, os alertas de KM/custo zero somem e voltam como PENDENTE.
+  const problemas = coletarProblemas_({ fechamento: true });
   escreverConferencia_(problemas);
   invalidarCacheInicio_();
   registrarLog_('Revalidar pendências', problemas.length + ' ponto(s)');
@@ -14436,7 +14772,8 @@ function webRevalidarPendencias(token) {
 
 function webValidar(token) {
   autorizarContextoWeb_(token, 'ADMIN');
-  const problemas = coletarProblemas_();
+  // Validacao manual solicitada pelo administrador: inclui os testes de fechamento.
+  const problemas = coletarProblemas_({ fechamento: true });
   escreverConferencia_(problemas);
   invalidarCacheInicio_();
   registrarLog_('Validar dados (web)', problemas.length + ' ponto(s)');
@@ -14460,8 +14797,12 @@ function webPreviaFechamento(token) {
   autorizarContextoWeb_(token, 'ADMIN');
   const mesRef = normalizarMesReferencia_(param_('MES_REFERENCIA'));
   const periodo = periodoAtual_();
-  const problemas = coletarProblemas_();
+  // A previa precisa reproduzir exatamente a coleta do fechamento definitivo.
+  // Antes, coletava sem fechamento:true, apagava as 15 pendencias de Resumo e
+  // a validacao critica as recriava como PENDENTE.
+  const problemas = coletarProblemas_({ fechamento: true });
   escreverConferencia_(problemas);
+  const estado = estadoConferencia_();
   const resumo = lerResumo_();
   const total = resumo.reduce(function (s, l) { return s + (Number(l[R_.TOTAL]) || 0); }, 0);
   return {
@@ -14470,7 +14811,10 @@ function webPreviaFechamento(token) {
     periodo: formatarData_(periodo.inicio) + ' a ' + formatarData_(periodo.fim),
     total: total,
     proximo: nomeDoMes_(proximoMes_(mesRef)),
-    pendencias: contarPendenciasConferencia_(),
+    pendencias: estado.pendentes,
+    // A tela mostra as excecoes NOMEADAS antes de o botao de fechar aparecer:
+    // quem assina precisa ver o que esta aceitando, nao so que existe algo.
+    excecoes: estado.excecoes,
     depreciacao: statusDepreciacaoMensal_(),
   };
 }
@@ -14484,11 +14828,15 @@ function webFecharPeriodo(token, confirmacao) {
   }
   const r = executarFechamentoCritico_(mesRef);
   if (!r.ok) return r;
+  const quantas = (r.excecoes || []).length;
   return {
     ok: true,
+    excecoes: r.excecoes || [],
     mensagem: nomeDoMes_(mesRef) + ' fechado em R$ ' +
       Number(r.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) +
-      '. Agora aberto em ' + nomeDoMes_(proximoMes_(mesRef)) + '.',
+      '. Agora aberto em ' + nomeDoMes_(proximoMes_(mesRef)) + '.' +
+      (quantas ? ' Fechado com ' + quantas + ' pendência(s) aceita(s) como exceção — ' +
+        'a lista ficou no Log.' : ''),
     backup: r.backup,
     exportacao: r.exportacao
   };

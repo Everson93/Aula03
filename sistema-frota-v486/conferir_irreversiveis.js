@@ -103,6 +103,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
 
   // --- tudo que o fechamento aciona vira rastro
   validarFechamentoCompleto_ = function () { __anotar('validar'); return __validacao; };
+  resumirExcecoes_ = function (x) { return (x || []).map(function (e) { return e.placa + '/' + e.problema; }); };
   reconstruirRelatorios_ = function () { __anotar('reconstruir'); };
   totalGeralResumo_ = function () { __anotar('total'); return 894859.11; };
   criarBackupSistema_ = function () { __anotar('backup'); return { nome: 'bk' }; };
@@ -114,7 +115,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   coletarProblemas_ = function () { return []; };
   invalidarCacheInicio_ = function () {};
   periodoLivreAtivo_ = function () { return null; };
-  registrarLog_ = function (a) { __anotar('log:' + a); };
+  registrarLog_ = function (a, b) { __anotar('log:' + a + ' :: ' + (b === undefined ? '' : b)); };
   atualizarResumoSeguro_ = function () { __anotar('resumo'); };
   garantirLinhas_ = function () {};
 
@@ -150,7 +151,7 @@ function zerar() {
   rastro.length = 0;
   lockLivre = true;
   ctx.__mesAberto = '2026-10';
-  ctx.__validacao = { ok: true };
+  ctx.__validacao = { ok: true, excecoes: [] };
   ctx.__exportacao = function () { return { nome: 'export' }; };
   ctx.__lancamentos = [];
   ABASFAKE[ctx.ABAS.ODOMETRO] = novaAba([]);
@@ -233,6 +234,42 @@ ok('o Resumo não é congelado', !tem('congelar'), rastro.join(' → '));
 ok('e o Histórico não é gravado', !tem('historico'));
 
 // ====================================================== 5. EXCLUIR VEÍCULO
+console.log('\n4b. O mês fecha com exceção, mas não calado');
+// RESOLVIDO deixou de bloquear o fechamento (é exceção aprovada, não
+// conserto). Sair da contagem não pode ser sumir: quem assina o mês tem de
+// ver o que aceitou, e isso precisa sobreviver à próxima validação — que
+// reescreve a aba de conferência inteira. Por isso vai para o Log.
+zerar();
+ctx.__validacao = { ok: true, excecoes: [
+  { origem: 'Lançamentos', placa: 'AAA 0001', problema: 'Oficina sem detalhe', observacao: 'falei com o Marcos' },
+  { origem: 'Resumo', placa: 'CCC 0003', problema: 'Sem custo no período', observacao: '' },
+] };
+let rf = ctx.webFecharPeriodo('token', '2026-10');
+ok('o mês fecha', rf.ok === true, JSON.stringify(rf));
+ok('a mensagem diz quantas exceções foram aceitas',
+  /2 pendência\(s\) aceita\(s\) como exceção/.test(rf.mensagem), rf.mensagem);
+ok('e diz onde ficou a lista', /Log/.test(rf.mensagem), rf.mensagem);
+ok('a tela recebe as exceções nomeadas', (rf.excecoes || []).length === 2,
+  JSON.stringify(rf.excecoes));
+ok('o Log do fechamento conta as exceções',
+  rastro.some(function (x) { return /log:Fechar período/.test(x); }) &&
+  rastro.some(function (x) { return /2 exceção/.test(x); }),
+  rastro.filter(function (x) { return x.indexOf('log:') === 0; }).join(' | '));
+// A aba de conferência é reescrita na próxima validação: se o nome não for
+// para o Log agora, some o rastro de quem aceitou o quê.
+ok('e uma linha própria do Log nomeia cada uma',
+  rastro.some(function (x) { return /log:Exceções do fechamento 2026-10/.test(x); }),
+  rastro.filter(function (x) { return x.indexOf('log:') === 0; }).join(' | '));
+
+zerar();
+ctx.__validacao = { ok: true, excecoes: [] };
+rf = ctx.webFecharPeriodo('token', '2026-10');
+ok('sem exceção, a mensagem não inventa nenhuma',
+  !/exceção/.test(rf.mensagem), rf.mensagem);
+ok('e o Log não ganha a linha de exceções',
+  !rastro.some(function (x) { return /log:Exceções/.test(x); }),
+  rastro.filter(function (x) { return x.indexOf('log:') === 0; }).join(' | '));
+
 console.log('\n5. Excluir veículo: justificativa');
 zerar();
 r = ctx.excluirVeiculo_('ABC 1D23', 'erro', true);
