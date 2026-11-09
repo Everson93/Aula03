@@ -3814,3 +3814,55 @@ Mutação: **26 de 26**.
 > o dublê mente e o teste passa por motivo errado.
 
 Total do projeto: 1.194 → **1.267** provas, em 34 suítes.
+
+## V4.33.0 — histórico de abastecimentos, com alterar e estornar
+
+O usuário mandou as duas telas do sistema antigo: o registro de
+abastecimento e, atrás dele, o **Histórico de Abastecimentos** — a sequência
+do veículo com odômetro, KM percorrido, litros, média, valor, e o botão
+**Estornar abastecimento**.
+
+O pedido: quando o KM digitado for menor que o último, poder chegar a essa
+tela **sem sair do lançamento**, para alterar ou estornar.
+
+### Por que isto é mais que conveniência
+
+A tela só oferecia a caixinha **"Forçar KM menor que a última leitura"**. E
+forçar é a decisão errada na maioria das vezes: o normal é o KM **gravado**
+estar errado — um dígito a menos num abastecimento de semanas atrás — não o
+que a pessoa tem na mão agora. Quem forçava consertava o sintoma e deixava o
+erro na base, onde ele continua estragando o KM rodado, o km/L e o R$/km.
+
+Agora, ao sair do campo com um KM menor que o último, o painel **abre
+sozinho** com a sequência na frente. Dá para ver em qual linha está o furo.
+
+### O que o painel mostra e faz
+
+Data, odômetro, KM do percurso, litros, média, valor e o tipo
+(interno/externo); linha com percurso negativo sai em vermelho; rodapé com
+total de litros, valor e a média do período. Por linha: **alterar KM** e
+**estornar**.
+
+Três decisões:
+
+- **Dia com duas leituras não inventa odômetro.** `kmDoDia_` já era o dono
+  dessa regra e devolve vazio quando há mais de uma no dia; o painel mostra
+  `—` e não oferece "alterar KM". Reimplementar a consulta aqui seria a
+  chance de este painel escolher uma leitura e calcular um percurso que
+  nenhuma outra tela reconheceria.
+- **O percurso negativo não entra no total.** Somar os −90.410 do erro daria
+  um total negativo e uma média sem sentido. A média do período é percurso
+  total / litros totais — média das medias faria um abastecimento de 40 L
+  pesar igual a um de 500.
+- **Estornar passa por `excluirLancamento_`**, não por um caminho próprio.
+  Ele já guarda a cópia em "Lançamentos Excluídos", recusa período fechado,
+  devolve os litros ao estoque quando o abastecimento era interno e remove a
+  leitura de KM do dia. Um atalho aqui perderia um desses quatro. O
+  histórico volta junto da resposta, já sem a linha estornada: recarregar
+  por fora deixaria uma janela mostrando o que não existe mais.
+
+E o painel abre no `change`, não no `input`: enquanto a pessoa digita o `3`
+de 31.500, o número é menor que o último por um instante.
+
+`conferir_historico_abastecimento.js` — **39 provas**, mutação **15 de 15**.
+Total do projeto: 1.267 → **1.306**, em 35 suítes.

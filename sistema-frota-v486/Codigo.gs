@@ -606,7 +606,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.32.0';
+const VERSAO_SISTEMA = '4.33.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -6726,6 +6726,110 @@ function webLoginBootstrap(email, senha, paginaInicial) {
 function webUltimoOdometro(token, placa) {
   exigirPerfilToken_(token, PERFIS_ACESSO);
   return ultimoOdometro(placa);
+}
+
+/**
+ * Historico de abastecimentos de UM veiculo, no formato da tela antiga.
+ *
+ * Uma linha por abastecimento, com o odometro daquele dia, o percurso desde
+ * o anterior, a media do tanque e o valor. E a tela que o operador precisa
+ * ter na frente quando o KM que ele digitou e menor que o ultimo: sem ver a
+ * sequencia, nao da para saber se o errado e o que ele tem na mao ou o que
+ * esta gravado.
+ *
+ * Toda a base, nao so o periodo aberto: um KM menor costuma ser erro de
+ * digitacao de semanas atras.
+ *
+ * O odometro vem do indice por placa+dia, que so devolve leitura quando ha
+ * UMA no dia. Com duas, o sistema nao sabe qual e deste abastecimento e
+ * devolve vazio — dizer "nao sei" e melhor que escolher uma e calcular um
+ * percurso inventado em cima dela.
+ */
+function historicoAbastecimentos_(placa, limite) {
+  const alvo = normalizaPlaca_(placa);
+  if (!alvo) return { placa: '', linhas: [], totais: null, mensagem: 'Informe o veículo.' };
+  const quantos = Math.min(Math.max(Number(limite) || 30, 1), 200);
+  const itens = lerLancamentos_().filter(function (l) {
+    return TIPOS_COMBUSTIVEL.indexOf(String(l[L_.TIPO])) !== -1 &&
+      normalizaPlaca_(l[L_.PLACA]) === alvo &&
+      Object.prototype.toString.call(l[L_.DATA]) === '[object Date]';
+  }).map(function (l) {
+    const data = l[L_.DATA];
+    // `kmDoDia_` e o dono da regra: devolve vazio quando ha mais de uma
+    // leitura no dia. Reimplementar a consulta aqui era a chance de este
+    // painel escolher uma leitura e calcular um percurso que nenhuma outra
+    // tela do sistema reconheceria.
+    const km = kmDoDia_(alvo, data);
+    return {
+      data: data,
+      dataIso: isoDoDia_(data),
+      dataBR: formatarData_(data),
+      km: km === '' ? null : Number(km),
+      litros: Number(l[L_.LITROS]) || 0,
+      valor: Number(l[L_.VALOR]) || 0,
+      documento: String(l[L_.DOCUMENTO] || ''),
+      tipo: String(l[L_.TIPO] || ''),
+      abastecimento: tipoAbastecimentoDe_(l[L_.TIPO], l[L_.TIPO_ABASTECIMENTO]),
+      id: String(l[L_.ID] || ''),
+    };
+  }).sort(function (a, b) { return a.data - b.data; });
+
+  // Percurso e media em ordem CRESCENTE, que e a unica em que "desde o
+  // anterior" quer dizer alguma coisa. A exibicao inverte depois.
+  let anterior = null;
+  itens.forEach(function (i) {
+    i.percurso = (i.km !== null && anterior !== null) ? i.km - anterior : null;
+    i.media = (i.percurso !== null && i.litros > 0) ? i.percurso / i.litros : null;
+    i.retrocedeu = i.percurso !== null && i.percurso < 0;
+    if (i.km !== null) anterior = i.km;
+  });
+
+  const recentes = itens.slice(-quantos).reverse();
+  const litros = itens.reduce(function (t, i) { return t + i.litros; }, 0);
+  const valor = itens.reduce(function (t, i) { return t + i.valor; }, 0);
+  const percurso = itens.reduce(function (t, i) { return t + (i.percurso > 0 ? i.percurso : 0); }, 0);
+
+  return {
+    placa: String(placa || ''),
+    linhas: recentes,
+    // A media do periodo e percurso total / litros totais. Media das medias
+    // daria outro numero: um abastecimento de 40 L pesaria igual a um de 500.
+    totais: {
+      abastecimentos: itens.length,
+      litros: litros,
+      valor: valor,
+      percurso: percurso,
+      media: litros > 0 ? percurso / litros : 0,
+      retrocessos: itens.filter(function (i) { return i.retrocedeu; }).length,
+      semLeitura: itens.filter(function (i) { return i.km === null; }).length,
+    },
+    mensagem: itens.length
+      ? itens.length + ' abastecimento(s) em toda a base' +
+        (recentes.length < itens.length ? ' • mostrando os ' + recentes.length + ' mais recentes' : '') + '.'
+      : 'Nenhum abastecimento registrado para este veículo.',
+  };
+}
+
+function webHistoricoAbastecimentos(token, placa, limite) {
+  exigirPerfilToken_(token, PERFIS_ACESSO);
+  return historicoAbastecimentos_(placa, limite);
+}
+
+/**
+ * Estorna um abastecimento: exclui o lancamento e a leitura de KM do dia.
+ *
+ * Reaproveita `excluirLancamento_`, que ja guarda a copia em "Lancamentos
+ * Excluidos", recusa periodo fechado, devolve os litros ao tanque quando o
+ * abastecimento era interno e remove a leitura de odometro do dia quando nao
+ * ha duvida de qual e. Um caminho proprio aqui perderia um desses quatro.
+ */
+function webEstornarAbastecimento(token, id, justificativa, placa) {
+  autorizarContextoWeb_(token, ['OPERADOR', 'ADMIN']);
+  const r = excluirLancamento_(id, justificativa);
+  // A tela recebe o historico JA sem a linha estornada: recarregar por fora
+  // deixaria a janela entre as duas chamadas mostrando o que nao existe mais.
+  if (r.ok) r.historico = historicoAbastecimentos_(placa, 30);
+  return r;
 }
 
 function webUltimosLancamentos(token, quantidade) {

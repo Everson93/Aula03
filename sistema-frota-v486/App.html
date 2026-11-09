@@ -1304,10 +1304,13 @@
           '<label for="km">KM / horímetro</label>' +
           '<input type="number" id="km" step="1" min="0" inputmode="numeric">' +
           '<div class="sub2" id="dicaKm" style="margin-top:4px"></div>' +
-          '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">' +
             '<input type="checkbox" id="forcarKm" style="width:auto">' +
             '<label for="forcarKm" style="margin:0;font-weight:400">Forçar KM menor que a última leitura</label>' +
+            '<button class="acao secundaria" style="padding:4px 10px" ' +
+              'onclick="abrirHistoricoAbastecimento()">⛽ Histórico / estornar</button>' +
           '</div>' +
+          '<div id="histAbast" style="margin-top:10px"></div>' +
         '</div>' +
         '<div class="linha">' +
           // Lista fechada, nao texto com sugestao: o servidor so aceita fornecedor
@@ -1342,6 +1345,10 @@
       if (ehCombustivel()) consultarCustoBomba();
     });
     el('litros').addEventListener('input', atualizarValorInterno);
+    // No 'change', não no 'input': enquanto a pessoa digita 3 de 31.500 o
+    // número é menor que o último por um instante, e o painel abriria sozinho
+    // a cada tecla.
+    el('km').addEventListener('change', avaliarKmDigitado);
     ajustarLitros();
     ajustarOficina();
     ajustarAbastecimento();
@@ -1503,16 +1510,160 @@
     }
   }
 
+  var ULTIMO_ODOMETRO = null;
+
   function consultarOdometro() {
     var dica = el('dicaKm');
     if (!dica) return;
+    ULTIMO_ODOMETRO = null;
+    if (el('histAbast')) el('histAbast').innerHTML = '';
     if (!String(el('placa').value || '').trim()) { dica.textContent = 'Digite a placa para ver a última leitura.'; return; }
     dica.textContent = 'consultando última leitura…';
     google.script.run.withSuccessHandler(function (ultimo) {
+      ULTIMO_ODOMETRO = ultimo || null;
       dica.textContent = ultimo
         ? 'Última leitura: ' + num(ultimo.km) + ' em ' + ultimo.data
         : 'Sem leitura anterior registrada.';
+      avaliarKmDigitado();
     }).webUltimoOdometro(TOKEN, el('placa').value);
+  }
+
+  /**
+   * KM digitado menor que o último: abre o histórico na hora.
+   *
+   * Antes a tela só oferecia a caixinha "forçar", e forçar é a decisão
+   * errada na maioria das vezes — o normal é o KM gravado estar errado, não
+   * o que a pessoa tem na mão. Sem ver a sequência de abastecimentos não dá
+   * para saber qual dos dois é o furado, e corrigir obrigava a sair daqui.
+   */
+  function avaliarKmDigitado() {
+    var caixa = el('histAbast');
+    if (!caixa || !ULTIMO_ODOMETRO) return;
+    var km = Number(el('km').value || 0);
+    if (!(km > 0) || km >= Number(ULTIMO_ODOMETRO.km || 0)) return;
+    if (caixa.getAttribute('data-aberto') === '1') return;
+    abrirHistoricoAbastecimento(
+      'O KM digitado (' + num(km) + ') é menor que a última leitura (' +
+      num(ULTIMO_ODOMETRO.km) + ' em ' + esc(ULTIMO_ODOMETRO.data) + '). ' +
+      'Confira a sequência abaixo: se o errado for um abastecimento já gravado, ' +
+      'altere o KM dele ou estorne o lançamento.');
+  }
+
+  var HIST_ABAST = null;
+
+  function abrirHistoricoAbastecimento(aviso) {
+    var caixa = el('histAbast');
+    var placa = String(el('placa').value || '').trim();
+    if (!caixa) return;
+    if (!placa) { caixa.innerHTML = '<div class="erro-caixa">Informe o veículo primeiro.</div>'; return; }
+    caixa.setAttribute('data-aberto', '1');
+    caixa.innerHTML = '<div class="carregando">carregando o histórico…</div>';
+    google.script.run.withSuccessHandler(function (h) {
+      HIST_ABAST = h;
+      desenharHistoricoAbastecimento(aviso);
+    }).withFailureHandler(function (e) {
+      caixa.innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webHistoricoAbastecimentos(TOKEN, placa, 30);
+  }
+
+  function fecharHistoricoAbastecimento() {
+    var caixa = el('histAbast');
+    caixa.setAttribute('data-aberto', '0');
+    caixa.innerHTML = '';
+  }
+
+  function desenharHistoricoAbastecimento(aviso) {
+    var h = HIST_ABAST;
+    var caixa = el('histAbast');
+    if (!h) return;
+    var t = h.totais || {};
+    var podeMexer = SESSAO && ['OPERADOR', 'ADMIN'].indexOf(SESSAO.perfil) !== -1;
+    var linhas = (h.linhas || []).map(function (l, i) {
+      return '<tr' + (l.retrocedeu ? ' style="background:#FCE4E4"' : '') + '>' +
+        '<td>' + esc(l.dataBR) + '</td>' +
+        '<td class="num">' + (l.km === null ? '—' : num(l.km)) + '</td>' +
+        '<td class="num">' + (l.percurso === null ? '—' : num(l.percurso)) + '</td>' +
+        '<td class="num">' + num(l.litros, 3) + '</td>' +
+        '<td class="num">' + (l.media === null ? '—' : num(l.media, 2)) + '</td>' +
+        '<td class="num">' + brl(l.valor) + '</td>' +
+        '<td>' + esc(l.abastecimento || '') + '</td>' +
+        '<td>' + (podeMexer
+          ? (l.km === null ? '<span class="sub2">sem leitura</span>'
+             : '<button class="acao secundaria" style="padding:3px 8px;font-size:12px" ' +
+               'onclick="alterarKmAbastecimento(' + i + ')">alterar KM</button>') +
+            ' <button class="acao secundaria" style="padding:3px 8px;font-size:12px" ' +
+            'onclick="estornarAbastecimento(' + i + ')">estornar</button>'
+          : '') + '</td></tr>';
+    }).join('');
+
+    caixa.innerHTML =
+      (aviso ? '<div class="aviso">' + esc(aviso) + '</div>' : '') +
+      '<div class="cartao" style="padding:0;overflow:hidden;margin-top:8px">' +
+        '<div style="padding:8px 12px;background:#F3F1F0;display:flex;justify-content:space-between;' +
+          'align-items:center;flex-wrap:wrap;gap:8px">' +
+          '<b>Histórico de abastecimentos — ' + esc(h.placa) + '</b>' +
+          '<span class="sub2">' + num(t.abastecimentos || 0) + ' abastecimento(s) • ' +
+            num(t.litros || 0, 3) + ' L • ' + brl(t.valor || 0) + ' • média ' +
+            num(t.media || 0, 2) + ' km/L</span>' +
+        '</div>' +
+        '<div class="rolagem"><table><thead><tr>' +
+          '<th>Data</th><th class="num">Odômetro</th><th class="num">KM percurso</th>' +
+          '<th class="num">Litros</th><th class="num">Média</th><th class="num">Valor</th>' +
+          '<th>Tipo</th><th></th>' +
+        '</tr></thead><tbody>' +
+        (linhas || '<tr><td colspan="8" class="sub2">' + esc(h.mensagem) + '</td></tr>') +
+        '</tbody></table></div></div>' +
+      '<div class="sub2" style="margin-top:6px">' + esc(h.mensagem) +
+        (t.retrocessos ? ' • <b>' + num(t.retrocessos) + ' leitura(s) menor(es) que a anterior</b>, em vermelho' : '') +
+        (t.semLeitura ? ' • ' + num(t.semLeitura) + ' sem leitura de KM no dia' : '') +
+      ' — <a href="#" onclick="fecharHistoricoAbastecimento();return false">fechar</a></div>';
+  }
+
+  function alterarKmAbastecimento(i) {
+    var l = (HIST_ABAST && HIST_ABAST.linhas) ? HIST_ABAST.linhas[i] : null;
+    if (!l || l.km === null) return;
+    var novo = prompt('Leitura de ' + HIST_ABAST.placa + ' em ' + l.dataBR + '.\n\nKM correto:', String(l.km));
+    if (novo === null) return;
+    novo = String(novo).replace(/\./g, '').replace(',', '.').trim();
+    if (!novo || isNaN(Number(novo))) { avisoHistorico('KM inválido.', false); return; }
+    el('histAbast').innerHTML = '<div class="carregando">alterando a leitura…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      abrirHistoricoAbastecimento('');
+      avisoHistorico(r.mensagem, r.ok);
+    }).withFailureHandler(function (e) {
+      abrirHistoricoAbastecimento('');
+      avisoHistorico(e.message, false);
+    }).webAjustarOdometro(TOKEN, { placa: HIST_ABAST.placa, data: l.dataIso, km: l.km }, Number(novo));
+  }
+
+  function estornarAbastecimento(i) {
+    var l = (HIST_ABAST && HIST_ABAST.linhas) ? HIST_ABAST.linhas[i] : null;
+    if (!l) return;
+    if (!l.id) {
+      avisoHistorico('Este lançamento não tem ID e não pode ser estornado por aqui. ' +
+        'Use Corrigir / excluir lançamento.', false);
+      return;
+    }
+    var motivo = prompt('Estornar o abastecimento de ' + l.dataBR + ' (' +
+      num(l.litros, 3) + ' L, ' + brl(l.valor) + ')?\n\n' +
+      'O lançamento vai para "Lançamentos Excluídos", a leitura de KM do dia é removida ' +
+      'e, se for interno, os litros voltam ao estoque.\n\nMotivo:', '');
+    if (motivo === null) return;
+    el('histAbast').innerHTML = '<div class="carregando">estornando…</div>';
+    google.script.run.withSuccessHandler(function (r) {
+      if (r.ok && r.historico) { HIST_ABAST = r.historico; desenharHistoricoAbastecimento(''); }
+      else abrirHistoricoAbastecimento('');
+      avisoHistorico(r.mensagem, r.ok);
+      if (r.ok) { consultarOdometro(); carregarUltimos(); }
+    }).withFailureHandler(function (e) {
+      abrirHistoricoAbastecimento('');
+      avisoHistorico(e.message, false);
+    }).webEstornarAbastecimento(TOKEN, l.id, motivo, HIST_ABAST.placa);
+  }
+
+  function avisoHistorico(texto, ok) {
+    el('msgLanc').innerHTML = '<div class="' + (ok ? 'ok-caixa' : 'erro-caixa') + '">' +
+      esc(texto) + '</div>';
   }
 
   function carregarUltimos() {
