@@ -150,8 +150,31 @@ ok('o foco volta para a placa depois de gravar',
 console.log('\n5. Exportar em planilha o relatório da tela');
 ok('o botão existe na tela de relatórios', /baixarRelatorioXlsx\(this\)/.test(app));
 ok('e manda os MESMOS filtros que a tela usou',
-  /webRelatorioXlsx\(TOKEN, tipo, \{[\s\S]{0,260}centro:[\s\S]{0,260}categoria:[\s\S]{0,260}veiculo:[\s\S]{0,260}termo:/.test(app),
+  /webRelatorioXlsx\(TOKEN, tipo, filtrosDoRelatorio\(\)/.test(app) &&
+  /function filtrosDoRelatorio[\s\S]{0,320}centro:[\s\S]{0,320}categoria:[\s\S]{0,320}veiculo:[\s\S]{0,320}termo:/.test(app),
   'exportar sem os filtros entrega um arquivo diferente do que está na tela');
+
+// V4.37: o PDF entrou ao lado da planilha. Os dois tem de sair do MESMO
+// montador de filtros — dois montadores seriam a chance de o PDF sair de um
+// filtro e a planilha de outro, com os dois circulando como o mesmo
+// relatorio.
+console.log('\n5b. E em PDF, pelo mesmo caminho');
+ok('o botão de PDF existe na tela de relatórios', /baixarRelatorioPdf\(this\)/.test(app));
+ok('e usa o mesmo montador de filtros da planilha',
+  /webRelatorioPdf\(TOKEN, tipo, filtrosDoRelatorio\(\)/.test(app) &&
+  (app.match(/filtrosDoRelatorio\(\)/g) || []).length === 3,
+  'a função e as duas chamadas');
+ok('o servidor refaz o relatório para o PDF também',
+  /function gerarPdfRelatorio_[\s\S]{0,900}relatorioPorTipo_\(nome,/.test(gs));
+ok('e usa o MESMO renderizador de tabela do PDF do fechamento',
+  /function htmlRelatorioPdf_[\s\S]{0,900}tabelaRelatorioPdf_\(rel,/.test(gs),
+  'um gerador próprio aqui faria o fechamento sair formatado e o resto com número cru');
+ok('o consolidado também entra no PDF',
+  /function htmlRelatorioPdf_[\s\S]{0,1200}tabelaRelatorioPdf_\(consolidado,/.test(gs),
+  'o relatório de diesel perderia justamente a metade mensal');
+ok('e na planilha',
+  /const consolidado = rel\.consolidado;/.test(gs) &&
+  /escreverRelatorioNaAba_[\s\S]*?consolidado\.linhas/.test(gs));
 ok('o servidor refaz o relatório em vez de receber a tabela pronta',
   /function gerarXlsxRelatorio_[\s\S]{0,900}relatorioPorTipo_\(nome,/.test(gs),
   'tabela vinda do cliente envelhece entre o desenho e o clique, e é adulterável');
@@ -163,8 +186,13 @@ console.log('\n6. O campo de e-mail da planilha');
 ok('existe na tela de relatórios', /id="relEmail"/.test(app));
 ok('e no cartão do fechamento', /id="fechEmail"/.test(app));
 ok('o relatório manda o e-mail junto com os filtros',
-  /webRelatorioXlsx\(TOKEN, tipo, \{[\s\S]{0,320}\}, el\('relEmail'\)/.test(app),
+  /webRelatorioXlsx\(TOKEN, tipo, filtrosDoRelatorio\(\),\s*\n?\s*el\('relEmail'\)/.test(app),
   'campo na tela que o callback não envia é promessa falsa');
+ok('e o PDF manda o mesmo e-mail',
+  /webRelatorioPdf\(TOKEN, tipo, filtrosDoRelatorio\(\),\s*\n?\s*el\('relEmail'\)/.test(app));
+ok('o servidor valida o e-mail do PDF ANTES de montar o arquivo',
+  /function webRelatorioPdf[\s\S]{0,400}listaDeEmails_\(emails[\s\S]{0,200}gerarPdfRelatorio_/.test(gs),
+  'montar e depois recusar o destinatário gasta cota e deixa PDF órfão no Drive');
 ok('o fechamento manda só na planilha, não no PDF',
   /webFechamentoXlsx\(TOKEN, '', el\('fechEmail'\)/.test(app) &&
   /webFechamentoPdf\(TOKEN, ''\);/.test(app),

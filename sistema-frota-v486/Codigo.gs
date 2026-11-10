@@ -641,7 +641,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.36.0';
+const VERSAO_SISTEMA = '4.37.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -7403,10 +7403,28 @@ const CATALOGO_RELATORIOS = {
     ],
   },
 
+  'Diesel por semana e por mês': {
+    descricao: 'Litros e R$ de diesel somados por semana (seg a dom) e por competência. ' +
+      'Abastecimento interno é diesel por construção (sai do tanque); externo entra ' +
+      'pelo campo Combustível do veículo, e veículo sem o campo preenchido é contado ' +
+      'como diesel — o relatório diz quantos litros são esses.',
+    fonte: 'lancamentos',
+    filtros: ['centroLancamento', 'categoriaLancamento', 'veiculoLancamento'],
+    colunas: [
+      ['Semana (seg a dom)', '@', 175], ['Abastec.', '#,##0', 90],
+      ['Litros', '#,##0.000', 110], ['Valor', 'R$ #,##0.00', 125],
+      ['R$ / litro', 'R$ #,##0.000', 105],
+      ['L. do tanque', '#,##0.000', 110], ['L. de fora', '#,##0.000', 110],
+    ],
+    // Calculado em codigo (agrupa por semana e por competencia): nao ha
+    // formula QUERY que monte isso na aba Relatorios.
+    somenteApp: true,
+  },
+
   'Combustível lançado por veículo': {
     descricao: 'Cada abastecimento lançado: data, nota, litros, valor e o preço do litro ' +
       'daquele abastecimento, mais o consolidado de litros e valor por veículo. Usa toda ' +
-      'a base. Só no app: a versão da planilha não traz o consolidado.',
+      'a base. O consolidado sai também na planilha e no PDF (V4.37).',
     somenteApp: true,
     fonte: 'lancamentos',
     filtros: ['centroLancamento', 'categoriaLancamento', 'veiculoLancamento'],
@@ -9197,7 +9215,12 @@ function htmlRateioPdf_(mesRef) {
  * Formata pelo tipo declarado na coluna, para nao haver um formatador no
  * servidor e outro no cliente.
  */
-const TIPOS_NUMERICOS_RELATORIO_ = ['moeda', 'moeda3', 'numero', 'decimal'];
+// V4.37: 'litros' e 'media' FALTAVAM aqui, e isso tinha tres efeitos, todos
+// silenciosos: no PDF a celula caia no ramo de texto e saia como numero cru
+// ("248.065"), que em pt-BR se le como MILHAR; a coluna saia alinhada a
+// esquerda, como texto; e o rodape nao somava os litros, porque o somador
+// pergunta a esta mesma lista quem e numero.
+const TIPOS_NUMERICOS_RELATORIO_ = ['moeda', 'moeda3', 'numero', 'decimal', 'litros', 'media'];
 
 /** O tipo declarado na coluna do relatorio e numerico? Dono unico da lista. */
 function tipoEhNumerico_(tipo) {
@@ -9213,6 +9236,8 @@ function tabelaRelatorioPdf_(rel, opcoes) {
     else if (tipo === 'moeda3') texto = 'R$ ' + numBR_(valor, 3);
     else if (tipo === 'numero') texto = numBR_(valor, 0);
     else if (tipo === 'decimal') texto = numBR_(valor, 2) + '%';
+    else if (tipo === 'litros') texto = numBR_(valor, 3);
+    else if (tipo === 'media') texto = numBR_(valor, 2);
     else texto = escHtml_(valor);
     return '<td class="' + (numerico ? 'n' : '') + (forte ? ' forte' : '') + '">' + texto + '</td>';
   }
@@ -9423,6 +9448,50 @@ function escreverRelatorioNaAba_(aba, rel, titulo, subtitulo, larguras) {
     const l = Number(larguras && larguras[i]) || padrao[i];
     aba.setColumnWidth(i + 1, Math.max(60, Math.min(l, 320)));
   }
+  // O bloco `consolidado`, quando existe, sai LOGO ABAIXO do total — o mesmo
+  // que o PDF faz. Antes ele so ia para a tela, e o catalogo precisava avisar
+  // "a versao da planilha nao traz o consolidado": o arquivo que ia para a
+  // contabilidade era menor que o que estava na tela.
+  const consolidado = rel.consolidado;
+  if (consolidado && consolidado.colunas && consolidado.linhas && consolidado.linhas.length) {
+    const inicio = linhaTotal + 2;
+    const necessariasCons = inicio + consolidado.linhas.length + 2;
+    if (aba.getMaxRows() < necessariasCons) {
+      aba.insertRowsAfter(aba.getMaxRows(), necessariasCons - aba.getMaxRows());
+    }
+    const nColsCons = consolidado.colunas.length;
+    if (aba.getMaxColumns() < nColsCons) {
+      aba.insertColumnsAfter(aba.getMaxColumns(), nColsCons - aba.getMaxColumns());
+    }
+    aba.getRange(inicio, 1).setValue(consolidado.titulo || 'Consolidado')
+      .setFontWeight('bold').setFontSize(12);
+    aba.getRange(inicio + 1, 1, 1, nColsCons)
+      .setValues([consolidado.colunas.map(function (c) { return c.titulo; })])
+      .setBackground(CORES.LARANJA).setFontColor(CORES.PRETO).setFontWeight('bold').setWrap(true);
+    if (consolidado.linhas.length) {
+      aba.getRange(inicio + 2, 1, consolidado.linhas.length, nColsCons)
+        .setValues(consolidado.linhas);
+    }
+    const formatoCons = consolidado.colunas.map(function (c) { return formatoPlanilha_(c.tipo); });
+    const alinhoCons = consolidado.colunas.map(function (c) {
+      return tipoEhNumerico_(c.tipo) ? 'right' : 'left';
+    });
+    let linhasCons = consolidado.linhas.length;
+    if (consolidado.totais && consolidado.totais.length) {
+      const totalCons = consolidado.totais.map(function (v, i) {
+        if (v === null || v === undefined) return i === 0 ? 'TOTAL' : '';
+        return v;
+      });
+      aba.getRange(inicio + 2 + linhasCons, 1, 1, nColsCons).setValues([totalCons])
+        .setFontWeight('bold').setBackground(CORES.CINZA);
+      linhasCons++;
+    }
+    const formatosCons = [], alinhosCons = [];
+    for (let i = 0; i < linhasCons; i++) { formatosCons.push(formatoCons); alinhosCons.push(alinhoCons); }
+    const blocoCons = aba.getRange(inicio + 2, 1, linhasCons, nColsCons);
+    blocoCons.setNumberFormats(formatosCons);
+    blocoCons.setHorizontalAlignments(alinhosCons);
+  }
   return linhaTotal;
 }
 
@@ -9557,6 +9626,89 @@ function webRelatorioXlsx(token, tipo, filtros, emails) {
     enviados: enviados,
     mensagem: 'Planilha gerada na pasta "' + PASTA_RELATORIOS + '" do Drive.' +
       (enviados.length ? ' Enviada para ' + enviados.join(', ') + '.' : ''),
+  };
+}
+
+/**
+ * Qualquer relatorio {colunas, linhas, totais} em PDF.
+ *
+ * Reaproveita `tabelaRelatorioPdf_`, que e o mesmo renderizador do PDF do
+ * fechamento: um gerador proprio aqui seria o caminho curto para o fechamento
+ * sair formatado e os outros relatorios sairem com numero cru — foi
+ * exatamente o que aconteceu com os tipos 'litros' e 'media'.
+ *
+ * O bloco `consolidado`, quando existe, sai LOGO ABAIXO. Ele ja ia para a
+ * tela e ficava de fora do arquivo: o relatorio de diesel, que o usuario
+ * pediu "semanal mensal", perderia justamente a metade mensal.
+ */
+function htmlRelatorioPdf_(tipo, rel, filtrosTexto) {
+  const mes = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const consolidado = (rel.consolidado && rel.consolidado.colunas &&
+    rel.consolidado.linhas && rel.consolidado.linhas.length) ? rel.consolidado : null;
+  return '<!doctype html><html><head><meta charset="utf-8"><style>' + estiloPdf_() +
+    '</style></head><body>' +
+    cabecalhoPdf_(String(tipo || ''), mes, periodoDoMes_(mes),
+      filtrosTexto ? escHtml_(filtrosTexto) : '') +
+    (rel.mensagem ? '<p class="sub" style="margin:0 0 8px">' + escHtml_(rel.mensagem) + '</p>' : '') +
+    tabelaRelatorioPdf_(rel, { compacta: rel.colunas.length > 10 }) +
+    (consolidado
+      ? '<h2 style="margin:16px 0 6px;font-size:13px">' +
+          escHtml_(consolidado.titulo || 'Consolidado') + '</h2>' +
+        tabelaRelatorioPdf_(consolidado, { compacta: consolidado.colunas.length > 10 })
+      : '') +
+    rodapePdf_('') +
+    '</body></html>';
+}
+
+function gerarPdfRelatorio_(tipo, filtros) {
+  exigirExecucaoMutacao_();
+  const nome = String(tipo || '').trim();
+  if (!CATALOGO_RELATORIOS[nome]) throw new Error('Relatório desconhecido: ' + nome + '.');
+  const f = filtros || {};
+  const rel = relatorioPorTipo_(nome,
+    f.centro && f.centro !== 'TODOS' ? f.centro : null,
+    f.categoria && f.categoria !== 'TODAS' ? f.categoria : null,
+    f.veiculo && f.veiculo !== 'TODOS' ? f.veiculo : null,
+    f.termo || '');
+  if (!rel || !rel.colunas || !rel.colunas.length) {
+    throw new Error('O relatório "' + nome + '" não devolveu colunas para exportar.');
+  }
+  const filtrosTexto = ['centro', 'categoria', 'veiculo', 'termo']
+    .filter(function (k) { return f[k] && ['TODOS', 'TODAS'].indexOf(f[k]) === -1; })
+    .map(function (k) { return k + ': ' + f[k]; }).join(' • ');
+
+  const mes = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const semAcento = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const arquivoNome = 'Frota_' + semAcento + '_' + mes + '.pdf';
+  const html = htmlRelatorioPdf_(nome, rel, filtrosTexto);
+  const pdf = Utilities.newBlob(html, MimeType.HTML, arquivoNome)
+    .getAs(MimeType.PDF).setName(arquivoNome);
+  const arquivo = pastaDeRelatorios_().createFile(pdf);
+  registrarLog_('PDF de relatório', nome + ' • ' + arquivo.getName());
+  return arquivo;
+}
+
+function webRelatorioPdf(token, tipo, filtros, emails) {
+  autorizarContextoWeb_(token, PERFIS_ACESSO);
+  // O e-mail e validado ANTES de montar o arquivo: montar e depois recusar o
+  // destinatario gastaria a cota e deixaria PDF orfao no Drive.
+  const destinos = listaDeEmails_(emails, { permiteVazio: true });
+  const arquivo = gerarPdfRelatorio_(tipo, filtros);
+  let enviados = [];
+  if (destinos.length) {
+    enviados = enviarArquivoPorEmail_(arquivo, destinos,
+      'Relatório de frota — ' + String(tipo || ''),
+      '<p>Segue o relatório <b>' + escHtml_(String(tipo || '')) + '</b>, em PDF.</p>');
+  }
+  return {
+    ok: true,
+    nome: arquivo.getName(),
+    url: arquivo.getUrl(),
+    pasta: PASTA_RELATORIOS,
+    enviados: enviados,
+    mensagem: 'PDF gerado na pasta "' + PASTA_RELATORIOS + '" do Drive.' +
+      (enviados.length ? ' Enviado para ' + enviados.join(', ') + '.' : ''),
   };
 }
 
@@ -10559,6 +10711,7 @@ function relatorioPorTipo_(tipo, centro, categoria, placa, termo) {
     case 'Manutenção — oficina e pneus': return relatorioManutencao_(centro, categoria, placa);
     case 'Detalhamento de oficina por veículo': return relatorioDetalhamentoOficina_(centro, categoria, placa);
     case 'Combustível lançado por veículo': return relatorioCombustivelLancado_(centro, categoria, placa);
+    case 'Diesel por semana e por mês': return relatorioDieselPeriodo_(centro, categoria, placa);
     case 'Abastecimento e consumo': return relatorioAbastecimento_(centro, categoria, placa);
     case 'Ranking de custo por KM': return relatorioRanking_(centro, categoria, placa);
     case 'IPVA por veículo': return relatorioIpva_(centro, categoria, placa);
@@ -11052,6 +11205,162 @@ function consolidadoOficina_(itens) {
  * Usa TODA a base, nao so o periodo aberto, como os outros detalhamentos —
  * conferir consumo exige olhar para tras.
  */
+/** Quantas semanas e quantos meses o relatorio de diesel olha para tras. */
+const SEMANAS_DIESEL_ = 12;
+const MESES_DIESEL_ = 12;
+
+/** Segunda-feira da semana da data, a zero hora. Semana operacional seg-dom. */
+function inicioDaSemana_(data) {
+  const d = new Date(data.getFullYear(), data.getMonth(), data.getDate(), 0, 0, 0, 0);
+  // getDay(): 0 = domingo. Domingo pertence a semana que comecou na segunda
+  // ANTERIOR, por isso recua 6, nao 0 — senao o domingo abriria uma semana
+  // sozinho e toda semana apareceria partida em duas.
+  const recuo = d.getDay() === 0 ? 6 : d.getDay() - 1;
+  d.setDate(d.getDate() - recuo);
+  return d;
+}
+
+/**
+ * Este abastecimento e diesel?
+ *
+ * O lancamento nao diz o combustivel — diz 'Combustivel Proprio/Terceiros'.
+ * Quem sabe sao duas outras coisas:
+ *   - abastecimento INTERNO sai do tanque, e o tanque e DIESEL S10. E diesel
+ *     por construcao, qualquer que seja o cadastro;
+ *   - abastecimento EXTERNO depende do campo Combustivel do veiculo.
+ *
+ * Campo VAZIO conta como diesel, e isso e uma escolha: o campo nasceu na V4.29
+ * e a maioria da frota ainda nao o tem preenchido. Excluir o vazio devolveria
+ * um relatorio quase zerado, que parece defeito; incluir devolve um numero
+ * alto demais se houver gasolina escondida ali. Por isso o relatorio CONTA
+ * quantos litros vieram de veiculo sem combustivel declarado e diz isso na
+ * mensagem — o numero fica auditavel em vez de so otimista.
+ */
+function ehDieselDoVeiculo_(combustivelCadastro) {
+  const c = String(combustivelCadastro == null ? '' : combustivelCadastro).trim().toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (c === '') return { diesel: true, declarado: false };
+  return { diesel: c.indexOf('DIESEL') === 0, declarado: true };
+}
+
+/**
+ * Litros e R$ de diesel por SEMANA (tabela principal) e por MES (consolidado).
+ *
+ * Pedido do usuario: "quantidade de litros e valores gastos de diesel semanal
+ * mensal". Os dois recortes no mesmo relatorio, porque a pergunta e a mesma
+ * vista de duas distancias — a semana mostra o pico, o mes mostra a conta.
+ */
+function relatorioDieselPeriodo_(centro, categoria, placa) {
+  const combustivelPorPlaca = {};
+  dadosVeiculosExecucao_().forEach(function (v) {
+    const p = normalizaPlaca_(v[COL_VEIC.PLACA - 1]);
+    if (p) combustivelPorPlaca[p] = String(v[COL_VEIC.COMBUSTIVEL - 1] || '');
+  });
+
+  const hoje = hojeNoFuso_();
+  const limiteSemana = inicioDaSemana_(hoje);
+  limiteSemana.setDate(limiteSemana.getDate() - 7 * (SEMANAS_DIESEL_ - 1));
+  const mesCorrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  const limiteMes = somarMesesCompetencia_(mesCorrente, -(MESES_DIESEL_ - 1));
+
+  const semanas = {};
+  const meses = {};
+  let litrosSemDeclaracao = 0;
+  let placasSemDeclaracao = {};
+
+  function balde(mapa, chave, rotulo, ordem) {
+    if (!mapa[chave]) {
+      mapa[chave] = { rotulo: rotulo, ordem: ordem, litros: 0, valor: 0,
+        litrosInterno: 0, litrosExterno: 0, abastecimentos: 0 };
+    }
+    return mapa[chave];
+  }
+
+  lerLancamentos_().forEach(function (l) {
+    if (TIPOS_COMBUSTIVEL.indexOf(String(l[L_.TIPO])) === -1) return;
+    if (centro && String(l[L_.CENTRO]) !== centro) return;
+    if (categoria && !categoriaCasa_(l[L_.CATEGORIA], categoria)) return;
+    const chavePlaca = normalizaPlaca_(l[L_.PLACA]);
+    if (placa && chavePlaca !== placa) return;
+    const data = l[L_.DATA];
+    if (Object.prototype.toString.call(data) !== '[object Date]' || isNaN(data.getTime())) return;
+
+    const interno = tipoAbastecimentoDe_(l[L_.TIPO], l[L_.TIPO_ABASTECIMENTO]) === ABASTECIMENTO_INTERNO;
+    const veredito = ehDieselDoVeiculo_(combustivelPorPlaca[chavePlaca]);
+    // Interno sai do tanque de DIESEL S10: e diesel mesmo que o cadastro diga
+    // outra coisa. Divergencia assim e erro de cadastro, nao de combustivel.
+    if (!interno && !veredito.diesel) return;
+
+    const litros = Number(l[L_.LITROS]) || 0;
+    const valor = Number(l[L_.VALOR]) || 0;
+    if (!interno && !veredito.declarado && litros > 0) {
+      litrosSemDeclaracao += litros;
+      placasSemDeclaracao[chavePlaca] = true;
+    }
+
+    const inicio = inicioDaSemana_(data);
+    if (inicio >= limiteSemana) {
+      const b = balde(semanas, isoDoDia_(inicio), null, inicio.getTime());
+      const fim = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + 6);
+      b.rotulo = formatarData_(inicio) + ' a ' + formatarData_(fim);
+      b.litros += litros; b.valor += valor; b.abastecimentos++;
+      if (interno) b.litrosInterno += litros; else b.litrosExterno += litros;
+    }
+
+    const comp = String(l[L_.PERIODO] || '');
+    if (comp && comp >= limiteMes) {
+      const bm = balde(meses, comp, comp, comp);
+      bm.litros += litros; bm.valor += valor; bm.abastecimentos++;
+      if (interno) bm.litrosInterno += litros; else bm.litrosExterno += litros;
+    }
+  });
+
+  function tabela(mapa, tituloPrimeira) {
+    const chaves = Object.keys(mapa).sort(function (a, b) {
+      return mapa[b].ordem > mapa[a].ordem ? 1 : (mapa[b].ordem < mapa[a].ordem ? -1 : 0);
+    });
+    const linhas = chaves.map(function (k) {
+      const b = mapa[k];
+      return [b.rotulo, b.abastecimentos, b.litros, b.valor,
+        b.litros > 0 ? b.valor / b.litros : 0, b.litrosInterno, b.litrosExterno];
+    });
+    const litros = chaves.reduce(function (t, k) { return t + mapa[k].litros; }, 0);
+    const valor = chaves.reduce(function (t, k) { return t + mapa[k].valor; }, 0);
+    return {
+      colunas: [col_(tituloPrimeira), col_('Abastec.', 'numero'), col_('Litros', 'litros'),
+        col_('Valor', 'moeda'), col_('R$ / litro', 'moeda3'),
+        col_('L. do tanque', 'litros'), col_('L. de fora', 'litros')],
+      linhas: linhas,
+      // O rodape e `valor / litros`, nao a media das linhas: media de media
+      // daria outro numero, com a semana de 200 L pesando igual a de 5.000.
+      totais: [null,
+        chaves.reduce(function (t, k) { return t + mapa[k].abastecimentos; }, 0),
+        litros, valor, litros > 0 ? valor / litros : 0,
+        chaves.reduce(function (t, k) { return t + mapa[k].litrosInterno; }, 0),
+        chaves.reduce(function (t, k) { return t + mapa[k].litrosExterno; }, 0)],
+    };
+  }
+
+  const semanal = tabela(semanas, 'Semana (seg a dom)');
+  const mensal = tabela(meses, 'Competência');
+  const avisos = ['Últimas ' + SEMANAS_DIESEL_ + ' semanas; o consolidado traz os últimos ' +
+    MESES_DIESEL_ + ' meses.'];
+  if (litrosSemDeclaracao > 0) {
+    avisos.push(numBR_(litrosSemDeclaracao, 3) + ' L vieram de ' +
+      Object.keys(placasSemDeclaracao).length + ' veículo(s) comprados fora e SEM ' +
+      'combustível declarado no cadastro — contados como diesel. Preencha o campo ' +
+      'Combustível para o número ficar exato.');
+  }
+  return {
+    colunas: semanal.colunas,
+    linhas: semanal.linhas,
+    totais: semanal.totais,
+    consolidado: { titulo: 'Por competência', colunas: mensal.colunas,
+      linhas: mensal.linhas, totais: mensal.totais },
+    mensagem: avisos.join(' '),
+  };
+}
+
 function relatorioCombustivelLancado_(centro, categoria, placa) {
   const veiculos = {};
   dadosVeiculosExecucao_().forEach(function (v) {
@@ -13007,6 +13316,111 @@ function webVeiculos(token, busca) {
  * preservados da linha atual — sobrescrever a linha inteira apagaria dados que
  * vieram da migracao e que ninguem digitaria de novo.
  */
+/**
+ * Separa um texto colado em placas/patrimonios, um por item.
+ *
+ * Aceita quebra de linha, virgula, ponto e virgula e tabulacao — que e como
+ * sai de uma planilha, de um WhatsApp ou de um e-mail. O hifen NAO separa:
+ * `normalizaPlaca_` ja o trata como espaco, e a frota do usuario tem placas
+ * gravadas em par (cavalo-carreta, "MCZ2627-QHC8466"). Quebrar no hifen
+ * transformaria um veiculo em dois que nao existem.
+ */
+function itensColados_(texto) {
+  return String(texto == null ? '' : texto)
+    .split(/[\n\r,;\t]+/)
+    .map(function (t) { return t.trim(); })
+    .filter(function (t) { return t; });
+}
+
+/**
+ * Classifica varios veiculos de uma vez.
+ *
+ * Existe porque o filtro por grupo de frota (V4.36) sai da CATEGORIA do
+ * cadastro: sem ela preenchida, "Frota Entregas" devolve vazio e parece
+ * defeito. Abrir 30 cadastros a mao para arrumar isso e onde a pessoa desiste.
+ *
+ * Uma leitura e UMA escrita, da coluna Categoria apenas. Gravar linha por
+ * linha seriam 30 escritas, e escrever a linha inteira arriscaria levar junto
+ * um valor lido antes de outra edicao.
+ */
+function classificarVeiculosEmLote_(categoriaBruta, texto) {
+  exigirExecucaoMutacao_();
+  const categoria = String(categoriaBruta == null ? '' : categoriaBruta).trim();
+  if (!categoria) return { ok: false, mensagem: 'Escolha a categoria.' };
+  if (listaCategorias_().indexOf(categoria) === -1) {
+    return { ok: false, mensagem: 'Categoria "' + categoria + '" não existe no cadastro.' };
+  }
+  const itens = itensColados_(texto);
+  if (!itens.length) return { ok: false, mensagem: 'Cole as placas ou os patrimônios, um por linha.' };
+  if (itens.length > 500) return { ok: false, mensagem: 'Máximo de 500 itens por vez.' };
+
+  const sheet = aba_(ABAS.VEICULOS);
+  const n = Math.max(sheet.getLastRow() - 1, 0);
+  if (n < 1) return { ok: false, mensagem: 'Nenhum veículo cadastrado.' };
+  const coluna = sheet.getRange(2, COL_VEIC.CATEGORIA, n, 1);
+  const categorias = coluna.getValues();
+  const placas = sheet.getRange(2, COL_VEIC.PLACA, n, 1).getValues();
+
+  const indicePorPlaca = {};
+  placas.forEach(function (linha, i) {
+    const chave = normalizaPlaca_(linha[0]);
+    if (chave && indicePorPlaca[chave] === undefined) indicePorPlaca[chave] = i;
+  });
+
+  const alterados = [];
+  const jaEstavam = [];
+  const naoEncontrados = [];
+  const vistos = {};
+  itens.forEach(function (item) {
+    // `resolverVeiculo_` aceita placa E codigo de patrimonio: a lista pode vir
+    // de qualquer um dos dois, e exigir placa seria exigir uma traducao a mao.
+    const r = resolverVeiculo_(item, false);
+    const chave = r.ok ? normalizaPlaca_(r.veiculo.placa) : '';
+    const i = chave === '' ? undefined : indicePorPlaca[chave];
+    if (i === undefined) { naoEncontrados.push(item); return; }
+    if (vistos[chave]) return;        // repetido na lista colada
+    vistos[chave] = true;
+    const atual = String(categorias[i][0] || '').trim();
+    if (atual === categoria) { jaEstavam.push(chave); return; }
+    categorias[i][0] = categoria;
+    alterados.push(chave);
+  });
+
+  if (alterados.length) {
+    coluna.setValues(categorias);
+    VEICULOS_EXEC_CACHE_ = null;
+    CLASSIF_MEMO_EXEC_ = null;
+    invalidarCacheInicio_();
+    registrarLog_('Classificar veículos',
+      alterados.length + ' veículo(s) em "' + categoria + '": ' + alterados.join(', '));
+    atualizarResumoSeguro_();
+  }
+
+  const partes = [];
+  partes.push(alterados.length + ' veículo(s) classificado(s) como "' + categoria + '"');
+  if (jaEstavam.length) partes.push(jaEstavam.length + ' já estava(m) assim');
+  if (naoEncontrados.length) {
+    partes.push(naoEncontrados.length + ' não encontrado(s): ' +
+      naoEncontrados.slice(0, 15).join(', ') + (naoEncontrados.length > 15 ? '…' : ''));
+  }
+  return {
+    // `ok` so pela execucao: uma lista em que nada mudou porque tudo ja estava
+    // certo nao e erro. O que o usuario precisa saber vai na mensagem e nas
+    // listas, item por item.
+    ok: true,
+    categoria: categoria,
+    alterados: alterados,
+    jaEstavam: jaEstavam,
+    naoEncontrados: naoEncontrados,
+    mensagem: partes.join(' • ') + '.',
+  };
+}
+
+function webClassificarVeiculos(token, categoria, texto) {
+  autorizarContextoWeb_(token, 'ADMIN');
+  return classificarVeiculosEmLote_(categoria, texto);
+}
+
 function webSalvarVeiculo(token, dados) {
   autorizarContextoWeb_(token, 'ADMIN');
   const placa = normalizaPlaca_(dados.placa);

@@ -4193,6 +4193,107 @@ pendente conferir isso na planilha dele — e as placas vêm em **pares**
 (cavalo-carreta, "MCZ2627-QHC8466"), enquanto o sistema cadastra **uma placa
 por veículo**. A capacidade em toneladas da planilha também não tem campo hoje.
 
+## V4.37.0 — classificar em lote, diesel por semana/mês, e um defeito que já estava em produção
+
+### 1. Classificar veículos em lote
+
+A V4.36 deixou o filtro "Frota Entregas" dependendo da **categoria** do
+cadastro, e abrir 30 cadastros à mão para preenchê-la é onde a pessoa desiste.
+Botão novo em **Veículos → 🏷️ Classificar em lote**: cola as placas (ou os
+números de patrimônio), escolhe a categoria, pronto.
+
+Três decisões que não são óbvias:
+
+- **Só a coluna Categoria é escrita**, numa leitura e uma escrita. Gravar a
+  linha inteira levaria junto valores lidos antes de outra edição; gravar
+  linha a linha seriam 30 escritas, que é o que custa caro no Apps Script.
+- **O hífen não separa itens.** A frota do usuário tem placa gravada em par
+  (cavalo-carreta, `MCZ2627-QHC8466`) e `normalizaPlaca_` já trata hífen como
+  espaço. Quebrar ali transformaria um veículo em dois que não existem.
+- **Quem não foi encontrado é dito item por item.** "3 não encontrados" sem
+  dizer quais obriga a conferir os 30 na mão — que é o trabalho que o botão
+  existe para evitar.
+
+A busca passa por `resolverVeiculo_`, o mesmo de sempre, e por isso aceita
+patrimônio. Um índice próprio aqui seria uma segunda implementação das regras
+de placa e patrimônio — o defeito que mais voltou neste projeto. Isso fez a
+regra de desempenho acusar varredura em laço; está em ACEITAS com o motivo (a
+lista tem teto de 500 e `resolverVeiculo_` trabalha sobre cache de execução,
+sem leitura de planilha a mais por item).
+
+### 2. Diesel por semana e por mês
+
+Relatório novo, com **duas tabelas**: por semana (segunda a domingo, últimas
+12) e, abaixo, por competência (últimos 12 meses). Litros, R$, R$/litro, e a
+separação entre **litro do tanque** e **litro de fora**.
+
+**O que conta como diesel.** O lançamento não diz o combustível — diz
+"Combustível Próprio/Terceiros". Quem sabe são duas outras coisas:
+
+- abastecimento **interno** sai do tanque, e o tanque é DIESEL S10: é diesel
+  por construção, mesmo que o cadastro do veículo diga gasolina. Divergência
+  assim é erro de cadastro, não combustível diferente — e tirar esses litros
+  faria o relatório não fechar com o saldo do tanque;
+- abastecimento **externo** depende do campo Combustível do veículo.
+
+Campo **vazio conta como diesel**, e isso é escolha, não descuido: o campo
+nasceu na V4.29 e a maior parte da frota ainda não o tem. Excluir o vazio
+devolveria um relatório quase zerado, que parece defeito. Então o relatório
+**conta quantos litros vieram de veículo sem combustível declarado e diz isso
+na própria mensagem** — o número fica auditável em vez de só otimista.
+
+O domingo pertence à semana que começou na **segunda anterior**: com
+`getDay() === 0` recuando zero dias, o domingo abriria uma semana sozinho e
+toda semana apareceria partida em duas. O R$/litro do rodapé é `valor /
+litros`, não média das semanas — média de médias faria a semana de 50 L pesar
+igual à de 5.000.
+
+### 3. PDF para qualquer relatório
+
+Até aqui só o fechamento e o rateio saíam em PDF. Agora todo relatório tem
+**📄 Gerar PDF** ao lado de *Exportar em planilha*, com os mesmos filtros e o
+mesmo campo de e-mail. Os dois botões montam os filtros no **mesmo** lugar
+(`filtrosDoRelatorio`): dois montadores seriam a chance de o PDF sair de um
+filtro e a planilha de outro, com os dois circulando como o mesmo relatório.
+
+O PDF reusa `tabelaRelatorioPdf_`, o renderizador do fechamento. E o bloco
+**consolidado** — que até aqui só ia para a tela — passou a sair **no PDF e na
+planilha**. Sem isso, o relatório de diesel, pedido "semanal mensal",
+perderia justamente a metade mensal no arquivo.
+
+### 4. O defeito que já estava em produção
+
+Ao escrever o PDF do diesel apareceu isto: `'litros'` e `'media'` **não
+estavam** na lista de tipos numéricos dos relatórios. Três efeitos, todos
+silenciosos:
+
+1. no PDF a célula caía no ramo de texto e saía como **número cru** —
+   `248.0655`, que em pt-BR se lê como **milhar**. É o defeito que o CLAUDE.md
+   deste projeto chama pelo nome: não dá erro, **mente**;
+2. a coluna saía alinhada à esquerda, como texto;
+3. o rodapé **não somava os litros**, porque o somador pergunta a essa mesma
+   lista quem é número.
+
+O **PDF do fechamento que vai para a contabilidade já saía assim**, nas
+colunas "Comb. litros", "Lubrif. litros" e "KM/litro". Corrigido no dono
+único (a lista + o formatador), o que conserta PDF, alinhamento e os totais
+de uma vez — a coluna de litros do relatório operacional passa a ter total.
+
+### Suítes
+
+`conferir_lote_e_diesel.js`, nova, com 51 provas. **39 suítes, ~1.495
+provas.** Por mutação, 20 defeitos reintroduzidos, **20 pegos**. Dois
+sobreviveram na primeira rodada e os dois eram prova minha fraca, não defeito
+do código: a lista colada repetia o mesmo veículo de três formas e o total não
+mudava de jeito nenhum; e o abastecimento interno do fixture era de um veículo
+cujo cadastro já dizia Diesel, então "interno é diesel por construção" não
+estava sendo exercitado. O segundo virou a prova mais útil do arquivo.
+
+### Instalação
+
+`Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
+sistema*: nenhuma aba, coluna, gatilho ou parâmetro mudou nesta versão.
+
 ---
 
 # Pendente
@@ -4211,9 +4312,9 @@ por veículo**. A capacidade em toneladas da planilha também não tem campo hoj
   abastecimentos internos já gravados continuam com o valor da média móvel; só
   são revalorizados quando a carga do período é corrigida. Ofereci um botão
   "revalorizar o mês"; sem resposta do usuário.
-- **Frota Entregas: cadastro e placas em par** — o filtro por grupo (V4.36)
-  sai da CATEGORIA do cadastro. Falta conferir se os ~30 veículos da planilha
-  do usuário estão classificados nas quatro categorias certas. E as placas
+- **Frota Entregas: placas em par e capacidade** — o botão de classificar em
+  lote (V4.37) resolve o preenchimento da categoria. Falta conferir se os ~30
+  veículos da planilha do usuário foram mesmo classificados. E as placas
   dele vêm em par (cavalo-carreta); o sistema cadastra uma placa por veículo.
   A capacidade em toneladas não tem campo.
 - **Estoque de lubrificante** — pedido e depois respondido com "somente

@@ -1917,7 +1917,9 @@
             '<input type="text" id="relEmail" placeholder="nome@giassi.com.br" ' +
               'autocomplete="off"></div>' +
           '<div style="align-self:end"><button class="acao secundaria" id="btnRelXlsx" ' +
-            'onclick="baixarRelatorioXlsx(this)">📊 Exportar em planilha</button></div>' +
+            'onclick="baixarRelatorioXlsx(this)">📊 Exportar em planilha</button> ' +
+            '<button class="acao secundaria" id="btnRelPdf" ' +
+            'onclick="baixarRelatorioPdf(this)">📄 Gerar PDF</button></div>' +
         '</div>' +
         '<div id="msgRelXlsx"></div>' +
         '<div id="saidaRel"><div class="carregando">carregando…</div></div>';
@@ -2115,11 +2117,41 @@
       }).withFailureHandler(function (e) {
         erro(e);
         el('msgRelXlsx').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
-      }).webRelatorioXlsx(TOKEN, tipo, {
-        centro: el('relCentro').value, categoria: el('relCategoria').value,
-        veiculo: String(el('relVeiculo').value || '').trim() || 'TODOS',
-        termo: el('relTermo') ? el('relTermo').value : ''
-      }, el('relEmail') ? el('relEmail').value : '');
+      }).webRelatorioXlsx(TOKEN, tipo, filtrosDoRelatorio(),
+        el('relEmail') ? el('relEmail').value : '');
+    });
+  }
+
+  /**
+   * O mesmo relatório da tela, em PDF, com os mesmos filtros e o mesmo campo
+   * de e-mail da planilha.
+   *
+   * Um só lugar monta os filtros para os dois botões: dois montadores seriam
+   * a chance de o PDF sair de um filtro e a planilha de outro, com os dois
+   * arquivos circulando como se fossem o mesmo relatório.
+   */
+  function filtrosDoRelatorio() {
+    return {
+      centro: el('relCentro').value, categoria: el('relCategoria').value,
+      veiculo: String(el('relVeiculo').value || '').trim() || 'TODOS',
+      termo: el('relTermo') ? el('relTermo').value : ''
+    };
+  }
+
+  function baixarRelatorioPdf(botao) {
+    var tipo = el('relTipo').value;
+    el('msgRelXlsx').innerHTML = '<div class="carregando">montando o PDF…</div>';
+    comVigia(botao, 'Gerando…', function (pronto, erro) {
+      google.script.run.withSuccessHandler(function (r) {
+        pronto();
+        el('msgRelXlsx').innerHTML = '<div class="ok-caixa"><b>' + esc(r.nome) + '</b> gerado.<br>' +
+          '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">abrir o PDF</a> ' +
+          '<span class="sub2">— salvo na pasta "' + esc(r.pasta) + '" do Drive</span></div>';
+      }).withFailureHandler(function (e) {
+        erro(e);
+        el('msgRelXlsx').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      }).webRelatorioPdf(TOKEN, tipo, filtrosDoRelatorio(),
+        el('relEmail') ? el('relEmail').value : '');
     });
   }
 
@@ -2268,9 +2300,13 @@
       '<div class="barra">' +
         '<div><label for="busca">Buscar por placa, patrimônio, modelo ou centro</label>' +
           '<input type="text" id="busca" placeholder="ex.: 15482, FIORINO, Loja 08, RYP"></div>' +
-        (SESSAO && SESSAO.perfil === 'ADMIN' ? '<div style="flex:0 0 auto"><button class="acao" onclick="abrirFormVeiculo()">➕ Novo veículo</button></div>' : '') +
+        (SESSAO && SESSAO.perfil === 'ADMIN' ? '<div style="flex:0 0 auto">' +
+          '<button class="acao" onclick="abrirFormVeiculo()">➕ Novo veículo</button> ' +
+          '<button class="acao secundaria" onclick="abrirClassificarLote()">🏷️ Classificar em lote</button>' +
+          '</div>' : '') +
       '</div>' +
       '<div id="formVeiculo"></div>' +
+      '<div id="loteVeiculos"></div>' +
       '<div id="saidaVeiculos"><div class="carregando">carregando…</div></div>';
     var timer = null;
     el('busca').addEventListener('input', function () {
@@ -2278,6 +2314,61 @@
       timer = setTimeout(rodarVeiculos, 300);
     });
     rodarVeiculos();
+  }
+
+  /**
+   * Classificar vários veículos de uma vez.
+   *
+   * O filtro por grupo de frota sai da CATEGORIA do cadastro: sem ela
+   * preenchida, "Frota Entregas" volta vazio e parece defeito. Abrir 30
+   * cadastros à mão para arrumar isso é onde a pessoa desiste.
+   */
+  function abrirClassificarLote() {
+    el('loteVeiculos').innerHTML =
+      '<div class="cartao" style="max-width:760px">' +
+        '<b>Classificar veículos em lote</b>' +
+        '<p class="sub" style="margin:6px 0 10px">Cole as placas ou os números de ' +
+          'patrimônio — um por linha (vírgula e ponto e vírgula também servem) — e ' +
+          'escolha a categoria. Só a categoria é alterada; o resto do cadastro não ' +
+          'é tocado.</p>' +
+        '<div class="linha">' +
+          '<div><label for="loteCategoria">Categoria</label>' +
+            seletor('loteCategoria', OPCOES.categorias) + '</div>' +
+        '</div>' +
+        '<label for="lotePlacas" style="margin-top:10px">Placas / patrimônios</label>' +
+        '<textarea id="lotePlacas" rows="8" style="width:100%;font-family:ui-monospace,monospace" ' +
+          'placeholder="MCZ2627&#10;QHK 4E72&#10;15482"></textarea>' +
+        '<div class="sub2" style="margin-top:6px">A placa é procurada como está no ' +
+          'cadastro. Placa gravada em par (cavalo-carreta) deve ser colada inteira, ' +
+          'do mesmo jeito que está lá.</div>' +
+        '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">' +
+          '<button class="acao" id="btnLote" onclick="classificarLote()">Classificar</button>' +
+          '<button class="acao secundaria" onclick="el(\'loteVeiculos\').innerHTML=\'\'">Cancelar</button>' +
+        '</div>' +
+        '<div id="msgLote" style="margin-top:10px"></div>' +
+      '</div>';
+    el('loteVeiculos').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function classificarLote() {
+    var botao = el('btnLote');
+    botao.disabled = true; botao.textContent = 'classificando…';
+    google.script.run.withSuccessHandler(function (r) {
+      botao.disabled = false; botao.textContent = 'Classificar';
+      el('msgLote').innerHTML =
+        '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' + esc(r.mensagem) + '</div>' +
+        // Quem não foi encontrado aparece item por item: "3 não encontrados"
+        // sem dizer QUAIS obriga a conferir os 30 na mão.
+        ((r.naoEncontrados && r.naoEncontrados.length)
+          ? '<div class="aviso" style="margin-top:8px">Não encontrados no cadastro: <b>' +
+            esc(r.naoEncontrados.join(', ')) + '</b>. Confira se a placa está escrita ' +
+            'como no cadastro.</div>'
+          : '');
+      if (r.ok && r.alterados && r.alterados.length) rodarVeiculos();
+    }).withFailureHandler(function (e) {
+      botao.disabled = false; botao.textContent = 'Classificar';
+      el('msgLote').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+    }).webClassificarVeiculos(TOKEN, el('loteCategoria').value, el('lotePlacas').value);
   }
 
   function rodarVeiculos() {

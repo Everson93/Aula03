@@ -98,6 +98,13 @@ nomes.forEach(function (n) {
 // Cada entrada foi olhada. O motivo de aceitar esta ao lado; quando deixar de
 // valer, a entrada sai daqui e o conserto entra no codigo.
 const ACEITAS = {
+  'classificarVeiculosEmLote_ -> resolverVeiculo_':
+    'classificação em lote: o laço é sobre a LISTA COLADA (teto de 500 itens), ' +
+    'não sobre a frota, e `resolverVeiculo_` trabalha em cima de ' +
+    '`dadosVeiculosExecucao_()`, que é cache de execução — nenhuma leitura de ' +
+    'planilha a mais por item. Um índice próprio aqui seria uma segunda ' +
+    'implementação das regras de placa e patrimônio, que é o defeito que mais ' +
+    'voltou neste projeto.',
   'onEdit -> resolverVeiculo_':
     'colagem no Odômetro: limitado às linhas coladas, não à frota',
   'webTanques -> estadoTanque_':
