@@ -182,6 +182,31 @@ ok('e usa o mesmo escritor de aba do fechamento',
   /function gerarXlsxRelatorio_[\s\S]{0,1800}escreverRelatorioNaAba_\(/.test(gs),
   'um exportador próprio faria um caminho formatar e o outro entregar texto');
 
+console.log('\n5c. O filtro de período na tela de relatórios');
+ok('os campos de/até existem', /id="relDe"/.test(app) && /id="relAte"/.test(app));
+ok('e vão dentro dos filtros que os dois botões usam',
+  /function filtrosDoRelatorio[\s\S]{0,420}periodo: periodoDoRelatorio\(\)/.test(app),
+  'campo na tela que o callback não envia é promessa falsa');
+ok('o campo só aparece em quem aceita período',
+  /function ajustarPeriodo[\s\S]{0,300}ACEITA_PERIODO\[el\('relTipo'\)\.value\] === true/.test(app) &&
+  /el\('campoPeriodo'\)\.style\.display = aceita \? '' : 'none'/.test(app));
+ok('e quem não aceita DIZ por quê, em vez de só esconder',
+  /não aceita intervalo de datas/.test(app),
+  'campo que some sem explicação vira "sumiu o filtro"');
+ok('trocar de relatório reavalia o campo',
+  /ajustarTermo\(\); ajustarPeriodo\(\); rodarRelatorio/.test(app));
+ok('mudar a data roda o relatório de novo',
+  /'relTipo', 'relCentro', 'relCategoria', 'relVeiculo', 'relDe', 'relAte'/.test(app));
+ok('e a tela não monta período para quem não aceita',
+  /function periodoDoRelatorio[\s\S]{0,200}ACEITA_PERIODO\[el\('relTipo'\)\.value\] !== true\) return null;/.test(app),
+  'mandar assim mesmo faria o servidor ignorar e a pessoa achar que filtrou');
+ok('o servidor só repassa o período a quem o aceita',
+  /relatorioAceitaPeriodo_\(tipo\) \? filtros\.periodo : null/.test(gs),
+  'mandar a quem lê o Resumo seria um filtro que não age');
+ok('e as três portas (tela, planilha, PDF) usam a mesma regra',
+  (gs.match(/relatorioAceitaPeriodo_\((tipo|nome)\) \?/g) || []).length === 3,
+  'webRelatorio, webRelatorioXlsx e webRelatorioPdf');
+
 console.log('\n6. O campo de e-mail da planilha');
 ok('existe na tela de relatórios', /id="relEmail"/.test(app));
 ok('e no cartão do fechamento', /id="fechEmail"/.test(app));

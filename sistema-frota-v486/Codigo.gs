@@ -641,7 +641,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.37.0';
+const VERSAO_SISTEMA = '4.38.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -6980,30 +6980,18 @@ function historicoAbastecimentos_(placa, limite, periodo) {
   const alvo = normalizaPlaca_(placa);
   if (!alvo) return { placa: '', linhas: [], totais: null, mensagem: 'Informe o veículo.' };
 
-  // Periodo opcional. Data invalida e IGNORADA, nao vira erro: a pessoa esta
-  // digitando "10/11/2026" e passa por "10/11/20" no caminho — recusar ali
-  // seria recusar a digitacao, nao o filtro.
-  const deBruto = parseDataIsoEstrita_(periodo && periodo.de);
-  const ateBruto = parseDataIsoEstrita_(periodo && periodo.ate);
-  const de = deBruto
-    ? new Date(deBruto.getFullYear(), deBruto.getMonth(), deBruto.getDate(), 0, 0, 0, 0)
-    : null;
-  // Fim do dia: 'ate = 10/11' tem de incluir o dia 10 inteiro. Meia-noite
-  // deixaria de fora tudo que foi lancado no proprio dia escolhido — e um
-  // lancamento sumido do filtro nao parece defeito, parece que nao existe.
-  const ate = ateBruto
-    ? new Date(ateBruto.getFullYear(), ateBruto.getMonth(), ateBruto.getDate(), 23, 59, 59, 999)
-    : null;
-  const temPeriodo = !!(de || ate);
+  // O recorte de datas tem um dono unico, compartilhado com os relatorios
+  // (V4.38). Duas implementacoes seriam a chance de o relatorio cortar o dia
+  // ao meio-dia e o historico a meia-noite, com os dois mostrando numeros
+  // diferentes do mesmo periodo.
+  const janela = intervaloDeDatas_(periodo);
+  const de = janela.inicio;
+  const ate = janela.fim;
+  const temPeriodo = janela.ativo;
   // Com periodo, o limite sobe: quem escolheu um intervalo quer o intervalo,
   // nao os 30 mais recentes dele. O teto de 200 continua valendo.
   const quantos = Math.min(Math.max(Number(limite) || (temPeriodo ? 200 : 30), 1), 200);
 
-  function dentroDoPeriodo(data) {
-    if (de && data < de) return false;
-    if (ate && data > ate) return false;
-    return true;
-  }
 
   function doVeiculo(linhas) {
     return linhas.filter(function (l) {
@@ -7015,7 +7003,7 @@ function historicoAbastecimentos_(placa, limite, periodo) {
         // chamar nem o sucesso nem a falha — a tela fica no "carregando" para
         // sempre. `ultimaLeituraOdometro_` ja checava isso; este lado nao.
         !isNaN(l[L_.DATA].getTime()) &&
-        dentroDoPeriodo(l[L_.DATA]);
+        (!temPeriodo || janela.contem(l[L_.DATA]));
     });
   }
 
@@ -7403,18 +7391,19 @@ const CATALOGO_RELATORIOS = {
     ],
   },
 
-  'Diesel por semana e por mês': {
-    descricao: 'Litros e R$ de diesel somados por semana (seg a dom) e por competência. ' +
-      'Abastecimento interno é diesel por construção (sai do tanque); externo entra ' +
-      'pelo campo Combustível do veículo, e veículo sem o campo preenchido é contado ' +
-      'como diesel — o relatório diz quantos litros são esses.',
+  'Diesel por mês e por semana': {
+    descricao: 'Mês a mês (e, abaixo, semana a semana) quantos litros de diesel a frota ' +
+      'consumiu, quanto custou, o preço médio pago e quanto variou em relação ao período ' +
+      'anterior. Abastecimento interno é diesel por construção (sai do tanque); externo ' +
+      'entra pelo campo Combustível do veículo, e veículo sem o campo preenchido é ' +
+      'contado como diesel — o relatório diz quantos litros são esses.',
     fonte: 'lancamentos',
     filtros: ['centroLancamento', 'categoriaLancamento', 'veiculoLancamento'],
     colunas: [
-      ['Semana (seg a dom)', '@', 175], ['Abastec.', '#,##0', 90],
-      ['Litros', '#,##0.000', 110], ['Valor', 'R$ #,##0.00', 125],
-      ['R$ / litro', 'R$ #,##0.000', 105],
-      ['L. do tanque', '#,##0.000', 110], ['L. de fora', '#,##0.000', 110],
+      ['Mês', '@', 175], ['Litros', '#,##0.000', 110], ['Gasto R$', 'R$ #,##0.00', 125],
+      ['Preço médio R$/L', 'R$ #,##0.000', 130], ['Variação de litros', '#,##0.00"%"', 120],
+      ['Do tanque (L)', '#,##0.000', 115], ['Comprado fora (L)', '#,##0.000', 130],
+      ['Abastecimentos', '#,##0', 115],
     ],
     // Calculado em codigo (agrupa por semana e por competencia): nao ha
     // formula QUERY que monte isso na aba Relatorios.
@@ -9571,7 +9560,8 @@ function gerarXlsxRelatorio_(tipo, filtros) {
     f.centro && f.centro !== 'TODOS' ? f.centro : null,
     f.categoria && f.categoria !== 'TODAS' ? f.categoria : null,
     f.veiculo && f.veiculo !== 'TODOS' ? f.veiculo : null,
-    f.termo || '');
+    f.termo || '',
+    relatorioAceitaPeriodo_(nome) ? f.periodo : null);
   if (!rel || !rel.colunas || !rel.colunas.length) {
     throw new Error('O relatório "' + nome + '" não devolveu colunas para exportar.');
   }
@@ -9585,9 +9575,7 @@ function gerarXlsxRelatorio_(tipo, filtros) {
   try {
     const aba = temp.getSheets()[0];
     aba.setName('Relatorio');
-    const filtrosTexto = ['centro', 'categoria', 'veiculo', 'termo']
-      .filter(function (k) { return f[k] && ['TODOS', 'TODAS'].indexOf(f[k]) === -1; })
-      .map(function (k) { return k + ': ' + f[k]; }).join(' • ');
+    const filtrosTexto = textoDosFiltros_(nome, f);
     escreverRelatorioNaAba_(aba, rel, nome + ' — ' + mes,
       String(param_('EMPRESA')) + '  •  ' + (rel.mensagem || '') +
       (filtrosTexto ? '  •  filtros: ' + filtrosTexto : ''),
@@ -9669,13 +9657,12 @@ function gerarPdfRelatorio_(tipo, filtros) {
     f.centro && f.centro !== 'TODOS' ? f.centro : null,
     f.categoria && f.categoria !== 'TODAS' ? f.categoria : null,
     f.veiculo && f.veiculo !== 'TODOS' ? f.veiculo : null,
-    f.termo || '');
+    f.termo || '',
+    relatorioAceitaPeriodo_(nome) ? f.periodo : null);
   if (!rel || !rel.colunas || !rel.colunas.length) {
     throw new Error('O relatório "' + nome + '" não devolveu colunas para exportar.');
   }
-  const filtrosTexto = ['centro', 'categoria', 'veiculo', 'termo']
-    .filter(function (k) { return f[k] && ['TODOS', 'TODAS'].indexOf(f[k]) === -1; })
-    .map(function (k) { return k + ': ' + f[k]; }).join(' • ');
+  const filtrosTexto = textoDosFiltros_(nome, f);
 
   const mes = normalizarMesReferencia_(param_('MES_REFERENCIA'));
   const semAcento = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -10656,6 +10643,40 @@ function lerHistoricoWeb_() {
 
 // -------------------------------------------------------------- relatórios
 
+/**
+ * O relatorio aceita recorte de datas?
+ *
+ * Deriva da FONTE em vez de uma lista a parte: quem le a base de lancamentos
+ * aceita; quem le o Resumo e a competencia aberta por construcao — o Resumo e
+ * recalculado para o mes aberto, e nao ha onde aplicar um intervalo. Uma
+ * lista a parte seria mais um lugar para esquecer de atualizar ao criar
+ * relatorio novo, e o sintoma seria um filtro que a tela oferece e o servidor
+ * ignora em silencio.
+ */
+/**
+ * Os filtros em uma linha, para o cabecalho do arquivo.
+ *
+ * Dono unico, para o PDF e a planilha dizerem a MESMA coisa. Um arquivo que
+ * nao diz o periodo que o gerou e indefensavel na mao da contabilidade: dois
+ * PDFs do mesmo relatorio, com numeros diferentes, e nada escrito que
+ * explique a diferenca.
+ */
+function textoDosFiltros_(tipo, f) {
+  const partes = ['centro', 'categoria', 'veiculo', 'termo']
+    .filter(function (k) { return f[k] && ['TODOS', 'TODAS'].indexOf(f[k]) === -1; })
+    .map(function (k) { return k + ': ' + f[k]; });
+  if (relatorioAceitaPeriodo_(tipo)) {
+    const janela = intervaloDeDatas_(f.periodo);
+    if (janela.ativo) partes.push('período: ' + janela.rotulo);
+  }
+  return partes.join(' • ');
+}
+
+function relatorioAceitaPeriodo_(tipo) {
+  const c = CATALOGO_RELATORIOS[tipo];
+  return !!c && c.fonte === 'lancamentos';
+}
+
 function webListaRelatorios(token) {
   exigirPerfilToken_(token, PERFIS_ACESSO);
   // filtros vai junto para o app so mostrar o campo de busca em quem usa.
@@ -10664,6 +10685,7 @@ function webListaRelatorios(token) {
       nome: tipo,
       descricao: CATALOGO_RELATORIOS[tipo].descricao,
       filtros: CATALOGO_RELATORIOS[tipo].filtros || [],
+      aceitaPeriodo: relatorioAceitaPeriodo_(tipo),
     };
   });
 }
@@ -10688,7 +10710,11 @@ function webRelatorio(token, tipo, filtros) {
     placa = normalizaPlaca_(rv.veiculo.placa);
   }
 
-  const r = relatorioPorTipo_(tipo, centro, categoria, placa, termo);
+  // O periodo so vai adiante para quem o aceita: mandar a quem le o Resumo
+  // seria oferecer um filtro que nao age, e o numero sairia igual com o
+  // usuario achando que filtrou.
+  const r = relatorioPorTipo_(tipo, centro, categoria, placa, termo,
+    relatorioAceitaPeriodo_(tipo) ? filtros.periodo : null);
   if (r && r.linhas && !r.linhas.length && !r.mensagem) {
     const veiculos = dadosVeiculosExecucao_().filter(function (v) { return String(v[COL_VEIC.PLACA - 1] || '').trim(); }).length;
     const p = periodoAtual_();
@@ -10699,7 +10725,56 @@ function webRelatorio(token, tipo, filtros) {
   return r;
 }
 
-function relatorioPorTipo_(tipo, centro, categoria, placa, termo) {
+/**
+ * Dono UNICO do recorte de datas escolhido pelo usuario.
+ *
+ * Nasceu no filtro do historico de abastecimentos (V4.36) e agora serve
+ * tambem aos relatorios. Uma segunda implementacao aqui seria a chance de o
+ * relatorio cortar o dia ao meio-dia e o historico a meia-noite, com os dois
+ * mostrando numeros diferentes do mesmo periodo.
+ *
+ * Tres regras, todas aprendidas na marra:
+ *  - data invalida e IGNORADA, nao vira erro: quem digita "10/11/2026" passa
+ *    por "10/11/20" no caminho, e recusar ali seria recusar a digitacao;
+ *  - o dia escolhido entra INTEIRO nas duas pontas. `parseDataIsoEstrita_`
+ *    devolve meio-dia; usar isso como corte engoliria a manha do dia inicial
+ *    e a noite do dia final — e lancamento sumido do filtro nao parece
+ *    defeito, parece que nao existe;
+ *  - sem escolha do usuario vale o `padrao` (normalmente a competencia
+ *    aberta), e `ativo` diz qual dos dois esta valendo.
+ */
+function intervaloDeDatas_(periodo, padrao) {
+  const deBruto = parseDataIsoEstrita_(periodo && periodo.de);
+  const ateBruto = parseDataIsoEstrita_(periodo && periodo.ate);
+  const de = deBruto
+    ? new Date(deBruto.getFullYear(), deBruto.getMonth(), deBruto.getDate(), 0, 0, 0, 0)
+    : null;
+  const ate = ateBruto
+    ? new Date(ateBruto.getFullYear(), ateBruto.getMonth(), ateBruto.getDate(), 23, 59, 59, 999)
+    : null;
+  const escolheu = !!(de || ate);
+  const inicio = escolheu ? de : (padrao ? padrao.inicio : null);
+  const fim = escolheu ? ate : (padrao ? padrao.fim : null);
+  return {
+    ativo: escolheu,
+    inicio: inicio,
+    fim: fim,
+    contem: function (data) {
+      if (Object.prototype.toString.call(data) !== '[object Date]' || isNaN(data.getTime())) return false;
+      if (inicio && data < inicio) return false;
+      if (fim && data > fim) return false;
+      return true;
+    },
+    rotulo: (function () {
+      if (!inicio && !fim) return '';
+      if (inicio && fim) return 'de ' + formatarData_(inicio) + ' a ' + formatarData_(fim);
+      if (inicio) return 'a partir de ' + formatarData_(inicio);
+      return 'até ' + formatarData_(fim);
+    })(),
+  };
+}
+
+function relatorioPorTipo_(tipo, centro, categoria, placa, termo, periodo) {
   switch (tipo) {
     case 'Gerencial por Centro de Custo': return relatorioGerencial_(centro, categoria, placa);
     case 'Depreciação por veículo': return relatorioDepreciacaoPorBem_(centro, categoria, placa);
@@ -10709,20 +10784,20 @@ function relatorioPorTipo_(tipo, centro, categoria, placa, termo) {
     case 'Depreciação por loja': return relatorioDepreciacaoPorLoja_(centro, categoria, placa);
     case 'Manutenção por loja': return relatorioManutencaoPorLoja_(centro, categoria, placa);
     case 'Manutenção — oficina e pneus': return relatorioManutencao_(centro, categoria, placa);
-    case 'Detalhamento de oficina por veículo': return relatorioDetalhamentoOficina_(centro, categoria, placa);
-    case 'Combustível lançado por veículo': return relatorioCombustivelLancado_(centro, categoria, placa);
-    case 'Diesel por semana e por mês': return relatorioDieselPeriodo_(centro, categoria, placa);
+    case 'Detalhamento de oficina por veículo': return relatorioDetalhamentoOficina_(centro, categoria, placa, periodo);
+    case 'Combustível lançado por veículo': return relatorioCombustivelLancado_(centro, categoria, placa, periodo);
+    case 'Diesel por mês e por semana': return relatorioDieselPeriodo_(centro, categoria, placa, periodo);
     case 'Abastecimento e consumo': return relatorioAbastecimento_(centro, categoria, placa);
     case 'Ranking de custo por KM': return relatorioRanking_(centro, categoria, placa);
     case 'IPVA por veículo': return relatorioIpva_(centro, categoria, placa);
-    case 'Histórico de KM por veículo': return relatorioHistoricoKm_(centro, categoria, placa);
-    case 'Manutenção realizada por veículo': return relatorioManutencaoVeiculo_(centro, categoria, placa, true);
-    case 'Manutenção em oficina por veículo': return relatorioManutencaoVeiculo_(centro, categoria, placa, false);
-    case 'Buscar peça ou serviço (garantia)': return relatorioGarantia_(centro, categoria, placa, termo);
-    case 'Evolução mensal por natureza': return relatorioEvolucao_(L_.TIPO, placa);
-    case 'Evolução mensal por centro de custo': return relatorioEvolucao_(L_.CENTRO, placa);
-    case 'Extrato de lançamentos do período': return relatorioExtrato_(centro, categoria, placa);
-    case 'Ativos do período (Oficina Ativo e Plotagem)': return relatorioAtivos_(centro, categoria, placa);
+    case 'Histórico de KM por veículo': return relatorioHistoricoKm_(centro, categoria, placa, periodo);
+    case 'Manutenção realizada por veículo': return relatorioManutencaoVeiculo_(centro, categoria, placa, true, periodo);
+    case 'Manutenção em oficina por veículo': return relatorioManutencaoVeiculo_(centro, categoria, placa, false, periodo);
+    case 'Buscar peça ou serviço (garantia)': return relatorioGarantia_(centro, categoria, placa, termo, periodo);
+    case 'Evolução mensal por natureza': return relatorioEvolucao_(L_.TIPO, placa, periodo);
+    case 'Evolução mensal por centro de custo': return relatorioEvolucao_(L_.CENTRO, placa, periodo);
+    case 'Extrato de lançamentos do período': return relatorioExtrato_(centro, categoria, placa, periodo);
+    case 'Ativos do período (Oficina Ativo e Plotagem)': return relatorioAtivos_(centro, categoria, placa, periodo);
     default: return { colunas: [], linhas: [], mensagem: 'Relatório desconhecido.' };
   }
 }
@@ -11250,28 +11325,32 @@ function ehDieselDoVeiculo_(combustivelCadastro) {
  * mensal". Os dois recortes no mesmo relatorio, porque a pergunta e a mesma
  * vista de duas distancias — a semana mostra o pico, o mes mostra a conta.
  */
-function relatorioDieselPeriodo_(centro, categoria, placa) {
+function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
   const combustivelPorPlaca = {};
   dadosVeiculosExecucao_().forEach(function (v) {
     const p = normalizaPlaca_(v[COL_VEIC.PLACA - 1]);
     if (p) combustivelPorPlaca[p] = String(v[COL_VEIC.COMBUSTIVEL - 1] || '');
   });
 
+  const janela = intervaloDeDatas_(periodoEscolhido);
   const hoje = hojeNoFuso_();
+  const mesCorrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
+  // Sem periodo escolhido valem os tetos de sempre. Com periodo, quem manda e
+  // o periodo: cortar em 12 semanas um intervalo de 6 meses devolveria menos
+  // do que a pessoa pediu, sem dizer que cortou.
   const limiteSemana = inicioDaSemana_(hoje);
   limiteSemana.setDate(limiteSemana.getDate() - 7 * (SEMANAS_DIESEL_ - 1));
-  const mesCorrente = normalizarMesReferencia_(param_('MES_REFERENCIA'));
   const limiteMes = somarMesesCompetencia_(mesCorrente, -(MESES_DIESEL_ - 1));
 
   const semanas = {};
   const meses = {};
   let litrosSemDeclaracao = 0;
-  let placasSemDeclaracao = {};
+  const placasSemDeclaracao = {};
 
-  function balde(mapa, chave, rotulo, ordem) {
+  function balde(mapa, chave) {
     if (!mapa[chave]) {
-      mapa[chave] = { rotulo: rotulo, ordem: ordem, litros: 0, valor: 0,
-        litrosInterno: 0, litrosExterno: 0, abastecimentos: 0 };
+      mapa[chave] = { rotulo: '', ordem: chave, litros: 0, valor: 0,
+        litrosInterno: 0, litrosExterno: 0, abastecimentos: 0, completo: true };
     }
     return mapa[chave];
   }
@@ -11284,11 +11363,13 @@ function relatorioDieselPeriodo_(centro, categoria, placa) {
     if (placa && chavePlaca !== placa) return;
     const data = l[L_.DATA];
     if (Object.prototype.toString.call(data) !== '[object Date]' || isNaN(data.getTime())) return;
+    if (janela.ativo && !janela.contem(data)) return;
 
     const interno = tipoAbastecimentoDe_(l[L_.TIPO], l[L_.TIPO_ABASTECIMENTO]) === ABASTECIMENTO_INTERNO;
     const veredito = ehDieselDoVeiculo_(combustivelPorPlaca[chavePlaca]);
     // Interno sai do tanque de DIESEL S10: e diesel mesmo que o cadastro diga
-    // outra coisa. Divergencia assim e erro de cadastro, nao de combustivel.
+    // outra coisa. Divergencia assim e erro de cadastro, nao de combustivel —
+    // e tirar esses litros faria o relatorio nao fechar com o saldo do tanque.
     if (!interno && !veredito.diesel) return;
 
     const litros = Number(l[L_.LITROS]) || 0;
@@ -11299,69 +11380,110 @@ function relatorioDieselPeriodo_(centro, categoria, placa) {
     }
 
     const inicio = inicioDaSemana_(data);
-    if (inicio >= limiteSemana) {
-      const b = balde(semanas, isoDoDia_(inicio), null, inicio.getTime());
+    if (janela.ativo || inicio >= limiteSemana) {
+      const b = balde(semanas, isoDoDia_(inicio));
       const fim = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + 6);
       b.rotulo = formatarData_(inicio) + ' a ' + formatarData_(fim);
+      // Semana que ainda nao terminou nao se compara com uma semana inteira.
+      b.completo = fim < hoje;
       b.litros += litros; b.valor += valor; b.abastecimentos++;
       if (interno) b.litrosInterno += litros; else b.litrosExterno += litros;
     }
 
     const comp = String(l[L_.PERIODO] || '');
-    if (comp && comp >= limiteMes) {
-      const bm = balde(meses, comp, comp, comp);
+    if (comp && (janela.ativo || comp >= limiteMes)) {
+      const bm = balde(meses, comp);
+      bm.rotulo = nomeDoMes_(comp);
+      // A competencia ABERTA esta em curso: comparar meio mes com um mes
+      // inteiro e uma mentira que nao da erro — so uma seta para baixo.
+      bm.completo = comp < mesCorrente;
       bm.litros += litros; bm.valor += valor; bm.abastecimentos++;
       if (interno) bm.litrosInterno += litros; else bm.litrosExterno += litros;
     }
   });
 
+  /**
+   * Monta a tabela do mais recente para o mais antigo, com a variacao de
+   * litros contra o periodo ANTERIOR.
+   *
+   * A variacao so sai quando os DOIS periodos estao completos. Sem essa
+   * guarda, o mes em curso apareceria sempre despencando, e todo dia 2 alguem
+   * perguntaria o que aconteceu com o consumo.
+   */
   function tabela(mapa, tituloPrimeira) {
-    const chaves = Object.keys(mapa).sort(function (a, b) {
-      return mapa[b].ordem > mapa[a].ordem ? 1 : (mapa[b].ordem < mapa[a].ordem ? -1 : 0);
-    });
-    const linhas = chaves.map(function (k) {
+    const chaves = Object.keys(mapa).sort().reverse();
+    const linhas = chaves.map(function (k, i) {
       const b = mapa[k];
-      return [b.rotulo, b.abastecimentos, b.litros, b.valor,
-        b.litros > 0 ? b.valor / b.litros : 0, b.litrosInterno, b.litrosExterno];
+      const anterior = i + 1 < chaves.length ? mapa[chaves[i + 1]] : null;
+      const comparavel = anterior && b.completo && anterior.completo && anterior.litros > 0;
+      return [
+        b.rotulo + (b.completo ? '' : ' (em curso)'),
+        b.litros,
+        b.valor,
+        b.litros > 0 ? b.valor / b.litros : 0,
+        comparavel ? (b.litros / anterior.litros - 1) * 100 : null,
+        b.litrosInterno,
+        b.litrosExterno,
+        b.abastecimentos,
+      ];
     });
-    const litros = chaves.reduce(function (t, k) { return t + mapa[k].litros; }, 0);
-    const valor = chaves.reduce(function (t, k) { return t + mapa[k].valor; }, 0);
+    function soma(campo) {
+      return chaves.reduce(function (t, k) { return t + mapa[k][campo]; }, 0);
+    }
+    const litros = soma('litros');
+    const valor = soma('valor');
     return {
-      colunas: [col_(tituloPrimeira), col_('Abastec.', 'numero'), col_('Litros', 'litros'),
-        col_('Valor', 'moeda'), col_('R$ / litro', 'moeda3'),
-        col_('L. do tanque', 'litros'), col_('L. de fora', 'litros')],
+      colunas: [col_(tituloPrimeira), col_('Litros', 'litros'), col_('Gasto R$', 'moeda'),
+        col_('Preço médio R$/L', 'moeda3'), col_('Variação de litros', 'decimal'),
+        col_('Do tanque (L)', 'litros'), col_('Comprado fora (L)', 'litros'),
+        col_('Abastecimentos', 'numero')],
       linhas: linhas,
-      // O rodape e `valor / litros`, nao a media das linhas: media de media
-      // daria outro numero, com a semana de 200 L pesando igual a de 5.000.
-      totais: [null,
-        chaves.reduce(function (t, k) { return t + mapa[k].abastecimentos; }, 0),
-        litros, valor, litros > 0 ? valor / litros : 0,
-        chaves.reduce(function (t, k) { return t + mapa[k].litrosInterno; }, 0),
-        chaves.reduce(function (t, k) { return t + mapa[k].litrosExterno; }, 0)],
+      // O preco medio do rodape e `gasto / litros`, nao a media das linhas:
+      // media de medias faz o mes de 200 L pesar igual ao de 20.000.
+      totais: [null, litros, valor, litros > 0 ? valor / litros : 0, null,
+        soma('litrosInterno'), soma('litrosExterno'), soma('abastecimentos')],
     };
   }
 
-  const semanal = tabela(semanas, 'Semana (seg a dom)');
-  const mensal = tabela(meses, 'Competência');
-  const avisos = ['Últimas ' + SEMANAS_DIESEL_ + ' semanas; o consolidado traz os últimos ' +
-    MESES_DIESEL_ + ' meses.'];
+  const mensal = tabela(meses, 'Mês');
+  const semanal = tabela(semanas, 'Semana (segunda a domingo)');
+
+  // Uma linha que se le sem percorrer a tabela. Vale para a tela e para o PDF,
+  // que a imprime logo abaixo do cabecalho.
+  const litrosTotal = mensal.totais[1];
+  const valorTotal = mensal.totais[2];
+  const resumo = litrosTotal > 0
+    ? 'No período: ' + numBR_(litrosTotal, 3) + ' L de diesel, ' +
+      'R$ ' + numBR_(valorTotal, 2) + ', preço médio R$ ' +
+      numBR_(valorTotal / litrosTotal, 3) + '/L. ' +
+      numBR_(mensal.totais[5], 3) + ' L saíram do tanque e ' +
+      numBR_(mensal.totais[6], 3) + ' L foram comprados fora.'
+    : 'Nenhum abastecimento de diesel no período.';
+
+  const avisos = [resumo];
+  avisos.push(janela.ativo
+    ? 'Recorte: ' + janela.rotulo + '.'
+    : 'Últimos ' + MESES_DIESEL_ + ' meses; a tabela de semanas traz as últimas ' +
+      SEMANAS_DIESEL_ + '.');
   if (litrosSemDeclaracao > 0) {
     avisos.push(numBR_(litrosSemDeclaracao, 3) + ' L vieram de ' +
       Object.keys(placasSemDeclaracao).length + ' veículo(s) comprados fora e SEM ' +
       'combustível declarado no cadastro — contados como diesel. Preencha o campo ' +
       'Combustível para o número ficar exato.');
   }
+
   return {
-    colunas: semanal.colunas,
-    linhas: semanal.linhas,
-    totais: semanal.totais,
-    consolidado: { titulo: 'Por competência', colunas: mensal.colunas,
-      linhas: mensal.linhas, totais: mensal.totais },
+    colunas: mensal.colunas,
+    linhas: mensal.linhas,
+    totais: mensal.totais,
+    consolidado: { titulo: 'Semana a semana', colunas: semanal.colunas,
+      linhas: semanal.linhas, totais: semanal.totais },
     mensagem: avisos.join(' '),
   };
 }
 
-function relatorioCombustivelLancado_(centro, categoria, placa) {
+function relatorioCombustivelLancado_(centro, categoria, placa, periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido);
   const veiculos = {};
   dadosVeiculosExecucao_().forEach(function (v) {
     const p = normalizaPlaca_(v[COL_VEIC.PLACA - 1]);
@@ -11373,6 +11495,7 @@ function relatorioCombustivelLancado_(centro, categoria, placa) {
 
   const dados = lerLancamentos_().filter(function (l) {
     if (TIPOS_COMBUSTIVEL.indexOf(String(l[L_.TIPO])) === -1) return false;
+    if (janela.ativo && !janela.contem(l[L_.DATA])) return false;
     if (centro && String(l[L_.CENTRO]) !== centro) return false;
     if (categoria && !categoriaCasa_(l[L_.CATEGORIA], categoria)) return false;
     if (placa && normalizaPlaca_(l[L_.PLACA]) !== placa) return false;
@@ -11482,7 +11605,8 @@ function relatorioAbastecimento_(centro, categoria, placa) {
  * Pneus entra junto com oficina porque e manutencao; como o tipo nao tem campo de
  * natureza, ele recebe a natureza 'Pneus' em vez de aparecer como nao informado.
  */
-function relatorioManutencaoVeiculo_(centro, categoria, placa, incluirPneus) {
+function relatorioManutencaoVeiculo_(centro, categoria, placa, incluirPneus, periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido);
   const veiculos = mapaVeiculosPorPlaca_();
   const alvo = placa ? normalizaPlaca_(placa) : '';
   // Pneu e manutencao, mas nao e servico de oficina: quem esta analisando a
@@ -11493,6 +11617,7 @@ function relatorioManutencaoVeiculo_(centro, categoria, placa, incluirPneus) {
 
   const dados = lerLancamentos_().filter(function (l) {
     if (tiposManutencao.indexOf(String(l[L_.TIPO])) === -1) return false;
+    if (janela.ativo && !janela.contem(l[L_.DATA])) return false;
     if (centro && String(l[L_.CENTRO]) !== centro) return false;
     if (categoria && !categoriaCasa_(l[L_.CATEGORIA], categoria)) return false;
     if (alvo && normalizaPlaca_(l[L_.PLACA]) !== alvo) return false;
@@ -11592,7 +11717,8 @@ function mapaVeiculosPorPlaca_() {
  * A coluna "Há quanto tempo" existe porque garantia se conta em dias, e obrigar
  * alguem a subtrair datas de cabeca e como se perde prazo.
  */
-function relatorioGarantia_(centro, categoria, placa, termo) {
+function relatorioGarantia_(centro, categoria, placa, termo, periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido);
   const busca = String(termo || '').trim().toUpperCase();
   if (!busca) {
     return {
@@ -11609,6 +11735,7 @@ function relatorioGarantia_(centro, categoria, placa, termo) {
 
   const dados = lerLancamentos_().filter(function (l) {
     if (tiposManutencao.indexOf(String(l[L_.TIPO])) === -1) return false;
+    if (janela.ativo && !janela.contem(l[L_.DATA])) return false;
     if (centro && String(l[L_.CENTRO]) !== centro) return false;
     if (categoria && !categoriaCasa_(l[L_.CATEGORIA], categoria)) return false;
     if (alvo && normalizaPlaca_(l[L_.PLACA]) !== alvo) return false;
@@ -11711,7 +11838,8 @@ function relatorioIpva_(centro, categoria, placa) {
  * fechamento, e ali nao se ve ONDE a serie quebrou — que e o que permite
  * corrigir a leitura certa em vez de forcar a proxima.
  */
-function relatorioHistoricoKm_(centro, categoria, placa) {
+function relatorioHistoricoKm_(centro, categoria, placa, periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido);
   const veiculos = mapaVeiculosPorPlaca_();
   const alvo = placa ? normalizaPlaca_(placa) : '';
   const sheet = ss_().getSheetByName(ABAS.ODOMETRO);
@@ -11724,6 +11852,7 @@ function relatorioHistoricoKm_(centro, categoria, placa) {
     const data = l[0];
     const km = Number(l[2]);
     if (!(data instanceof Date) || isNaN(data.getTime())) return;
+    if (janela.ativo && !janela.contem(data)) return;
     if (!isFinite(km) || km <= 0) return;
     const p = normalizaPlaca_(l[1]);
     if (!p) return;
@@ -11963,13 +12092,15 @@ function relatorioRanking_(centro, categoria, placa) {
 }
 
 /** Pivot: um período por linha, uma categoria (tipo ou centro) por coluna. */
-function relatorioEvolucao_(indiceColuna, placa) {
+function relatorioEvolucao_(indiceColuna, placa, periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido);
   const lancamentos = lerLancamentos_();
   const periodos = {};
   const categorias = {};
 
   lancamentos.forEach(function (l) {
     if (placa && normalizaPlaca_(l[L_.PLACA]) !== placa) return;
+    if (janela.ativo && !janela.contem(l[L_.DATA])) return;
     const periodo = String(l[L_.PERIODO] || '');
     const chave = String(l[indiceColuna] || '(sem classificação)');
     if (!periodo) return;
@@ -12004,8 +12135,8 @@ function relatorioEvolucao_(indiceColuna, placa) {
   };
 }
 
-function relatorioDetalhamentoOficina_(centro, categoria, placa) {
-  const periodo = periodoAtual_();
+function relatorioDetalhamentoOficina_(centro, categoria, placa, periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido, periodoAtual_());
   const veiculos = {};
   dadosVeiculosExecucao_().forEach(function(v) {
     const p = normalizaPlaca_(v[COL_VEIC.PLACA - 1]);
@@ -12013,7 +12144,7 @@ function relatorioDetalhamentoOficina_(centro, categoria, placa) {
   });
   const dados = lerLancamentos_().filter(function(l) {
     const data = l[L_.DATA];
-    if (!(data instanceof Date) || data < periodo.inicio || data > periodo.fim) return false;
+    if (!janela.contem(data)) return false;
     if (TIPOS_OFICINA.indexOf(String(l[L_.TIPO])) === -1) return false;
     if (centro && String(l[L_.CENTRO]) !== centro) return false;
     if (categoria && !categoriaCasa_(l[L_.CATEGORIA], categoria)) return false;
@@ -12059,12 +12190,16 @@ function relatorioDetalhamentoOficina_(centro, categoria, placa) {
   };
 }
 
-function relatorioExtrato_(centro, categoria, placa) {
-  const periodo = periodoAtual_();
+function relatorioExtrato_(centro, categoria, placa, periodoEscolhido) {
+  // Sem escolha do usuario vale a competencia aberta, que e o que este
+  // relatorio sempre foi. Com escolha, ela SUBSTITUI a competencia: pedir um
+  // intervalo e receber o cruzamento dele com o mes aberto devolveria vazio
+  // sem explicar por que.
+  const janela = intervaloDeDatas_(periodoEscolhido, periodoAtual_());
   const dados = lerLancamentos_()
     .filter(function (l) {
       const data = l[L_.DATA];
-      if (!(data instanceof Date) || data < periodo.inicio || data > periodo.fim) return false;
+      if (!janela.contem(data)) return false;
       if (centro && String(l[L_.CENTRO]) !== centro) return false;
       if (categoria && !categoriaCasa_(l[L_.CATEGORIA], categoria)) return false;
       if (placa && normalizaPlaca_(l[L_.PLACA]) !== placa) return false;
@@ -12089,12 +12224,12 @@ function relatorioExtrato_(centro, categoria, placa) {
 }
 
 /** V4.8: ativos (imobilizado) lançados no período aberto — Oficina Ativo e Plotagem. */
-function relatorioAtivos_(centro, categoria, placa) {
-  const periodo = periodoAtual_();
+function relatorioAtivos_(centro, categoria, placa, periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido, periodoAtual_());
   const dados = lerLancamentos_()
     .filter(function (l) {
       const data = l[L_.DATA];
-      if (!(data instanceof Date) || data < periodo.inicio || data > periodo.fim) return false;
+      if (!janela.contem(data)) return false;
       if (TIPOS_ATIVO.indexOf(String(l[L_.TIPO])) === -1) return false;
       if (centro && String(l[L_.CENTRO]) !== centro) return false;
       if (categoria && !categoriaCasa_(l[L_.CATEGORIA], categoria)) return false;

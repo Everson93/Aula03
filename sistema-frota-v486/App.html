@@ -1897,6 +1897,7 @@
       el('tela').innerHTML =
         '<h2 class="titulo">Relatórios</h2>' +
         '<p class="sub" id="descRel">Escolha o relatório e os filtros.</p>' +
+        '<div id="notaPeriodo"></div>' +
         '<div class="barra">' +
           '<div><label for="relTipo">Relatório</label>' +
             '<select id="relTipo">' + lista.map(function (r) {
@@ -1909,6 +1910,15 @@
             '<input type="text" id="relVeiculo" list="listaVeiculosRel" autocomplete="off" ' +
               'placeholder="TODOS — digite a placa ou o patrimônio">' +
             datalistVeiculos('listaVeiculosRel', false) + '</div>' +
+          '<div id="campoPeriodo" style="display:none">' +
+            '<label for="relDe">Período</label>' +
+            '<div style="display:flex;gap:6px;align-items:center">' +
+              '<input type="date" id="relDe" style="padding:6px">' +
+              '<span class="sub2">até</span>' +
+              '<input type="date" id="relAte" style="padding:6px">' +
+              '<button class="acao secundaria" style="padding:4px 8px;font-size:12px" ' +
+                'onclick="limparPeriodoRelatorio()">limpar</button>' +
+            '</div></div>' +
           '<div id="campoTermo" style="display:none;flex:2">' +
             '<label for="relTermo">Peça ou serviço</label>' +
             '<input type="text" id="relTermo" placeholder="ex.: alternador, embreagem, pastilha">' +
@@ -1926,13 +1936,19 @@
 
       var descricoes = {};
       FILTROS_RELATORIO = {};
+      ACEITA_PERIODO = {};
       lista.forEach(function (r) {
         descricoes[r.nome] = r.descricao;
         FILTROS_RELATORIO[r.nome] = r.filtros || [];
+        ACEITA_PERIODO[r.nome] = r.aceitaPeriodo === true;
       });
-      ['relTipo', 'relCentro', 'relCategoria', 'relVeiculo'].forEach(function (id) {
-        el(id).addEventListener('change', function () { ajustarTermo(); rodarRelatorio(descricoes); });
-      });
+      DESCRICOES_RELATORIO = descricoes;
+      ['relTipo', 'relCentro', 'relCategoria', 'relVeiculo', 'relDe', 'relAte']
+        .forEach(function (id) {
+          el(id).addEventListener('change', function () {
+            ajustarTermo(); ajustarPeriodo(); rodarRelatorio(descricoes);
+          });
+        });
       // Placa digitada: roda ao apertar Enter (ou ao sair do campo, pelo "change").
       el('relVeiculo').addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); rodarRelatorio(descricoes); }
@@ -1943,17 +1959,55 @@
       });
       el('relTermo').addEventListener('blur', function () { rodarRelatorio(descricoes); });
       ajustarTermo();
+      ajustarPeriodo();
       rodarRelatorio(descricoes);
     }).withFailureHandler(falha).webListaRelatorios(TOKEN);
   }
 
   var FILTROS_RELATORIO = {};
+  var DESCRICOES_RELATORIO = {};
+
+  var ACEITA_PERIODO = {};
 
   /** O campo de busca so aparece no relatorio que sabe usa-lo. */
   function ajustarTermo() {
     var usa = (FILTROS_RELATORIO[el('relTipo').value] || []).indexOf('termo') !== -1;
     el('campoTermo').style.display = usa ? '' : 'none';
     if (usa) el('relTermo').focus();
+  }
+
+  /**
+   * O período só aparece em quem o aceita.
+   *
+   * Os relatórios que leem o Resumo são da competência ABERTA por construção:
+   * o Resumo é recalculado para o mês aberto, e não há onde aplicar um
+   * intervalo. Mostrar o campo neles seria oferecer um filtro que não age — o
+   * número sairia igual com a pessoa achando que filtrou, que é pior que não
+   * ter o filtro.
+   */
+  function ajustarPeriodo() {
+    var aceita = ACEITA_PERIODO[el('relTipo').value] === true;
+    el('campoPeriodo').style.display = aceita ? '' : 'none';
+    var nota = el('notaPeriodo');
+    if (nota) {
+      nota.innerHTML = aceita ? '' :
+        '<div class="sub2" style="margin-top:4px">Este relatório é da competência ' +
+        'aberta — não aceita intervalo de datas.</div>';
+    }
+  }
+
+  function limparPeriodoRelatorio() {
+    if (el('relDe')) el('relDe').value = '';
+    if (el('relAte')) el('relAte').value = '';
+    rodarRelatorio(DESCRICOES_RELATORIO);
+  }
+
+  function periodoDoRelatorio() {
+    if (ACEITA_PERIODO[el('relTipo').value] !== true) return null;
+    return {
+      de: el('relDe') ? String(el('relDe').value || '') : '',
+      ate: el('relAte') ? String(el('relAte').value || '') : '',
+    };
   }
 
   /**
@@ -2134,7 +2188,8 @@
     return {
       centro: el('relCentro').value, categoria: el('relCategoria').value,
       veiculo: String(el('relVeiculo').value || '').trim() || 'TODOS',
-      termo: el('relTermo') ? el('relTermo').value : ''
+      termo: el('relTermo') ? el('relTermo').value : '',
+      periodo: periodoDoRelatorio()
     };
   }
 

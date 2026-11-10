@@ -4294,6 +4294,80 @@ estava sendo exercitado. O segundo virou a prova mais útil do arquivo.
 `Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
 sistema*: nenhuma aba, coluna, gatilho ou parâmetro mudou nesta versão.
 
+## V4.38.0 — filtro de período nos relatórios, e o de diesel legível
+
+*"vamos colocar um filtro por período e faça um relatório mais fácil de
+compreender"*.
+
+### O filtro de período, e onde ele NÃO aparece
+
+Campos **de / até** na tela de Relatórios. A parte que exigiu decisão foi a
+outra: **em quais relatórios ele age**.
+
+Dos 22 relatórios, 10 leem a base de lançamentos e 12 leem o Resumo. O Resumo
+é recalculado **para a competência aberta** — não há onde aplicar um
+intervalo. Oferecer o campo neles seria um filtro que não age: o número sai
+igual e a pessoa acha que filtrou, que é pior do que não ter filtro. Então o
+campo **só aparece em quem o aceita**, e em quem não aceita a tela escreve o
+motivo em vez de simplesmente esconder — campo que some sem explicação vira
+"sumiu o filtro".
+
+Isso deriva da **fonte** declarada no catálogo, não de uma lista à parte. Uma
+lista seria mais um lugar para esquecer ao criar relatório novo, e o sintoma
+seria exatamente o filtro que a tela oferece e o servidor ignora em silêncio.
+
+Nos dois relatórios que já eram "do período" (Extrato e Ativos), o intervalo
+escolhido **substitui** a competência aberta em vez de ser cruzado com ela:
+pedir janeiro e receber a interseção com novembro devolveria vazio sem
+explicar por quê.
+
+**Dono único do recorte.** `intervaloDeDatas_` nasceu aqui e o filtro do
+histórico de abastecimentos (V4.36) passou a usá-lo — ele tinha a própria
+cópia. Duas implementações seriam a chance de o relatório cortar o dia ao
+meio-dia e o histórico à meia-noite, com os dois mostrando números diferentes
+do mesmo período. Por mutação, trocar o histórico de volta por uma cópia
+derruba **10 provas**.
+
+E o cabeçalho do PDF e da planilha passou a dizer **qual período gerou aquele
+arquivo**. Dois PDFs do mesmo relatório, com números diferentes e nada escrito
+que explique a diferença, é indefensável na mão da contabilidade.
+
+### O relatório de diesel, relido
+
+O que mudou, e por quê:
+
+| antes | agora |
+|---|---|
+| semana em cima, mês embaixo | **mês em cima** (a visão), semana embaixo (o detalhe) |
+| `2026-11` | **NOVEMBRO/2026** |
+| "Litros", "Valor", "R$ / litro", "L. do tanque", "L. de fora" | "Litros", **"Gasto R$"**, **"Preço médio R$/L"**, **"Do tanque (L)"**, **"Comprado fora (L)"** |
+| — | **"Variação de litros"** contra o período anterior |
+| — | o mês/semana **em curso** marcado como tal |
+| a mensagem era só a ressalva | abre com **um resumo que se lê sozinho** |
+
+A variação **só sai entre períodos completos**. Comparar meio mês com um mês
+inteiro é uma mentira que não dá erro — é só uma seta para baixo, e todo dia 2
+alguém perguntaria o que aconteceu com o consumo. O mesmo vale para a semana
+que ainda não terminou.
+
+O resumo que abre a mensagem aparece na tela **e logo abaixo do cabeçalho do
+PDF**: *"No período: 860,000 L de diesel, R$ 5.225,00, preço médio R$
+6,076/L. 230,000 L saíram do tanque e 630,000 L foram comprados fora."*
+
+### Suítes
+
+`conferir_lote_e_diesel.js` foi de 51 para **72 provas**; `conferir_telas.js`,
+de 42 para 51. **39 suítes, ~1.525 provas.** Por mutação, 22 defeitos
+reintroduzidos, **22 pegos** — cinco sobreviveram na primeira rodada e os
+cinco eram fixture fraco: o relatório tinha **um só mês**, então "a variação
+só sai entre completos" não estava sendo exercitado de jeito nenhum. Com dois
+meses e três semanas no fixture, os cinco caem.
+
+### Instalação
+
+`Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
+sistema*.
+
 ---
 
 # Pendente

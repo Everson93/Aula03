@@ -46,6 +46,7 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     classificarVeiculosEmLote_, itensColados_, relatorioDieselPeriodo_,
+    intervaloDeDatas_, relatorioAceitaPeriodo_, textoDosFiltros_, CATALOGO_RELATORIOS,
     inicioDaSemana_, ehDieselDoVeiculo_, tipoEhNumerico_, tabelaRelatorioPdf_,
     COL_VEIC, TOTAL_COL_VEIC, L_, TOTAL_COL_LANC, SEMANAS_DIESEL_, MESES_DIESEL_,
   });
@@ -59,7 +60,9 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   timezone_ = function () { return 'America/Sao_Paulo'; };
   param_ = function (n) { return n === 'MES_REFERENCIA' ? '2026-11' : (n === 'EMPRESA' ? 'Giassi' : ''); };
   normalizarMesReferencia_ = function (m) { return String(m); };
-  hojeNoFuso_ = function () { return new Date(2026, 10, 10, 0, 0, 0, 0); };   // terça
+  // 18/11/2026, quarta: a semana de 16/11 ainda esta em curso, a de 09/11 ja
+  // fechou, e novembro e a competencia ABERTA.
+  hojeNoFuso_ = function () { return new Date(2026, 10, 18, 0, 0, 0, 0); };
   dadosVeiculosExecucao_ = function () { return __veiculos; };
   lerLancamentos_ = function () { return __lanc; };
   aba_ = function () {
@@ -215,9 +218,9 @@ ok('Flex não conta como diesel', ctx.ehDieselDoVeiculo_('Flex').diesel === fals
 ok('acento e caixa não atrapalham', ctx.ehDieselDoVeiculo_('  diésel  ').diesel === true);
 
 console.log('\n5. O relatório de diesel');
-function lanc(dia, placa, litros, valor, abast, tipo) {
+function lanc(dia, placa, litros, valor, abast, tipo, mes) {
   const l = new Array(ctx.TOTAL_COL_LANC).fill('');
-  l[ctx.L_.DATA] = new Date(2026, 10, dia, 12, 0, 0, 0);
+  l[ctx.L_.DATA] = new Date(2026, (mes === undefined ? 10 : mes), dia, 12, 0, 0, 0);
   l[ctx.L_.PLACA] = placa;
   l[ctx.L_.CENTRO] = 'DEPOSITO';
   l[ctx.L_.CATEGORIA] = 'Truck Normal';
@@ -225,7 +228,7 @@ function lanc(dia, placa, litros, valor, abast, tipo) {
   l[ctx.L_.TIPO_ABASTECIMENTO] = abast || 'Externo';
   l[ctx.L_.LITROS] = litros;
   l[ctx.L_.VALOR] = valor;
-  l[ctx.L_.PERIODO] = '2026-11';
+  l[ctx.L_.PERIODO] = (mes === undefined ? 10 : mes) === 9 ? '2026-10' : '2026-11';
   return l;
 }
 montarVeiculos();
@@ -240,39 +243,76 @@ ctx.__lanc = [
   // A divergencia e erro de cadastro, nao combustivel diferente — e tirar
   // esses litros faria o relatorio nao fechar com o saldo do tanque.
   lanc(17, 'CAR 0001', 30, 180, 'Interno', 'Combustivel Proprio'),
+  // OUTUBRO, mês COMPLETO: é contra ele que a variação se mede. Sem um
+  // segundo período, "a variação só sai entre completos" não é exercitado.
+  lanc(5, 'MCZ2627', 400, 2400, 'Externo', 'Combustivel Terceiros', 9),
 ];
 const rel = ctx.relatorioDieselPeriodo_(null, null, null);
-ok('duas semanas', rel.linhas.length === 2, JSON.stringify(rel.linhas.map(function (l) { return l[0]; })));
-ok('a mais recente primeiro', /16\/11/.test(rel.linhas[0][0]), rel.linhas[0][0]);
+const sem = rel.consolidado;
+ok('a tabela principal é o MÊS, que é a visão', rel.linhas.length === 2 &&
+  /NOVEMBRO\/2026/.test(rel.linhas[0][0]), JSON.stringify(rel.linhas.map(function (l) { return l[0]; })));
+ok('e a semana vem embaixo, que é o detalhe',
+  sem.linhas.length === 3, JSON.stringify(sem.linhas.map(function (l) { return l[0]; })));
+ok('a semana mais recente primeiro', /16\/11/.test(sem.linhas[0][0]), sem.linhas[0][0]);
+ok('a semana em curso é marcada e não tem variação', (function () {
+  // Hoje é 18/11 (quarta): a semana de 16/11 ainda não terminou.
+  const emCurso = sem.linhas.filter(function (l) { return /16\/11/.test(l[0]); })[0];
+  return emCurso && / \(em curso\)$/.test(emCurso[0]) && emCurso[4] === null;
+})(), JSON.stringify(sem.linhas.map(function (l) { return [l[0], l[4]]; })));
+ok('e entre as duas semanas COMPLETAS a variação sai', (function () {
+  // 09/11 a 15/11 = 150 L contra 05/10 a 11/10 = 400 L: -62,5%.
+  const fechada = sem.linhas.filter(function (l) { return /09\/11/.test(l[0]); })[0];
+  return fechada && Math.abs(fechada[4] - (150 / 400 - 1) * 100) < 0.0001;
+})(), JSON.stringify(sem.linhas.map(function (l) { return [l[0], l[4]]; })));
 ok('o domingo entrou na semana da segunda anterior',
-  rel.linhas[1][2] === 150, String(rel.linhas[1][2]));
+  sem.linhas[1][1] === 150, String(sem.linhas[1][1]));
 ok('o carro a gasolina comprando fora ficou de fora',
-  rel.totais[2] === 460, String(rel.totais[2]) + ' L — com os 40 L comprados fora seriam 500');
+  rel.totais[1] === 860, String(rel.totais[1]) + ' L — com os 40 L comprados fora seriam 900');
 ok('mas o que saiu do TANQUE conta, mesmo com gasolina no cadastro', (function () {
   const so = ctx.relatorioDieselPeriodo_(null, null, 'CAR 0001');
-  return so.totais[2] === 30 && so.totais[5] === 30;
+  return so.totais[1] === 30 && so.totais[5] === 30;
 })(), 'o tanque é DIESEL S10: esses litros têm de fechar com o saldo dele');
 ok('o interno entra e aparece como litro do tanque',
-  rel.linhas[0][5] === 230 && rel.linhas[0][6] === 80,
-  JSON.stringify(rel.linhas[0]));
-ok('o R$/litro da linha é valor/litros',
-  Math.abs(rel.linhas[1][4] - (925 / 150)) < 0.0001, String(rel.linhas[1][4]));
+  sem.linhas[0][5] === 230 && sem.linhas[0][6] === 80,
+  JSON.stringify(sem.linhas[0]));
+ok('o preço médio da linha é gasto/litros',
+  Math.abs(sem.linhas[1][3] - (925 / 150)) < 0.0001, String(sem.linhas[1][3]));
 // Media de medias daria outro numero, com a semana de 50 L pesando igual a de
 // 280 L.
-ok('e o do rodapé também, não a média das semanas',
-  Math.abs(rel.totais[4] - (rel.totais[3] / rel.totais[2])) < 0.0001,
-  String(rel.totais[4]));
-ok('o consolidado mensal vem junto',
-  rel.consolidado && rel.consolidado.linhas.length === 1 &&
-  rel.consolidado.linhas[0][0] === '2026-11', JSON.stringify(rel.consolidado && rel.consolidado.linhas));
+ok('e o do rodapé também, não a média das linhas',
+  Math.abs(rel.totais[3] - (rel.totais[2] / rel.totais[1])) < 0.0001,
+  String(rel.totais[3]));
+ok('dois meses, o mais recente em cima',
+  rel.linhas.length === 2 && /NOVEMBRO/.test(rel.linhas[0][0]) && /OUTUBRO/.test(rel.linhas[1][0]),
+  JSON.stringify(rel.linhas.map(function (l) { return l[0]; })));
+ok('o mês em curso é marcado como tal',
+  / \(em curso\)$/.test(rel.linhas[0][0]), rel.linhas[0][0]);
+ok('e NÃO ganha variação contra um mês inteiro',
+  rel.linhas[0][4] === null,
+  'comparar meio mês com um mês inteiro é uma mentira que não dá erro, só uma seta para baixo');
+ok('outubro, que está completo, também não tem contra o que medir',
+  rel.linhas[1][4] === null, 'é a linha mais antiga da janela');
+ok('mas entre dois COMPLETOS a variação sai', (function () {
+  // Recorte que exclui novembro: outubro passa a ser o mais recente e ganha
+  // um anterior... não; aqui o que se prova é a conta, com dois meses
+  // completos fabricados.
+  const antes = ctx.__lanc;
+  ctx.__lanc = [
+    lanc(5, 'MCZ2627', 100, 600, 'Externo', 'Combustivel Terceiros', 8),   // setembro
+    lanc(5, 'MCZ2627', 150, 900, 'Externo', 'Combustivel Terceiros', 9),   // outubro
+  ];
+  ctx.__lanc[0][ctx.L_.PERIODO] = '2026-09';
+  const r2 = ctx.relatorioDieselPeriodo_(null, null, null);
+  ctx.__lanc = antes;
+  // Outubro (150 L) contra setembro (100 L) = +50%.
+  return r2.linhas.length === 2 && Math.abs(r2.linhas[0][4] - 50) < 0.0001;
+})(), 'variação de litros contra o período anterior');
 // Semana e mes sao DOIS acumuladores, com um `if (interno)` cada. Conferir so
 // litros e valor deixaria o mensal livre para trocar tanque por fora sem que
 // nada acusasse — e a tabela de baixo contradiria a de cima na mesma folha.
-ok('e fecha com a soma das semanas, coluna por coluna',
-  [1, 2, 3, 5, 6].every(function (i) {
-    return rel.consolidado.totais[i] === rel.totais[i];
-  }),
-  JSON.stringify([rel.totais, rel.consolidado.totais]));
+ok('e as duas tabelas fecham entre si, coluna por coluna',
+  [1, 2, 5, 6, 7].every(function (i) { return sem.totais[i] === rel.totais[i]; }),
+  JSON.stringify([rel.totais, sem.totais]));
 ok('avisa quantos litros vieram de veículo sem combustível declarado',
   /80,000 L vieram de 1 veículo\(s\)/.test(rel.mensagem), rel.mensagem);
 ok('o filtro por grupo vale aqui também', (function () {
@@ -280,7 +320,68 @@ ok('o filtro por grupo vale aqui também', (function () {
   return so.linhas.length === 0;
 })(), 'todos os lançamentos do fixture são Truck Normal');
 ok('e o filtro por veículo',
-  ctx.relatorioDieselPeriodo_(null, null, 'MCZ2627').totais[2] === 150);
+  ctx.relatorioDieselPeriodo_(null, null, 'MCZ2627').totais[1] === 550,
+  String(ctx.relatorioDieselPeriodo_(null, null, 'MCZ2627').totais[1]));
+ok('a mensagem abre com um resumo que se lê sozinho',
+  /^No período: 860,000 L de diesel, R\$ 5\.225,00, preço médio R\$ 6,076\/L\./.test(rel.mensagem) &&
+  /230,000 L saíram do tanque e 630,000 L foram comprados fora/.test(rel.mensagem),
+  rel.mensagem);
+
+console.log('\n5b. O filtro de período');
+const periodoSoUmaSemana = ctx.relatorioDieselPeriodo_(null, null, null,
+  { de: '2026-11-16', ate: '2026-11-22' });
+ok('corta pelo intervalo escolhido',
+  periodoSoUmaSemana.consolidado.linhas.length === 1, JSON.stringify(
+    periodoSoUmaSemana.consolidado.linhas.map(function (l) { return l[0]; })));
+ok('e o total é só do que ficou',
+  periodoSoUmaSemana.totais[1] === 310, String(periodoSoUmaSemana.totais[1]));
+ok('a mensagem diz qual recorte está valendo',
+  /Recorte: de 16\/11\/2026 a 22\/11\/2026\./.test(periodoSoUmaSemana.mensagem),
+  periodoSoUmaSemana.mensagem);
+ok('sem recorte, a mensagem diz o padrão em vez de calar',
+  /Últimos 12 meses/.test(rel.mensagem));
+// Dono UNICO do recorte: o historico de abastecimentos usa o mesmo. Duas
+// implementacoes seriam a chance de o relatorio cortar o dia ao meio-dia e o
+// historico a meia-noite, mostrando numeros diferentes do mesmo periodo.
+const j = ctx.intervaloDeDatas_({ de: '2026-11-16', ate: '2026-11-16' });
+ok('o dia escolhido entra inteiro, nas duas pontas',
+  j.inicio.getHours() === 0 && j.fim.getHours() === 23 && j.fim.getMinutes() === 59);
+ok('data pela metade é ignorada, não vira erro',
+  ctx.intervaloDeDatas_({ de: '2026-11-3', ate: 'xx' }).ativo === false);
+ok('sem escolha vale o padrão que o relatório já tinha', (function () {
+  const padrao = { inicio: new Date(2026, 9, 26), fim: new Date(2026, 10, 25) };
+  const sem = ctx.intervaloDeDatas_(null, padrao);
+  return sem.ativo === false && sem.inicio === padrao.inicio && sem.fim === padrao.fim;
+})());
+ok('e com escolha o padrão é SUBSTITUÍDO, não cruzado', (function () {
+  const padrao = { inicio: new Date(2026, 9, 26), fim: new Date(2026, 10, 25) };
+  const com = ctx.intervaloDeDatas_({ de: '2026-01-01', ate: '2026-01-31' }, padrao);
+  return com.ativo === true && com.contem(new Date(2026, 0, 15, 8, 0, 0)) === true;
+})(), 'cruzar com o mês aberto devolveria vazio sem explicar por quê');
+
+console.log('\n5c. O período só é oferecido onde age');
+// Relatorio que le o Resumo e da competencia ABERTA por construcao: o Resumo e
+// recalculado para o mes aberto. Oferecer o campo ali seria um filtro que nao
+// age — o numero sai igual e a pessoa acha que filtrou.
+ok('quem lê lançamentos aceita',
+  ctx.relatorioAceitaPeriodo_('Diesel por mês e por semana') === true &&
+  ctx.relatorioAceitaPeriodo_('Extrato de lançamentos do período') === true);
+ok('quem lê o Resumo não aceita',
+  ctx.relatorioAceitaPeriodo_('Relatório Operacional dos Veículos') === false &&
+  ctx.relatorioAceitaPeriodo_('Abastecimento e consumo') === false);
+ok('e isso deriva da FONTE, não de uma lista à parte', (function () {
+  return Object.keys(ctx.CATALOGO_RELATORIOS).every(function (t) {
+    return ctx.relatorioAceitaPeriodo_(t) === (ctx.CATALOGO_RELATORIOS[t].fonte === 'lancamentos');
+  });
+})(), 'lista à parte é mais um lugar para esquecer ao criar relatório novo');
+ok('o arquivo diz no cabeçalho qual período o gerou',
+  /período: de 01\/11\/2026 a 30\/11\/2026/.test(
+    ctx.textoDosFiltros_('Diesel por mês e por semana',
+      { periodo: { de: '2026-11-01', ate: '2026-11-30' } })),
+  'dois PDFs do mesmo relatório com números diferentes e nada escrito que explique');
+ok('e não promete período em quem não o aceita',
+  ctx.textoDosFiltros_('Relatório Operacional dos Veículos',
+    { periodo: { de: '2026-11-01', ate: '2026-11-30' } }) === '');
 
 console.log('\n6. Número que o usuário lê não sai cru');
 // Era defeito EM PRODUÇÃO: 'litros' e 'media' não estavam na lista de tipos
