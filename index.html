@@ -284,7 +284,6 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
   const E = window.Expedicao;
   const $ = id => document.getElementById(id);
   const fmt = n => n.toLocaleString('pt-BR');
-  const ABAS = ['CARGAS GERAL', 'CP2 CARGA-N', 'CARGA FLV', 'APOIO'];
   const ORIGENS = ['CD', 'CP2', 'FLV'];
   const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 's\u00e1b'];
   let DADOS = null;
@@ -354,14 +353,20 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
             if (ROWS) processarTudo();
             return;
           }
-          const wb = XLSX.read(buf, { type: 'array', sheets: ABAS, dense: true, cellStyles: true, cellFormula: false, cellHTML: false, cellText: false });
+          // Escolhe as abas pelo nome real do arquivo (tolera espaços, acentos e "CP02")
+          const ab = E.escolherAbas(nomes);
+          const escolhidas = [ab.abaGeral, ab.abaCp2, ab.abaFlv, ab.abaApoio].filter(Boolean);
+          if (![ab.abaGeral, ab.abaCp2, ab.abaFlv].some(Boolean)) {
+            prog.textContent = 'Não encontrei as abas CARGAS GERAL, CP2 CARGA-N ou CARGA FLV. Abas do arquivo: ' + nomes.join(', ');
+            return;
+          }
+          const wb = XLSX.read(buf, { type: 'array', sheets: escolhidas, dense: true, cellStyles: true, cellFormula: false, cellHTML: false, cellText: false });
           const rows = {};
           wb.SheetNames.forEach(n => { if (wb.Sheets[n]) rows[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null }); });
           // Cor de fundo da coluna LOJA de cada aba: linhas vermelhas não contam
           CORES = {};
-          wb.SheetNames.forEach(n => {
-            const col = /FLV/i.test(n) ? 11 : /GERAL/i.test(n) ? 8 : /CP2/i.test(n) ? 17 : -1;
-            if (col < 0 || !wb.Sheets[n]) return;
+          [[ab.abaGeral, 8], [ab.abaCp2, 17], [ab.abaFlv, 11]].forEach(([n, col]) => {
+            if (!n || !wb.Sheets[n] || !rows[n]) return;
             const ws = wb.Sheets[n], d = ws['!data'] || ws;
             const ini = XLSX.utils.decode_range(ws['!ref'] || 'A1').s.r;
             CORES[n] = rows[n].map((_, i) => { const c = d[i + ini] && d[i + ini][col]; return (c && c.s && c.s.fgColor && c.s.fgColor.rgb) || ''; });

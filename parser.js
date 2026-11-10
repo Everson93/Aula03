@@ -217,12 +217,25 @@
 
   function acharAba(wb, testes) {
     const nomes = wb.SheetNames;
-    const norm = n => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+    // Aceita espa\u00e7os a mais, acentos, mai\u00fasculas/min\u00fasculas e "CP02" no lugar de "CP2"
+    const norm = n => String(n).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+      .replace(/\s+/g, ' ').trim().replace(/\bCP0+2\b/g, 'CP2');
     for (const t of testes) {
       const achou = nomes.find(n => t(norm(n)));
       if (achou) return achou;
     }
     return null;
+  }
+
+  /* Acha as abas da planilha de embarque pelos nomes, com toler\u00e2ncia a varia\u00e7\u00f5es. */
+  function escolherAbas(nomes) {
+    const wbLike = { SheetNames: nomes || [] };
+    return {
+      abaGeral: acharAba(wbLike, [n => n === 'CARGAS GERAL', n => n.includes('CARGAS GERAL'), n => n.includes('CARGA GERAL')]),
+      abaCp2: acharAba(wbLike, [n => n.startsWith('CP2 CARGA'), n => n.includes('CP2') && n.includes('CARGA') && !n.includes('MEXER')]),
+      abaFlv: acharAba(wbLike, [n => n === 'CARGA FLV', n => n.includes('CARGA FLV'), n => n.includes('FLV') && n.includes('CARGA')]),
+      abaApoio: acharAba(wbLike, [n => n === 'APOIO', n => n.includes('APOIO')])
+    };
   }
 
   function lerApoio(rows) {
@@ -251,11 +264,11 @@
   function processar(rowsPorAba, nomesAbas, frotaCfg, cores) {
     const FROTA = frotaCfg ? montarFrota(frotaCfg.lista, frotaCfg.motoristas) : montarFrota(FROTA_PADRAO, MOTORISTAS_PADRAO);
     const wbLike = { SheetNames: nomesAbas || Object.keys(rowsPorAba) };
-    const abaGeral = acharAba(wbLike, [n => n === 'CARGAS GERAL', n => n.includes('CARGAS GERAL')]);
-    const abaCp2 = acharAba(wbLike, [n => n.startsWith('CP2 CARGA'), n => n.includes('CP2') && n.includes('CARGA') && !n.includes('MEXER')]);
-    const abaCp2Ant = acharAba(wbLike, [n => n.includes('MEXER') && n.includes('CP2')]);
-    const abaFlv = acharAba(wbLike, [n => n === 'CARGA FLV', n => n.includes('CARGA FLV')]);
-    const abaApoio = acharAba(wbLike, [n => n === 'APOIO']);
+    // S\u00f3 vale a aba que foi de fato carregada (evita "reading 'length'" com nome diferente)
+    const carregada = n => (n && rowsPorAba[n] ? n : null);
+    const ab = escolherAbas(wbLike.SheetNames);
+    const abaGeral = carregada(ab.abaGeral), abaCp2 = carregada(ab.abaCp2), abaFlv = carregada(ab.abaFlv), abaApoio = carregada(ab.abaApoio);
+    const abaCp2Ant = null;
 
     const codigos = lerApoio(abaApoio && rowsPorAba[abaApoio]);
     // Linha com a c\u00e9lula LOJA pintada de vermelho n\u00e3o conta (em todas as abas)
@@ -521,7 +534,7 @@
     return { entregas, alertas, codigos, resumoAbas, veiculos: FROTA.veiculos, frotaCarregada: !!frotaCfg, abas: { abaGeral, abaCp2, abaCp2Ant, abaFlv, abaApoio } };
   }
 
-  const api = { processar, lerFrota, chavePlaca, splitDestinos, splitQtd, normDestino, nomeDestino, tipoDestino, ehTerceiro, distribuir, excelDate, excelTime };
+  const api = { processar, escolherAbas, lerFrota, chavePlaca, splitDestinos, splitQtd, normDestino, nomeDestino, tipoDestino, ehTerceiro, distribuir, excelDate, excelTime };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Expedicao = api;
 })(typeof window !== 'undefined' ? window : this);
