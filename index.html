@@ -209,9 +209,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
         <input type="search" id="busca" placeholder="Filtrar loja: 7, CB2…" aria-label="Filtrar loja">
       </div>
       <div class="fgroup" style="margin-left:auto">
-        <span class="flabel">Exportar mês</span>
-        <input type="month" id="mesExport" aria-label="Mês a exportar">
-        <button type="button" class="btn-primary" id="btnExportar" title="Gera o .xlsx do mês no modelo Base Importação: CD, FLV e CP02, frota própria e Vieira Transportes">Exportar planilha</button>
+        <button type="button" class="btn-primary" id="btnExportar" title="Gera o .xlsx do período selecionado (De / Até) no modelo Base Importação: CD, FLV e CP02, frota própria e Vieira Transportes, mais as abas por dia">Exportar período</button>
       </div>
     </div>
   </section>
@@ -400,7 +398,6 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     drop.hidden = true;
     ['filters', 'kpis', 'tabs'].forEach(id => { $(id).hidden = false; });
     if (primeira || !$('dIni').value) { aplicarPreset('7'); mostrarAba(estado.aba || 'loja'); } else render();
-    if (!$('mesExport').value) $('mesExport').value = DADOS.max.slice(0, 7);
     return true;
   }
 
@@ -824,8 +821,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
 
   async function montarModeloFormatado(ini, fim) {
     const ExcelJS = await carregarExcelJS();
-    const mes = ini.slice(0, 7);
-    const nomeMes = MESES_NOME[+mes.slice(5, 7) - 1];
+    const nomeMes = rotuloPeriodo(ini, fim);
     const soma = {};
     for (const e of DADOS.entregas) {
       if (e.extra || e.tipo !== 'loja' || e.data < ini || e.data > fim) continue;
@@ -951,14 +947,16 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       // Título do quadro
       ws.mergeCells(r, 1, r, nCols);
       const t = ws.getCell(r, 1);
-      t.value = rotulo + ' \u00b7 ' + titulo + ' \u00b7 ' + nomeMes + '/' + ini.slice(0, 4);
+      t.value = rotulo + ' \u00b7 ' + titulo + ' \u00b7 ' + nomeMes + (mesInteiro(ini, fim) ? '/' + ini.slice(0, 4) : '');
       t.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
       t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: escuro } };
       t.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
       ws.getRow(r).height = 24;
       r++;
       // Cabeçalho: Loja | 01 seg | 02 ter ... | Total
-      const cab = ['Loja'].concat(dias.map(d => d.slice(8, 10) + '\n' + DIA_SEM[new Date(d + 'T12:00:00Z').getUTCDay()]), ['Total']);
+      // Período com mais de um mês: o dia leva o mês junto (30/09, 01/10...)
+      const variosMeses = ini.slice(0, 7) !== fim.slice(0, 7);
+      const cab = ['Loja'].concat(dias.map(d => (variosMeses ? d.slice(8, 10) + '/' + d.slice(5, 7) : d.slice(8, 10)) + '\n' + DIA_SEM[new Date(d + 'T12:00:00Z').getUTCDay()]), ['Total']);
       cab.forEach((v, j) => {
         const c = ws.getCell(r, j + 1);
         const domingo = j > 0 && j <= dias.length && new Date(dias[j - 1] + 'T12:00:00Z').getUTCDay() === 0;
@@ -1017,19 +1015,29 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       r += 2;                                       // uma linha em branco entre os quadros
     });
     ws.getColumn(1).width = 8;
-    for (let j = 2; j < nCols; j++) ws.getColumn(j).width = 5.2;
+    for (let j = 2; j < nCols; j++) ws.getColumn(j).width = ini.slice(0, 7) !== fim.slice(0, 7) ? 6 : 5.2;
     ws.getColumn(nCols).width = 9;
   }
 
-  // O relatório é mensal: exporta sempre um mês inteiro, o escolhido no seletor
+  // Período = mês inteiro? (do dia 1 ao último dia do mesmo mês)
+  function mesInteiro(ini, fim) {
+    if (ini.slice(0, 7) !== fim.slice(0, 7) || ini.slice(8) !== '01') return false;
+    const d = new Date(ini + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0);
+    return d.toISOString().slice(0, 10) === fim;
+  }
+  // Rótulo da coluna/título: "Outubro" para mês inteiro, senão "01/10 a 15/10"
+  function rotuloPeriodo(ini, fim) {
+    if (mesInteiro(ini, fim)) return MESES_NOME[+ini.slice(5, 7) - 1];
+    const dm = d => d.slice(8, 10) + '/' + d.slice(5, 7) + (ini.slice(0, 4) !== fim.slice(0, 4) ? '/' + d.slice(2, 4) : '');
+    return dm(ini) + ' a ' + dm(fim);
+  }
+
+  // Exporta o período selecionado no topo (De / Até)
   $('btnExportar').addEventListener('click', async () => {
     if (!DADOS) return;
-    const mes = $('mesExport').value || ($('dFim').value || DADOS.max).slice(0, 7);
-    if (!/^\d{4}-\d{2}$/.test(mes)) { toast('Escolha o mês para exportar.'); return; }
-    const ini = mes + '-01';
-    const d = new Date(ini + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0);
-    const fim = d.toISOString().slice(0, 10);
-    const nome = 'Paletes_' + MESES_NOME[+mes.slice(5, 7) - 1] + '_' + mes.slice(0, 4) + '.xlsx';
+    const ini = $('dIni').value, fim = $('dFim').value;
+    if (!ini || !fim || ini > fim) { toast('Escolha um período válido (De / Até) para exportar.'); return; }
+    const nome = 'Paletes_' + (mesInteiro(ini, fim) ? MESES_NOME[+ini.slice(5, 7) - 1] + '_' + ini.slice(0, 4) : ini + '_a_' + fim) + '.xlsx';
     let dados;
     try { dados = await montarModeloFormatado(ini, fim); }
     catch (err) { console.warn('Exportação sem formatação:', err); dados = montarModelo(ini, fim); }
