@@ -346,18 +346,28 @@
     var p = String(iso).split('-');
     return p[2] + '/' + p[1] + '/' + p[0];
   }
+  /**
+   * Os tipos aqui têm de ser os MESMOS que o servidor conhece no PDF e na
+   * planilha. 'litros' e 'media' faltavam: a coluna caía no `default` e saía
+   * como número cru — "14902.1" —, que em pt-BR se lê como milhar. Não dava
+   * erro: mentia, e só na tela, enquanto o PDF saía certo.
+   */
   function formatar(valor, tipo) {
     if (valor === null || valor === undefined || valor === '') return '';
     switch (tipo) {
       case 'moeda': return brl(valor);
       case 'moeda3': return brl(valor, 3);
       case 'numero': return num(valor);
-      case 'decimal': return num(valor, 2);
+      case 'decimal': return num(valor, 2) + '%';
+      case 'litros': return num(valor, 3);
+      case 'volume': return num(valor, 1);
+      case 'media': return num(valor, 2);
       default: return esc(valor);
     }
   }
   function numerico(tipo) {
-    return ['moeda', 'moeda3', 'numero', 'decimal'].indexOf(tipo) !== -1;
+    return ['moeda', 'moeda3', 'numero', 'decimal', 'litros', 'volume', 'media']
+      .indexOf(tipo) !== -1;
   }
   function status(texto, erro) {
     var barra = el('status');
@@ -393,8 +403,16 @@
     // relatorio de manutencao separa "cabecalho do veiculo" das linhas de servico
     // sem precisar de um formato de dados diferente.
     var destacarBloco = !!(opcoes && opcoes.destacarBloco);
+    // Título da tabela. Sem ele, duas tabelas seguidas (mês e semana, por
+    // exemplo) aparecem como dois blocos idênticos sem nada que diga qual é
+    // qual — foi a queixa que criou isto.
+    var titulo = dados && dados.titulo
+      ? '<h3 style="margin:16px 0 6px;font-size:14px">' + esc(dados.titulo) + '</h3>' +
+        (dados.subtitulo ? '<div class="sub2" style="margin:-4px 0 8px">' +
+          esc(dados.subtitulo) + '</div>' : '')
+      : '';
     if (!dados || !dados.linhas || !dados.linhas.length) {
-      return '<div class="cartao">' + esc(vazio || 'Nada para mostrar.') + '</div>';
+      return titulo + '<div class="cartao">' + esc(vazio || 'Nada para mostrar.') + '</div>';
     }
     var cabecalho = dados.colunas.map(function (c) {
       return '<th class="' + (numerico(c.tipo) ? 'num' : '') + '">' + esc(c.titulo) + '</th>';
@@ -413,8 +431,10 @@
       }).join('') + '</tr>';
     }).join('');
 
+    // TOTAL de uma tabela com UMA linha só repete a linha, em negrito. É o
+    // que fazia o relatório parecer duplicado.
     var rodape = '';
-    if (dados.totais && dados.totais.length) {
+    if (dados.totais && dados.totais.length && dados.linhas.length > 1) {
       rodape = '<tfoot><tr>' + dados.colunas.map(function (c, i) {
         var valor = dados.totais[i];
         var texto = i === 0 && (valor === null || valor === undefined)
@@ -423,7 +443,7 @@
       }).join('') + '</tr></tfoot>';
     }
 
-    return '<div class="cartao" style="padding:0;overflow:hidden">' +
+    return titulo + '<div class="cartao" style="padding:0;overflow:hidden">' +
       '<div class="rolagem"><table><thead><tr>' + cabecalho + '</tr></thead>' +
       '<tbody>' + corpo + '</tbody>' + rodape + '</table></div></div>' +
       '<div class="contagem">' + dados.linhas.length + ' linha(s)' +

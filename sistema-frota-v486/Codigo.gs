@@ -641,7 +641,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.38.0';
+const VERSAO_SISTEMA = '4.38.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -7400,9 +7400,9 @@ const CATALOGO_RELATORIOS = {
     fonte: 'lancamentos',
     filtros: ['centroLancamento', 'categoriaLancamento', 'veiculoLancamento'],
     colunas: [
-      ['Mês', '@', 175], ['Litros', '#,##0.000', 110], ['Gasto R$', 'R$ #,##0.00', 125],
+      ['Mês', '@', 175], ['Litros', '#,##0.0', 110], ['Gasto R$', 'R$ #,##0.00', 125],
       ['Preço médio R$/L', 'R$ #,##0.000', 130], ['Variação de litros', '#,##0.00"%"', 120],
-      ['Do tanque (L)', '#,##0.000', 115], ['Comprado fora (L)', '#,##0.000', 130],
+      ['Do tanque (L)', '#,##0.0', 115], ['Comprado fora (L)', '#,##0.0', 130],
       ['Abastecimentos', '#,##0', 115],
     ],
     // Calculado em codigo (agrupa por semana e por competencia): nao ha
@@ -9209,7 +9209,17 @@ function htmlRateioPdf_(mesRef) {
 // ("248.065"), que em pt-BR se le como MILHAR; a coluna saia alinhada a
 // esquerda, como texto; e o rodape nao somava os litros, porque o somador
 // pergunta a esta mesma lista quem e numero.
-const TIPOS_NUMERICOS_RELATORIO_ = ['moeda', 'moeda3', 'numero', 'decimal', 'litros', 'media'];
+/**
+ * Tipos de coluna numerica. Lista unica, lida por TRES formatadores: a tela, o
+ * PDF e a planilha.
+ *
+ * 'litros' sao 3 casas, que e a precisao de UM abastecimento. 'volume' e 1
+ * casa, para soma de milhares de litros: "14.902,100" num total de mes nao
+ * acrescenta informacao nenhuma e atrapalha a leitura — foi exatamente a
+ * queixa que criou este tipo.
+ */
+const TIPOS_NUMERICOS_RELATORIO_ = ['moeda', 'moeda3', 'numero', 'decimal',
+  'litros', 'volume', 'media'];
 
 /** O tipo declarado na coluna do relatorio e numerico? Dono unico da lista. */
 function tipoEhNumerico_(tipo) {
@@ -9226,6 +9236,7 @@ function tabelaRelatorioPdf_(rel, opcoes) {
     else if (tipo === 'numero') texto = numBR_(valor, 0);
     else if (tipo === 'decimal') texto = numBR_(valor, 2) + '%';
     else if (tipo === 'litros') texto = numBR_(valor, 3);
+    else if (tipo === 'volume') texto = numBR_(valor, 1);
     else if (tipo === 'media') texto = numBR_(valor, 2);
     else texto = escHtml_(valor);
     return '<td class="' + (numerico ? 'n' : '') + (forte ? ' forte' : '') + '">' + texto + '</td>';
@@ -9246,7 +9257,9 @@ function tabelaRelatorioPdf_(rel, opcoes) {
     }).join('') + '</tr>';
   }).join('');
 
-  const totais = (rel.totais && rel.totais.length)
+  // TOTAL de uma tabela com UMA linha so repete a linha. Era o que fazia o
+  // relatorio parecer duplicado: o mesmo numero duas vezes, em negrito.
+  const totais = (rel.totais && rel.totais.length && rel.linhas.length > 1)
     ? '<tr class="total">' + rel.totais.map(function (v, i) {
         if (i === 0 && (v === null || v === undefined)) return '<td>TOTAL</td>';
         return celula(v, rel.colunas[i] ? rel.colunas[i].tipo : 'texto', true);
@@ -9341,6 +9354,7 @@ function formatoPlanilha_(tipo) {
   if (tipo === 'numero') return '#,##0';
   if (tipo === 'decimal') return '#,##0.00"%"';
   if (tipo === 'litros') return '#,##0.000';
+  if (tipo === 'volume') return '#,##0.0';
   if (tipo === 'media') return '#,##0.00';
   return '@';
 }
@@ -9399,7 +9413,7 @@ function escreverRelatorioNaAba_(aba, rel, titulo, subtitulo, larguras) {
   }
 
   const linhaTotal = LINHA_CAB + rel.linhas.length + 1;
-  if (rel.totais && rel.totais.length) {
+  if (rel.totais && rel.totais.length && rel.linhas.length > 1) {
     const total = rel.totais.map(function (v, i) {
       if (v === null || v === undefined) return i === 0 ? 'TOTAL' : '';
       return v;
@@ -9466,7 +9480,7 @@ function escreverRelatorioNaAba_(aba, rel, titulo, subtitulo, larguras) {
       return tipoEhNumerico_(c.tipo) ? 'right' : 'left';
     });
     let linhasCons = consolidado.linhas.length;
-    if (consolidado.totais && consolidado.totais.length) {
+    if (consolidado.totais && consolidado.totais.length && consolidado.linhas.length > 1) {
       const totalCons = consolidado.totais.map(function (v, i) {
         if (v === null || v === undefined) return i === 0 ? 'TOTAL' : '';
         return v;
@@ -9638,10 +9652,15 @@ function htmlRelatorioPdf_(tipo, rel, filtrosTexto) {
     cabecalhoPdf_(String(tipo || ''), mes, periodoDoMes_(mes),
       filtrosTexto ? escHtml_(filtrosTexto) : '') +
     (rel.mensagem ? '<p class="sub" style="margin:0 0 8px">' + escHtml_(rel.mensagem) + '</p>' : '') +
+    (rel.titulo ? '<h2 style="margin:10px 0 6px;font-size:13px">' +
+      escHtml_(rel.titulo) + '</h2>' : '') +
     tabelaRelatorioPdf_(rel, { compacta: rel.colunas.length > 10 }) +
     (consolidado
       ? '<h2 style="margin:16px 0 6px;font-size:13px">' +
           escHtml_(consolidado.titulo || 'Consolidado') + '</h2>' +
+        (consolidado.subtitulo
+          ? '<p class="sub" style="margin:0 0 6px">' + escHtml_(consolidado.subtitulo) + '</p>'
+          : '') +
         tabelaRelatorioPdf_(consolidado, { compacta: consolidado.colunas.length > 10 })
       : '') +
     rodapePdf_('') +
@@ -11433,9 +11452,12 @@ function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
     const litros = soma('litros');
     const valor = soma('valor');
     return {
-      colunas: [col_(tituloPrimeira), col_('Litros', 'litros'), col_('Gasto R$', 'moeda'),
+      // 'volume' e 1 casa: num total de mes, "14.902,100" nao acrescenta
+      // informacao e atrapalha a leitura. A precisao de 3 casas e de UM
+      // abastecimento, e esse relatorio nao mostra abastecimento nenhum.
+      colunas: [col_(tituloPrimeira), col_('Litros', 'volume'), col_('Gasto R$', 'moeda'),
         col_('Preço médio R$/L', 'moeda3'), col_('Variação de litros', 'decimal'),
-        col_('Do tanque (L)', 'litros'), col_('Comprado fora (L)', 'litros'),
+        col_('Do tanque (L)', 'volume'), col_('Comprado fora (L)', 'volume'),
         col_('Abastecimentos', 'numero')],
       linhas: linhas,
       // O preco medio do rodape e `gasto / litros`, nao a media das linhas:
@@ -11473,11 +11495,19 @@ function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
   }
 
   return {
+    titulo: 'Mês a mês',
     colunas: mensal.colunas,
     linhas: mensal.linhas,
     totais: mensal.totais,
-    consolidado: { titulo: 'Semana a semana', colunas: semanal.colunas,
-      linhas: semanal.linhas, totais: semanal.totais },
+    // O subtitulo diz a relacao entre as duas tabelas. Sem isso elas sao dois
+    // blocos com o MESMO total — o que esta certo, porque sao o mesmo
+    // universo em dois recortes, mas parece numero repetido por engano.
+    consolidado: {
+      titulo: 'Semana a semana',
+      subtitulo: 'O mesmo período da tabela acima, aberto por semana: ' +
+        'os totais das duas fecham no mesmo número.',
+      colunas: semanal.colunas, linhas: semanal.linhas, totais: semanal.totais,
+    },
     mensagem: avisos.join(' '),
   };
 }

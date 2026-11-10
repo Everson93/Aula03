@@ -47,6 +47,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     classificarVeiculosEmLote_, itensColados_, relatorioDieselPeriodo_,
     intervaloDeDatas_, relatorioAceitaPeriodo_, textoDosFiltros_, CATALOGO_RELATORIOS,
+    formatoPlanilha_, TIPOS_NUMERICOS_RELATORIO_, relatorioPorTipo_, TIPOS_RELATORIO,
     inicioDaSemana_, ehDieselDoVeiculo_, tipoEhNumerico_, tabelaRelatorioPdf_,
     COL_VEIC, TOTAL_COL_VEIC, L_, TOTAL_COL_LANC, SEMANAS_DIESEL_, MESES_DIESEL_,
   });
@@ -400,6 +401,86 @@ ok('e a média com vírgula e 2 casas', /3,46/.test(html));
 ok('sem ponto decimal solto em lugar nenhum',
   !/>\s*248\.0655\s*</.test(html),
   'ponto decimal em pt-BR se lê como separador de milhar — e não dá erro, mente');
+
+console.log('\n7. Os TRÊS formatadores conhecem os mesmos tipos');
+// Esta e a regra que teria pego o defeito antes dele chegar ao usuario. Um
+// tipo de coluna e declarado UMA vez, na funcao do relatorio, e e lido por
+// tres formatadores diferentes: a tela, o PDF e a planilha. Quando um deles
+// nao conhece o tipo, a coluna cai no ramo de texto e sai como numero cru —
+// sem erro, so com o ponto decimal que em pt-BR se le como milhar. Foi o que
+// aconteceu com 'litros' e 'media': o PDF ja sabia, a tela nao.
+const fonte7 = fs.readFileSync('Codigo.gs', 'utf8');
+const app7 = fs.readFileSync('App.html', 'utf8');
+const tiposUsados = {};
+(fonte7.match(/col_\('[^']*', *'([a-z0-9]+)'\)/g) || []).forEach(function (t) {
+  tiposUsados[t.match(/, *'([a-z0-9]+)'\)$/)[1]] = true;
+});
+const formatarTela = (app7.match(/function formatar\(valor, tipo\)[\s\S]*?\n  \}/) || [''])[0];
+const numericoTela = (app7.match(/function numerico\(tipo\)[\s\S]*?\n  \}/) || [''])[0];
+const celulaPdf = (fonte7.match(/function tabelaRelatorioPdf_[\s\S]*?\n  \}/) || [''])[0];
+ok('há mais de um tipo em uso', Object.keys(tiposUsados).length >= 6,
+  JSON.stringify(Object.keys(tiposUsados)));
+Object.keys(tiposUsados).sort().forEach(function (tipo) {
+  if (tipo === 'texto' || tipo === 'data') return;   // texto sai como texto nos três
+  ok('"' + tipo + '": a tela sabe formatar',
+    new RegExp("case '" + tipo + "':").test(formatarTela),
+    'cai no default e sai como número cru');
+  ok('"' + tipo + '": o PDF sabe formatar',
+    new RegExp("tipo === '" + tipo + "'").test(celulaPdf));
+  ok('"' + tipo + '": a planilha tem formato próprio',
+    ctx.formatoPlanilha_(tipo) !== '@',
+    'formato "@" grava número como TEXTO: a contabilidade não consegue somar');
+  ok('"' + tipo + '": é numérico nos dois lados',
+    ctx.TIPOS_NUMERICOS_RELATORIO_.indexOf(tipo) !== -1 &&
+    new RegExp("'" + tipo + "'").test(numericoTela),
+    'alinhamento e soma do rodapé saem desta lista');
+});
+
+ok('os litros agregados saem com 1 casa, não 3', (function () {
+  const litros = rel.colunas.filter(function (c) { return /Litros|\(L\)/.test(c.titulo); });
+  return litros.length === 3 && litros.every(function (c) { return c.tipo === 'volume'; });
+})(), '"14.902,100" num total de mês não acrescenta informação e atrapalha a leitura');
+
+console.log('\n8. Tabela de uma linha não repete o total');
+// Era o que fazia o relatório parecer duplicado: a tabela com UMA linha
+// mostrava o mesmo número de novo, em negrito, logo abaixo.
+const umaLinha = { colunas: [{ titulo: 'Mês', tipo: 'texto' }, { titulo: 'L', tipo: 'volume' }],
+  linhas: [['NOVEMBRO/2026', 100]], totais: [null, 100] };
+ok('o PDF não escreve TOTAL com uma linha só',
+  !/TOTAL/.test(ctx.tabelaRelatorioPdf_(umaLinha)));
+ok('mas escreve com duas',
+  /TOTAL/.test(ctx.tabelaRelatorioPdf_({ colunas: umaLinha.colunas,
+    linhas: [['NOVEMBRO/2026', 100], ['OUTUBRO/2026', 50]], totais: [null, 150] })));
+ok('a tela segue a mesma regra',
+  /dados\.totais && dados\.totais\.length && dados\.linhas\.length > 1/.test(app7));
+ok('e a planilha também', (function () {
+  // Ancora no ESCRITOR DE ABA: a mesma condicao existe no PDF, e procurar
+  // solta no arquivo inteiro deixava a prova passar com a planilha quebrada.
+  const escritor = fonte7.slice(fonte7.indexOf('function escreverRelatorioNaAba_'));
+  const corpo = escritor.slice(0, escritor.indexOf('\nfunction '));
+  return /rel\.totais && rel\.totais\.length && rel\.linhas\.length > 1/.test(corpo) &&
+    /consolidado\.totais\.length && consolidado\.linhas\.length > 1/.test(corpo);
+})());
+
+console.log('\n9. Duas tabelas seguidas dizem qual é qual');
+const relT = ctx.relatorioDieselPeriodo_(null, null, null);
+ok('a de cima tem título', relT.titulo === 'Mês a mês');
+ok('a de baixo também', relT.consolidado.titulo === 'Semana a semana');
+ok('e explica que é o mesmo total aberto por semana',
+  /mesmo período da tabela acima/.test(relT.consolidado.subtitulo || ''),
+  'dois blocos com o mesmo total parecem número repetido por engano');
+ok('a tela desenha o título da tabela', (function () {
+  // Montar a variavel nao basta: ela tem de entrar no HTML que volta. Era
+  // justamente o que o mutante "nao desenha o titulo" explorava.
+  const fn = (app7.match(/function tabela\(dados, vazio, opcoes\)[\s\S]*?\n  \}/) || [''])[0];
+  return /esc\(dados\.titulo\)/.test(fn) &&
+    /return titulo \+ '<div class="cartao" style="padding:0/.test(fn) &&
+    /return titulo \+ '<div class="cartao">' \+ esc\(vazio/.test(fn);
+})(), 'inclusive na tabela vazia: sem título, "Nada para mostrar" não diz de quê');
+ok('e o PDF desenha os dois títulos e o subtítulo',
+  /escHtml_\(rel\.titulo\)/.test(fonte7) &&
+  /escHtml_\(consolidado\.titulo \|\| 'Consolidado'\)/.test(fonte7) &&
+  /escHtml_\(consolidado\.subtitulo\)/.test(fonte7));
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S) de ' + provas : '\nTUDO OK: ' + provas + ' provas');
 process.exit(falhas ? 1 : 0);

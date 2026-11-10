@@ -4368,6 +4368,73 @@ meses e três semanas no fixture, os cinco caem.
 `Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
 sistema*.
 
+## V4.38.1 — "o que é isso, está meio confuso"
+
+O usuário mandou um recorte do PDF do diesel: dois blocos com as mesmas
+colunas, os mesmos números e um TOTAL em negrito repetindo a linha de cima.
+Eram quatro problemas somados, e um deles era pior do que a imagem mostrava.
+
+### 1. Duas tabelas sem nada que diga qual é qual
+
+O relatório devolve a tabela do mês e, em `consolidado`, a da semana. O
+renderizador genérico da tela **ignorava** `titulo`, e no PDF o título existia
+mas não explicava a relação entre as duas. Resultado: dois blocos idênticos,
+com o mesmo total — o que está **certo** (são o mesmo universo em dois
+recortes), mas parece número repetido por engano.
+
+Agora as duas têm título, e a de baixo tem subtítulo: *"O mesmo período da
+tabela acima, aberto por semana: os totais das duas fecham no mesmo número."*
+
+### 2. TOTAL que repete a única linha
+
+Tabela com **uma** linha mostrava o mesmo número de novo, em negrito, logo
+abaixo. Não é total de nada: é a própria linha. A regra entrou nos **três**
+renderizadores — tela, PDF e planilha.
+
+### 3. Litros demais
+
+`14.902,100 L` num total de mês. As três casas são a precisão de **um
+abastecimento**, e esse relatório não mostra abastecimento nenhum. Entrou o
+tipo `volume` (1 casa): **14.902,1 L**.
+
+### 4. O pior, e que a imagem não mostrava: na TELA, litros saíam crus
+
+O `formatar` do App.html conhecia `moeda`, `moeda3`, `numero` e `decimal` — e
+mais nada. As 12 colunas `litros`, as 3 `media` e a nova `volume` caíam no
+`default`, que devolve o valor como veio: **`14902.1`**. Em pt-BR esse ponto
+se lê como separador de milhar. Não dava erro: mentia. E mentia **só na
+tela**, porque o PDF (corrigido na V4.37) saía certo — os dois documentos do
+mesmo relatório mostrando coisas diferentes.
+
+É o mesmo defeito da V4.37, do outro lado do contrato. Por isso a correção
+veio com a regra que faltava:
+
+### A regra que fecha o contrato
+
+`conferir_lote_e_diesel.js` passou a **varrer os tipos de coluna declarados
+pelos relatórios** e cobrar, para cada um, que os **três** formatadores o
+conheçam: a tela sabe formatar, o PDF sabe formatar, a planilha tem formato
+próprio (e não `@`, que gravaria número como texto e a contabilidade não
+conseguiria somar), e ele está nas duas listas de "é numérico" — a do servidor
+e a da tela.
+
+São 7 tipos × 4 lados = 28 provas que antes não existiam. Tipo novo sem os
+quatro lados agora reprova na hora, em vez de aparecer num recorte de tela
+semanas depois.
+
+### Suítes
+
+`conferir_lote_e_diesel.js`: 72 → **111 provas**. **39 suítes, ~1.564
+provas.** Por mutação, 18 defeitos reintroduzidos, **18 pegos**. Três
+sobreviveram na primeira rodada, todos por regex frouxo: duas condições
+idênticas no PDF e na planilha (a prova passava olhando a do PDF enquanto a da
+planilha estava quebrada), e dois `return` que começavam igual.
+
+### Instalação
+
+`Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
+sistema*.
+
 ---
 
 # Pendente
