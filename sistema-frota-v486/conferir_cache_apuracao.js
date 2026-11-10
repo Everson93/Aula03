@@ -59,7 +59,6 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   invalidarCacheOdometro_ = function () {};
   invalidarCacheRateioMensal_ = function () {};
   invalidarCacheOrcamento_ = function () {};
-  invalidarCacheComprovantes_ = function () {};
   normalizarCentroCusto_ = function (v) { return String(v || '').trim(); };
   periodoDoMes_ = function (m) { return { mesRef: m, inicio: new Date(), fim: new Date() }; };
   lerResumo_ = function () { return __resumoCorrente; };

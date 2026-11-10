@@ -25,7 +25,8 @@ ctx.globalThis = ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
-    lancarIpvaAnual_, calcularLinhasResumo_, periodoDoMes_, R_, L_,
+    lancarIpvaAnual_, calcularLinhasResumo_, periodoDoMes_, R_, L_, COL_VEIC,
+    mapaTipoColunaResumo_, chaveTipoDespesa_,
     TOTAL_COL_RESUMO, somarMesesCompetencia_, PARCELAS_IPVA_,
   });
   __lanc = [];
@@ -49,6 +50,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
     v[COL_VEIC.CATEGORIA - 1] = 'Pesado';
     v[COL_VEIC.CENTRO - 1] = 'DEPÓSITO';
     v[COL_VEIC.IPVA - 1] = 9999;   // valor do cadastro: NAO pode entrar no mapa
+    v[COL_VEIC.EMPLACAMENTO - 1] = 777;  // V4.36: idem — tem de ser ignorado
     return [v];
   };
   aba_ = function () {
@@ -119,6 +121,28 @@ ck('IPVA do período = 1/12 da guia', Math.abs(ipvaResumo - 83.33) < 0.005,
   'R$ ' + ipvaResumo.toFixed(2));
 ck('NÃO usou o cadastro (9999/12 = 833,25)', Math.abs(ipvaResumo - 833.25) > 1,
   'seria R$ 833,25 se lesse o cadastro');
+
+console.log('');
+console.log('--- o Emplacamento do cadastro não vira custo (V4.36) ---');
+// Ele era o UNICO valor do sistema que entrava no custo sem ser lancado: sem
+// data, sem documento, sem competencia e sem log, somado todo mes a cada
+// veiculo — e caindo na MESMA coluna que recebe os lancamentos do tipo
+// 'Emplacamento/IPVA/Seguro', de onde ninguem conseguia separar os dois.
+const empResumo = Number(linhas[0][ctx.R_.EMPLACAMENTO]) || 0;
+ck('cadastro com R$ 777 não aparece no Resumo', empResumo === 0, 'R$ ' + empResumo.toFixed(2));
+ck('e a coluna continua existindo para o que for LANÇADO',
+  ctx.R_.EMPLACAMENTO !== undefined &&
+  ctx.mapaTipoColunaResumo_()[ctx.chaveTipoDespesa_('Emplacamento/IPVA/Seguro')] === ctx.R_.EMPLACAMENTO,
+  'emplacamento que acontece de verdade se lança, como qualquer despesa');
+// O IPVA anual do cadastro FICOU, com papel diferente: so sugere o valor das
+// 12 parcelas. Provar os dois lados junto e o que impede trocar um pelo outro.
+ck('o IPVA do cadastro continua sendo só sugestão',
+  /const sugerido = Number\(v\[COL_VEIC\.IPVA - 1\]\) \|\| 0;/
+    .test(fs.readFileSync('Codigo.gs', 'utf8')));
+ck('e o cadastro não oferece mais o campo Emplacamento',
+  !/id="vEmplacamento"/.test(fs.readFileSync('App.html', 'utf8')));
+ck('mas a coluna da planilha NÃO foi removida (deslocaria todas as outras)',
+  ctx.COL_VEIC.EMPLACAMENTO === 7 && ctx.COL_VEIC.IPVA === 13);
 
 console.log('');
 console.log('--- documento repetido é recusado ---');

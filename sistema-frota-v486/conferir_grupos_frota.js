@@ -49,9 +49,9 @@ function ok(t, c, d) {
 console.log('\n1. Configuração padrão');
 let m = ctx.gruposFrota_();
 ok('tem os três grupos, na ordem declarada',
-  JSON.stringify(m.ordem) === JSON.stringify(['Transporte', 'Apoio', 'Operação interna']),
+  JSON.stringify(m.ordem) === JSON.stringify(['Frota Entregas', 'Apoio', 'Operação interna']),
   JSON.stringify(m.ordem));
-ok('Carreta Normal cai em Transporte', ctx.grupoDaCategoria_('Carreta Normal') === 'Transporte');
+ok('Carreta Normal cai em Frota Entregas', ctx.grupoDaCategoria_('Carreta Normal') === 'Frota Entregas');
 ok('Moto cai em Apoio', ctx.grupoDaCategoria_('Moto') === 'Apoio');
 ok('Empilhadeira cai em Operação interna',
   ctx.grupoDaCategoria_('Empilhadeira/Paleteira') === 'Operação interna');
@@ -69,7 +69,7 @@ ok('"OPERAÇÃO INTERNA" casa com "Operação interna"',
 ok('"empilhadeira/paleteira" em minúscula casa',
   ctx.grupoDaCategoria_('empilhadeira/paleteira') === 'Operação interna');
 ok('"Truck Frigorifico" com espaço sobrando casa',
-  ctx.grupoDaCategoria_('  Truck Frigorifico  ') === 'Transporte');
+  ctx.grupoDaCategoria_('  Truck Frigorifico  ') === 'Frota Entregas');
 ok('categoria desconhecida vai para Outros, não para o primeiro grupo',
   ctx.grupoDaCategoria_('Drone') === ctx.GRUPO_FROTA_OUTROS_);
 ok('categoria vazia vai para Outros', ctx.grupoDaCategoria_('') === ctx.GRUPO_FROTA_OUTROS_);
@@ -115,13 +115,13 @@ ok('a soma dos grupos é exatamente o total da frota', somaGrupos === totalFrota
 ok('a categoria não mapeada aparece em "Outros", não some',
   porGrupo[ctx.GRUPO_FROTA_OUTROS_] === 777,
   'sumir em silêncio faria os grupos não fecharem e ninguém saberia onde foi parar');
-ok('Transporte soma as duas categorias dele', porGrupo['Transporte'] === 80000, String(porGrupo['Transporte']));
+ok('Frota Entregas soma as duas categorias dele', porGrupo['Frota Entregas'] === 80000, String(porGrupo['Frota Entregas']));
 
 console.log('\n5. É isso que resolve o indicador sem sentido');
 // Frota inteira: 45.310 km e 14.250 litros -> 3,18 km/l, que não é de ninguém.
 const kmTodos = frota.reduce(function (t, l) { return t + l[ctx.R_.KM]; }, 0);
 const litrosTodos = frota.reduce(function (t, l) { return t + l[ctx.R_.LITROS]; }, 0);
-const transp = frota.filter(function (l) { return ctx.grupoDaCategoria_(l[ctx.R_.CATEGORIA], mapa) === 'Transporte'; });
+const transp = frota.filter(function (l) { return ctx.grupoDaCategoria_(l[ctx.R_.CATEGORIA], mapa) === 'Frota Entregas'; });
 const kmT = transp.reduce(function (t, l) { return t + l[ctx.R_.KM]; }, 0);
 const litrosT = transp.reduce(function (t, l) { return t + l[ctx.R_.LITROS]; }, 0);
 const apoio = frota.filter(function (l) { return ctx.grupoDaCategoria_(l[ctx.R_.CATEGORIA], mapa) === 'Apoio'; });
@@ -156,7 +156,7 @@ ok('a média da frota mente sobre o grupo pequeno',
   'apoio R$ ' + custoKmApoio.toFixed(3) + '/km contra R$ ' + custoKmFrota.toFixed(3) +
   ' da frota — quem olhasse só a frota acharia o apoio caríssimo');
 ok('e fica colada no grupo dominante, como tem de ficar',
-  Math.abs(porGrupo['Transporte'] / kmT - custoKmFrota) / custoKmFrota < 0.2,
+  Math.abs(porGrupo['Frota Entregas'] / kmT - custoKmFrota) / custoKmFrota < 0.2,
   'não é defeito: o transporte é 85% do custo, então ele manda na média');
 
 console.log('\n6. Parâmetro malformado não derruba o painel');

@@ -53,7 +53,6 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   lerResumo_ = function () { return __resumo; };
   estadoTanque_ = function () { return { litros: 9999, valor: 0, custoMedio: 0, litrosSemLastro: 0 }; };
   contarPendenciasConferencia_ = function () { return 0; };
-  lerComprovantes_ = function () { return []; };
   periodoAtual_ = function () { return { inicio: new Date(2026, 6, 1), fim: new Date(2026, 6, 31) }; };
   // Dublê de aba que CONTA leitura. No Apps Script o custo nao e o laco de
   // JavaScript: e cada getValues(), que e uma ida ao servidor do Sheets.

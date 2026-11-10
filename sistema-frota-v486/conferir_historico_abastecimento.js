@@ -304,6 +304,91 @@ ok('a resposta diz quanto tempo levou e que janela usou',
   hd.diagnostico.completo === true && hd.diagnostico.lidos >= 1,
   JSON.stringify(hd.diagnostico));
 
+console.log('\n4e. Filtro de período');
+montar();
+// Um abastecimento ANTIGO, fora da janela de datas do fixture.
+ctx.__lancamentos.push(lanc(data(2026, 9, 3), 'AAA 0001', 70, 420, 'LAN-ANTIGO'));
+ctx.__odometro.push([data(2026, 9, 3), 'AAA 0001', 99000]);
+vm.runInContext('ODOMETRO_EXEC_CACHE_ = null; ODOMETRO_INDICE_EXEC_ = null;', ctx);
+const comPeriodo = ctx.historicoAbastecimentos_('AAA 0001', 0,
+  { de: '2026-11-08', ate: '2026-11-14' });
+ok('mostra só o que está no período', (function () {
+  const ids = comPeriodo.linhas.map(function (l) { return l.id; }).sort();
+  return JSON.stringify(ids) === JSON.stringify(['LAN-2', 'LAN-3']);
+})(), JSON.stringify(comPeriodo.linhas.map(function (l) { return l.id; })));
+// O dia do 'ate' entra INTEIRO: com meia-noite, tudo que foi lancado no
+// proprio dia escolhido sumiria — e sumir nao parece defeito, parece que nao
+// existe.
+ok('o dia final entra inteiro', (function () {
+  const so14 = ctx.historicoAbastecimentos_('AAA 0001', 0, { de: '2026-11-14', ate: '2026-11-14' });
+  return so14.linhas.length === 1 && so14.linhas[0].id === 'LAN-3';
+})());
+// O lancamento da MANHA do dia inicial: se o corte for ao meio-dia (que e a
+// hora que `parseDataIsoEstrita_` devolve), ele cai fora do filtro sem que
+// nada acuse — a lista so vem menor.
+const dataHora = vm.runInContext(
+  '(function (a, m, d, h) { return new Date(a, m - 1, d, h, 30, 0, 0); })', ctx);
+ok('e o da MANHÃ do dia inicial não fica de fora', (function () {
+  montar();
+  ctx.__lancamentos.push(lanc(dataHora(2026, 11, 8, 7), 'AAA 0001', 60, 366, 'LAN-MANHA'));
+  const r = ctx.historicoAbastecimentos_('AAA 0001', 0, { de: '2026-11-08', ate: '2026-11-08' });
+  return r.linhas.some(function (l) { return l.id === 'LAN-MANHA'; });
+})(), 'corte ao meio-dia engole a manhã inteira do dia escolhido');
+ok('e o da NOITE do dia final também não', (function () {
+  montar();
+  ctx.__lancamentos.push(lanc(dataHora(2026, 11, 14, 22), 'AAA 0001', 60, 366, 'LAN-NOITE'));
+  const r = ctx.historicoAbastecimentos_('AAA 0001', 0, { de: '2026-11-14', ate: '2026-11-14' });
+  return r.linhas.some(function (l) { return l.id === 'LAN-NOITE'; });
+})());
+montar();
+ctx.__lancamentos.push(lanc(data(2026, 9, 3), 'AAA 0001', 70, 420, 'LAN-ANTIGO'));
+ctx.__odometro.push([data(2026, 9, 3), 'AAA 0001', 99000]);
+vm.runInContext('ODOMETRO_EXEC_CACHE_ = null; ODOMETRO_INDICE_EXEC_ = null;', ctx);
+ok('e o dia inicial também', (function () {
+  const so8 = ctx.historicoAbastecimentos_('AAA 0001', 0, { de: '2026-11-08', ate: '2026-11-08' });
+  return so8.linhas.length === 1 && so8.linhas[0].id === 'LAN-2';
+})());
+ok('só a data inicial: tudo dali pra frente',
+  ctx.historicoAbastecimentos_('AAA 0001', 0, { de: '2026-11-14' }).linhas.length === 2);
+ok('só a data final: tudo até ela', (function () {
+  // O de outubro, o dia 2 e o dia 8. O dia 14 e o dia 20 ficam de fora.
+  const r = ctx.historicoAbastecimentos_('AAA 0001', 0, { ate: '2026-11-08' });
+  return r.linhas.length === 3 &&
+    r.linhas.every(function (l) { return l.id !== 'LAN-3' && l.id !== 'LAN-4'; });
+})(), JSON.stringify(ctx.historicoAbastecimentos_('AAA 0001', 0, { ate: '2026-11-08' })
+  .linhas.map(function (l) { return l.id; })));
+ok('o rodapé é do período, não da base',
+  comPeriodo.totais.abastecimentos === 2 &&
+  comPeriodo.totais.litros === 205, String(comPeriodo.totais.litros));
+ok('e a mensagem diz que é um período',
+  /no período escolhido/.test(comPeriodo.mensagem), comPeriodo.mensagem);
+ok('período vazio não é erro, é mensagem',
+  /Nenhum abastecimento deste veículo no período/.test(
+    ctx.historicoAbastecimentos_('AAA 0001', 0, { de: '2025-01-01', ate: '2025-01-31' }).mensagem));
+// Data pela metade ("10/11/20" enquanto se digita) nao pode virar erro.
+ok('data inválida é ignorada, não vira erro', (function () {
+  const r = ctx.historicoAbastecimentos_('AAA 0001', 30, { de: '2026-11-3', ate: 'xx' });
+  return r.linhas.length > 0 && !/período/.test(r.mensagem);
+})());
+ok('e o período usado volta na resposta, para a tela conferir',
+  comPeriodo.periodo.de === '2026-11-08' && comPeriodo.periodo.ate === '2026-11-14',
+  JSON.stringify(comPeriodo.periodo));
+// O caso que a janela esconderia: periodo ANTIGO, numa base grande. A primeira
+// janela e feita dos lancamentos mais RECENTES — sem ampliar, a resposta seria
+// "nenhum abastecimento" com os abastecimentos existindo.
+ok('período antigo em base grande amplia a janela em vez de mentir', (function () {
+  const grande = [];
+  for (let i = 0; i < 20000; i++) {
+    grande.push(lanc(data(2026, 11, (i % 25) + 1), 'P' + (i % 170), 50, 300, 'L' + i));
+  }
+  grande[10] = lanc(data(2026, 3, 4), 'VELHO 1', 100, 600, 'V-1');
+  grande[20] = lanc(data(2026, 3, 9), 'VELHO 1', 100, 600, 'V-2');
+  ctx.__lancamentos = grande;
+  diario.janelas.length = 0;
+  const v = ctx.historicoAbastecimentos_('VELHO 1', 0, { de: '2026-03-01', ate: '2026-03-31' });
+  return v.linhas.length === 2 && diario.janelas.length === 2;
+})(), JSON.stringify(diario.janelas));
+
 console.log('\n5. Estornar');
 montar();
 let r = ctx.webEstornarAbastecimento('t', 'LAN-2', 'odômetro digitado errado, refazer', 'AAA 0001');
@@ -395,6 +480,21 @@ ok('e uma resposta atrasada não sobrescreve a tela de outra placa', (function (
 ok('desenhar sem histórico também avisa',
   /if \(!h\) \{ erroHistorico\('Não há histórico carregado\.'\); return; \}/.test(app),
   'o return calado era o que deixava o "carregando" na tela');
+ok('a tela tem os campos de período antes do botão', (function () {
+  const i = app.indexOf('id="histDe"');
+  const j = app.indexOf('id="histAte"');
+  const b = app.indexOf('abrirHistoricoAbastecimento()">⛽');
+  return i !== -1 && j !== -1 && i < b && j < b;
+})(), 'escolher depois de gerar obrigaria a gerar duas vezes — e a primeira é a cara');
+ok('e manda as duas datas na chamada',
+  /webHistoricoAbastecimentos\(TOKEN, placa, 0, semPeriodo \? null : periodoDoHistorico\(\)\)/.test(app));
+ok('a abertura automática (KM menor) IGNORA o filtro',
+  /altere o KM dele ou estorne o lançamento\.', true\)/.test(app),
+  'filtro antigo deixado na tela abriria o painel vazio justo quando ele precisa aparecer');
+ok('e o estorno devolve o histórico no MESMO período',
+  /webEstornarAbastecimento\(TOKEN, l\.id, motivo, HIST_ABAST\.placa, periodoDoHistorico\(\)\)/.test(app) &&
+  /historicoAbastecimentos_\(placa, 0, periodo\)/.test(fonte),
+  'sem isso o estorno joga a tela de volta para os 30 mais recentes');
 ok('e o rodapé mostra o tempo do servidor',
   /h\.diagnostico\.ms\) \+ ' ms no servidor'/.test(app));
 

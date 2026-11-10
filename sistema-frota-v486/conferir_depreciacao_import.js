@@ -769,8 +769,9 @@ console.log('\n11. Aba nova registrada em TODAS as listas');
 // cor, invalidação no onEdit, validação de backup e zeramento. Esquecer um
 // não quebra nada hoje — quebra meses depois, de um jeito difícil de ligar à
 // causa. Foi assim que Orçamento e Comprovantes ficaram invisíveis no menu
-// por duas versões (V4.11.1).
-const ABAS_DE_DADOS = ['RATEIO_MENSAL', 'ORCAMENTO', 'COMPROVANTES', 'DEPRECIACAO_MENSAL'];
+// por duas versões (V4.11.1). Comprovantes saiu do sistema na V4.36; a regra
+// que guarda a REMOÇÃO completa está em conferir_telas.js.
+const ABAS_DE_DADOS = ['RATEIO_MENSAL', 'ORCAMENTO', 'DEPRECIACAO_MENSAL'];
 // Em vez de casar cada bloco por regex frágil, conta as ocorrências de cada
 // aba no fonte: as já consolidadas dão a referência do que é "estar em todas".
 const fonteA = fs.readFileSync('Codigo.gs', 'utf8');
@@ -779,7 +780,7 @@ function ocorrencias(nome) {
 }
 const refs = ABAS_DE_DADOS.map(function (n) { return { nome: n, n: ocorrencias(n) }; });
 const minimoConsolidado = Math.min(
-  ocorrencias('RATEIO_MENSAL'), ocorrencias('ORCAMENTO'), ocorrencias('COMPROVANTES'));
+  ocorrencias('RATEIO_MENSAL'), ocorrencias('ORCAMENTO'));
 ok('a aba nova aparece tantas vezes quanto as já consolidadas',
   ocorrencias('DEPRECIACAO_MENSAL') >= minimoConsolidado - 2,
   JSON.stringify(refs) + ' — mínimo das consolidadas: ' + minimoConsolidado);
@@ -788,7 +789,7 @@ ok('a aba nova aparece tantas vezes quanto as já consolidadas',
  ['largura das colunas', /LARGURAS\[ABAS\.DEPRECIACAO_MENSAL\]/],
  ['linhas mínimas', /LINHAS_MINIMAS\[ABAS\.DEPRECIACAO_MENSAL\]/],
  ['cor', /cores\[ABAS\.DEPRECIACAO_MENSAL\]/],
- ['criação', /ABAS\.COMPROVANTES, ABAS\.DEPRECIACAO_MENSAL\]/],
+ ['criação', /ABAS\.FORNECEDORES, ABAS\.CARGA_BOMBA, ABAS\.RATEIO_MENSAL, ABAS\.ORCAMENTO,\s*\n\s*ABAS\.DEPRECIACAO_MENSAL\]/],
  ['proteção', /ABAS\.DEPRECIACAO_MENSAL\]\.forEach\(function\(n\)\{ exigirFolha/],
  ['invalidação no onEdit', /ABAS\.DEPRECIACAO_MENSAL\]\.indexOf\(nomeAba\)/],
  ['validação de backup', /\[ABAS\.DEPRECIACAO_MENSAL, TOTAL_COL_DM\]/],

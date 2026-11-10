@@ -53,7 +53,7 @@ const GLOBAIS = new Set([
  *
  * Em vez disso, so considera nomes com a cara das funcoes deste projeto:
  * comecam em minuscula, tem maiuscula no meio e ao menos 6 letras
- * (`blocoAcao`, `rodarAcaoPendencia`, `telaComprovantes`). Palavra solta dentro
+ * (`blocoAcao`, `rodarAcaoPendencia`, `telaBomba`). Palavra solta dentro
  * de frase em portugues — "1 pendência (" — nao passa nesse crivo, e foi
  * exatamente o ruido que afogou a primeira tentativa.
  *

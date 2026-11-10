@@ -4037,6 +4037,162 @@ aceitava **uma** verificação de vez onde o contrato tem três.
 `Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
 sistema*.
 
+## V4.36.0 — cinco frentes de uma vez
+
+Um pedido só, seis itens. Cinco viraram código; o sexto virou pergunta, e está
+no fim desta seção.
+
+### 1. O Emplacamento do cadastro saiu
+
+O usuário pediu para remover o campo e deixar só o IPVA anual, e pediu que eu
+conferisse **qual dos dois é o válido**, porque os dois tinham a mesma
+finalidade. Fui ver o que cada um faz hoje:
+
+| | o que era |
+|---|---|
+| **Emplacamento** (coluna 7 do cadastro) | somado **todo mês** ao Resumo, direto do cadastro: sem data, sem documento, sem competência, sem log. Nunca passou pela máquina de lançamentos. |
+| **IPVA anual** (coluna 13) | desde a V4.8.7, só o **valor sugerido** na hora de gerar. A despesa vira 12 parcelas lançadas, cada uma com ID, data, competência e log. |
+
+O válido é o **IPVA anual**. O Emplacamento era o único valor do sistema que
+virava custo **sem ser lançado** — e, pior, caía na **mesma coluna** do Resumo
+que recebe os lançamentos do tipo `Emplacamento/IPVA/Seguro`, onde ninguém
+conseguia separar os dois. Emplacamento que acontece de verdade continua tendo
+onde ser lançado: é um tipo de despesa, como qualquer outro.
+
+O que ficou: a coluna da planilha **não** foi removida (removê-la deslocaria
+todas as outras, contra a regra do projeto), só rotulada *"Emplacamento (não
+usado)"*; e a gravação do cadastro passou pelo `manter`, que conserva o valor
+histórico. Sem isso, a primeira edição de cada veículo zeraria 167 células em
+silêncio — zerar não dá erro, só apaga.
+
+**Efeito que vale dizer:** um mês já encerrado, quando **recalculado**,
+deixa de receber o Emplacamento. Os números já apurados e o Histórico não
+mudam; o recálculo passa a bater com o que foi lançado, que é o que se queria.
+
+### 2. O módulo Comprovantes atrasados saiu
+
+Tela, endpoints, cache, alerta diário e as sete listas de instalação. A aba
+**"Comprovantes Atrasados" da sua planilha não é apagada** — ela só deixa de
+ser usada e mantida; o que estiver lá continua lá.
+
+Isso rendeu uma regra nova em `conferir_telas.js`, que é o espelho exata da
+que já existia. A antiga cobrava que uma tela NOVA apareça nas três listas
+(menu, perfis, `TELAS_WEB`) — foi assim que Orçamento e Comprovantes ficaram
+invisíveis por duas versões. A nova cobra que uma tela REMOVIDA saia das três:
+sobrar numa delas deixa um item de menu chamando função que não existe mais —
+a tela abre em branco, ou o `<script>` inteiro quebra.
+
+### 3. Combustível desabilitado nas lojas 01–19 e CB01–CB10
+
+A marca mora no **centro de custo**, não no veículo: veículo muda de loja e a
+regra acompanha sozinha, sem ninguém lembrar de remarcar 167 cadastros. A aba
+Centros ganhou a coluna **Combustível** (SIM/NÃO), e a tela de Centros ganhou
+um botão por loja — *liberar* / *bloquear* — que grava na hora. Ele não espera
+o botão "Salvar rateio" de propósito: o percentual é **por competência**,
+abastecer ou não é **de hoje**.
+
+O padrão é lido do **número** do nome, não por comparação de texto: "Loja 01",
+"LOJA 1 — Tubarão" e "01" são a mesma loja escrita de três jeitos, e comparar
+texto erraria nos três. O Instalar preenche só as células **vazias** — a loja
+que você liberar à mão continua liberada na próxima versão.
+
+São três lados, e os três estão provados:
+
+1. **o servidor recusa** o lançamento (tela escondida continua alcançável por
+   quem monta a chamada);
+2. **a tela não oferece** o que o servidor recusa (senão a pessoa preenche
+   tudo e só descobre no botão) — os tipos de combustível somem da lista e
+   aparece o porquê, com o nome da loja;
+3. **o km/l não conta o KM** de quem não abastece pelo sistema. Esse é o lado
+   silencioso: o veículo roda e abastece por fora, e contar o KM com zero
+   litro faz a média da frota subir sozinha e descrever uma frota que não
+   existe. O KM continua inteiro no total e no R$/km, que são contas de outra
+   coisa.
+
+Só o **combustível** é bloqueado: oficina, pneu e pedágio da mesma loja
+continuam normais. E o que já foi lançado não muda.
+
+### 4. Filtro de período no Histórico / estornar
+
+Dois campos de data **antes** do botão — escolher depois de gerar obrigaria a
+gerar duas vezes, e a primeira é justamente a cara (lê a base). Sem datas,
+segue mostrando os 30 mais recentes.
+
+Dois detalhes que não são detalhe:
+
+- **O dia escolhido entra inteiro.** O parser do sistema devolve meio-dia; usar
+  isso como corte engoliria a manhã do dia inicial e a noite do dia final — e
+  um lançamento sumido do filtro não parece defeito, parece que não existe.
+- **A janela da V4.35 amplia quando o período é antigo.** A primeira janela é
+  feita dos lançamentos mais recentes: março de 2024 simplesmente não está
+  nela. Sem ampliar, a resposta seria "nenhum abastecimento" com os
+  abastecimentos existindo.
+
+A abertura **automática** do painel (quando o KM digitado é menor que o
+último) **ignora** o filtro: ali a pergunta é outra — "qual é a sequência
+recente deste veículo?" — e um filtro antigo deixado na tela faria o painel
+abrir vazio exatamente no momento em que ele mais precisa aparecer. O estorno,
+ao contrário, devolve o histórico no **mesmo** período.
+
+### 5. Frota Entregas
+
+As quatro famílias da planilha do usuário (Carga Seca e Frigorífico, Caminhão
+e Carreta) **já eram categorias do cadastro**, e o parâmetro `GRUPOS_FROTA` já
+as juntava num grupo. Faltava poder **filtrar** por ele. O grupo foi renomeado
+de "Transporte" para **Frota Entregas** (com migração que só age sobre o
+padrão antigo, palavra por palavra — quem já mexeu no parâmetro não é
+atropelado), e o filtro "Categoria" dos relatórios virou **"Categoria ou
+grupo"**: um campo só, com os grupos num `optgroup` em cima.
+
+Um campo e não dois porque são a mesma pergunta — *que parte da frota?* — e
+dois campos abririam a combinação impossível (categoria de um grupo + outro
+grupo) só para alguém descobrir depois que ela volta vazia.
+
+O risco da mudança tinha nome: a comparação de categoria estava repetida em
+**oito lugares** (`String(linha) !== categoria`). Oito lugares seriam oito
+chances de um relatório ignorar o grupo **em silêncio** e devolver a frota
+inteira — sem erro nenhum, só um número maior do que devia. A comparação ganhou
+um dono único (`categoriaCasa_`), e há regra estática cobrando que ninguém
+volte a comparar por fora.
+
+### 6. O estoque de óleo: o que NÃO foi feito, e por quê
+
+O pedido anterior era "faz o controle de estoque do óleo também". Ao perguntar
+se seria um produto ou vários, a resposta foi **"somente diesel"** — que eu li
+como *o estoque continua sendo só o que já existe* (DIESEL S10 e ARLA 32), sem
+tambor de lubrificante. É a leitura mais provável, porque em pt-BR "óleo" é
+com frequência o óleo **diesel**, que já tem controle. **Não implementei**, e
+disse isso na entrega. Se era o lubrificante mesmo, é uma versão própria: é
+produto novo no tanque, e portanto estrutural.
+
+### Suítes
+
+Duas novas — `conferir_loja_sem_combustivel.js` (52) e
+`conferir_frota_entregas.js` (34) — e `conferir_cadastro_veiculo.js` (10), que
+guarda o contrato do `manter`. `conferir_historico_abastecimento.js` foi de 64
+a 81. `conferir_comprovantes.js` foi apagada. **38 suítes, ~1.420 provas.**
+
+Por mutação, 44 defeitos reintroduzidos, **44 pegos**. Três sobreviveram na
+primeira rodada, e os três eram prova minha mal escrita, não defeito do
+código: um dublê de aba que aceitava pedir a coluna 4 de uma planilha com 3
+(e por isso não provava nada sobre a coluna ser opcional); uma prova que
+contava linhas e passaria com zero; e um fixture em que todo lançamento era ao
+meio-dia, que não distinguia o corte do dia do corte do meio-dia.
+
+### Instalação
+
+`Codigo.gs` e `App.html`, e **precisa** rodar *Instalar / atualizar sistema*:
+a aba Centros ganhou coluna. O Instalar também renomeia o grupo e preenche o
+padrão das lojas.
+
+**Para a Frota Entregas funcionar**, os ~30 veículos da planilha precisam estar
+no cadastro com uma das quatro categorias: `Carga Seca Carreta` → **Carreta
+Normal**, `Frigorifico Caminhao` → **Truck Frigorifico**, `Frigorifico Carreta`
+→ **Carreta Frigorifica**, `Carga Seca Caminhao` → **Truck Normal**. Fica
+pendente conferir isso na planilha dele — e as placas vêm em **pares**
+(cavalo-carreta, "MCZ2627-QHC8466"), enquanto o sistema cadastra **uma placa
+por veículo**. A capacidade em toneladas da planilha também não tem campo hoje.
+
 ---
 
 # Pendente
@@ -4055,6 +4211,17 @@ sistema*.
   abastecimentos internos já gravados continuam com o valor da média móvel; só
   são revalorizados quando a carga do período é corrigida. Ofereci um botão
   "revalorizar o mês"; sem resposta do usuário.
+- **Frota Entregas: cadastro e placas em par** — o filtro por grupo (V4.36)
+  sai da CATEGORIA do cadastro. Falta conferir se os ~30 veículos da planilha
+  do usuário estão classificados nas quatro categorias certas. E as placas
+  dele vêm em par (cavalo-carreta); o sistema cadastra uma placa por veículo.
+  A capacidade em toneladas não tem campo.
+- **Estoque de lubrificante** — pedido e depois respondido com "somente
+  diesel", lido como "sem tambor de óleo". Se for o lubrificante mesmo, é
+  produto novo no tanque (estrutural).
+- **Aba "Comprovantes Atrasados" órfã** — o módulo saiu na V4.36 e a aba não
+  foi apagada, de propósito. Quando o usuário confirmar que não precisa mais
+  do que está lá, pode ser removida à mão.
 - **`ABA_ORIGEM` sem uso** — a coluna 12 de Veículos guarda o nome da aba de
   origem na migração das 170 abas, e **nada no código atual lê ou escreve nela**.
   Pode já conter um agrupamento útil da planilha antiga; vale olhar antes de

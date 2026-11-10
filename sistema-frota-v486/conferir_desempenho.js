@@ -38,7 +38,7 @@ nomes.forEach(function (n) {
 
 // Varredor: percorre uma colecao inteira vinda de leitura de base.
 const BASES = ['dadosVeiculosExecucao_','lerLancamentos_','lerResumo_','lerOdometro_',
-  'dadosCentrosExecucao_','lerCargasBomba_','lerComprovantes_','lerRateioMensal_',
+  'dadosCentrosExecucao_','lerCargasBomba_','lerRateioMensal_',
   'lerOrcamento_','dadosFornecedoresExecucao_'];
 const ITERA = /\.(forEach|map|filter|some|every|reduce|find|findIndex|flatMap)\s*\(|\bfor\s*\(|\bwhile\s*\(/;
 const VARREDOR = {};

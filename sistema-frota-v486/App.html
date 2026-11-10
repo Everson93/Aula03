@@ -792,7 +792,6 @@
       { id: 'lancar', icone: '➕', rotulo: 'Novo lançamento', busca: 'despesa abastecimento gastar', fn: telaLancar },
       { id: 'lancamentos', icone: '🗑️', rotulo: 'Corrigir / excluir lançamento', busca: 'apagar remover errado despesa estornar justificativa', fn: telaLancamentos },
       { id: 'bomba', icone: '⛽', rotulo: 'Carga na bomba', busca: 'tanque diesel arla abastecer nota estoque combustível', fn: telaBomba },
-      { id: 'comprovantes', icone: '🧾', rotulo: 'Comprovantes atrasados', busca: 'fora do período atrasado loja comprovante nota antiga retroativo', fn: telaComprovantes },
       { id: 'consulta', icone: '🔍', rotulo: 'Consultar veículo', busca: 'placa extrato', fn: telaConsulta }
     ] },
     { grupo: 'Relatórios', itens: [
@@ -1279,6 +1278,7 @@
           CONFIG.tipos.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('') +
           '</select>' +
           '<div class="sub2" id="dicaTipo" style="margin-top:4px"></div>' +
+          '<div id="dicaLoja"></div>' +
         '<div id="blocoOficina" style="display:none;background:#FFF9F4;border:1px solid #F0B88E;border-radius:8px;padding:10px;margin-top:10px">' +
           '<div style="font-weight:800;margin-bottom:6px">Detalhamento da oficina</div>' +
           '<div class="linha"><div><label for="naturezaOficina">Natureza da despesa</label><select id="naturezaOficina">' +
@@ -1307,9 +1307,18 @@
           '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">' +
             '<input type="checkbox" id="forcarKm" style="width:auto">' +
             '<label for="forcarKm" style="margin:0;font-weight:400">Forçar KM menor que a última leitura</label>' +
+            // O período fica ANTES do botão, de propósito: escolher depois de
+            // gerar obrigaria a gerar duas vezes, e a primeira é justamente a
+            // cara (lê a base).
+            '<label for="histDe" style="margin:0;font-weight:400">de</label>' +
+            '<input type="date" id="histDe" style="width:auto;padding:4px 6px">' +
+            '<label for="histAte" style="margin:0;font-weight:400">até</label>' +
+            '<input type="date" id="histAte" style="width:auto;padding:4px 6px">' +
             '<button class="acao secundaria" style="padding:4px 10px" ' +
               'onclick="abrirHistoricoAbastecimento()">⛽ Histórico / estornar</button>' +
           '</div>' +
+          '<div class="sub2" style="margin-top:4px">Sem datas, mostra os 30 abastecimentos ' +
+            'mais recentes do veículo.</div>' +
           '<div id="histAbast" style="margin-top:10px"></div>' +
         '</div>' +
         '<div class="linha">' +
@@ -1520,6 +1529,41 @@
   }
 
   var ULTIMO_ODOMETRO = null;
+  var LOJA_DO_VEICULO = null;
+
+  /**
+   * Loja que não lança combustível: os tipos de combustível somem da lista.
+   *
+   * Esconder é metade do trabalho — o servidor recusa de qualquer jeito, que é
+   * o lado que vale. Mas deixar na tela um tipo que o servidor recusa é
+   * promessa falsa: a pessoa preenche tudo e só descobre no botão.
+   */
+  function aplicarCombustivelDaLoja(ctxv) {
+    LOJA_DO_VEICULO = ctxv && ctxv.ok ? ctxv : null;
+    var sel = el('tipo');
+    if (!sel) return;
+    var permite = !(ctxv && ctxv.permiteCombustivel === false);
+    var combustiveis = CONFIG.tiposCombustivel || [];
+    var escolhido = sel.value;
+    var tipos = (CONFIG.tipos || []).filter(function (t) {
+      return permite || combustiveis.indexOf(t) === -1;
+    });
+    sel.innerHTML = tipos.map(function (t) {
+      return '<option' + (t === escolhido ? ' selected' : '') + '>' + esc(t) + '</option>';
+    }).join('');
+    if (tipos.indexOf(escolhido) === -1) sel.selectedIndex = 0;
+    var aviso = el('dicaLoja');
+    if (aviso) {
+      aviso.innerHTML = permite ? '' :
+        '<div class="aviso" style="margin-top:8px">A loja <b>' + esc(ctxv.centro) + '</b> não ' +
+        'lança combustível: o veículo abastece por conta dela. Os tipos de combustível ' +
+        'saíram da lista — as outras despesas continuam normais.</div>';
+    }
+    // Os mesmos ajustes que o 'change' do tipo dispara: trocar as opções por
+    // baixo sem isso deixaria o bloco de abastecimento aberto para um tipo que
+    // não existe mais na lista.
+    ajustarLitros(); ajustarOficina(); ajustarAbastecimento(); ajustarDicaTipo();
+  }
 
   function consultarOdometro() {
     var dica = el('dicaKm');
@@ -1528,13 +1572,15 @@
     if (el('histAbast')) el('histAbast').innerHTML = '';
     if (!String(el('placa').value || '').trim()) { dica.textContent = 'Digite a placa para ver a última leitura.'; return; }
     dica.textContent = 'consultando última leitura…';
-    google.script.run.withSuccessHandler(function (ultimo) {
+    google.script.run.withSuccessHandler(function (ctxv) {
+      var ultimo = ctxv ? ctxv.ultimaLeitura : null;
       ULTIMO_ODOMETRO = ultimo || null;
       dica.textContent = ultimo
         ? 'Última leitura: ' + num(ultimo.km) + ' em ' + ultimo.data
         : 'Sem leitura anterior registrada.';
+      aplicarCombustivelDaLoja(ctxv);
       avaliarKmDigitado();
-    }).webUltimoOdometro(TOKEN, el('placa').value);
+    }).webContextoLancamento(TOKEN, el('placa').value);
   }
 
   /**
@@ -1555,11 +1601,19 @@
       'O KM digitado (' + num(km) + ') é menor que a última leitura (' +
       num(ULTIMO_ODOMETRO.km) + ' em ' + esc(ULTIMO_ODOMETRO.data) + '). ' +
       'Confira a sequência abaixo: se o errado for um abastecimento já gravado, ' +
-      'altere o KM dele ou estorne o lançamento.');
+      'altere o KM dele ou estorne o lançamento.', true);
   }
 
   var HIST_ABAST = null;
   var HIST_ABAST_SEQ = 0;
+
+  /** As datas escolhidas na tela, ou vazio. Dono único: quem monta a chamada. */
+  function periodoDoHistorico() {
+    return {
+      de: el('histDe') ? String(el('histDe').value || '') : '',
+      ate: el('histAte') ? String(el('histAte').value || '') : '',
+    };
+  }
 
   function erroHistorico(texto) {
     var caixa = el('histAbast');
@@ -1568,7 +1622,13 @@
       ' <a href="#" onclick="abrirHistoricoAbastecimento();return false">tentar de novo</a></div>';
   }
 
-  function abrirHistoricoAbastecimento(aviso) {
+  /**
+   * `semPeriodo`: a abertura AUTOMÁTICA (KM menor que o último) ignora o
+   * filtro de datas. Ali a pergunta é outra — "qual é a sequência recente
+   * deste veículo?" — e um filtro antigo deixado na tela faria o painel abrir
+   * vazio exatamente no momento em que ele mais precisa aparecer.
+   */
+  function abrirHistoricoAbastecimento(aviso, semPeriodo) {
     var caixa = el('histAbast');
     var placa = String(el('placa').value || '').trim();
     if (!caixa) return;
@@ -1613,7 +1673,7 @@
       clearTimeout(relogio);
       if (tentativa !== HIST_ABAST_SEQ) return;
       erroHistorico((e && e.message) || 'Falha sem mensagem no servidor.');
-    }).webHistoricoAbastecimentos(TOKEN, placa, 30);
+    }).webHistoricoAbastecimentos(TOKEN, placa, 0, semPeriodo ? null : periodoDoHistorico());
   }
 
   function fecharHistoricoAbastecimento() {
@@ -1713,7 +1773,7 @@
     }).withFailureHandler(function (e) {
       abrirHistoricoAbastecimento('');
       avisoHistorico(e.message, false);
-    }).webEstornarAbastecimento(TOKEN, l.id, motivo, HIST_ABAST.placa);
+    }).webEstornarAbastecimento(TOKEN, l.id, motivo, HIST_ABAST.placa, periodoDoHistorico());
   }
 
   function avisoHistorico(texto, ok) {
@@ -1784,6 +1844,34 @@
       .webSalvarLancamento(TOKEN, dados);
   }
 
+  /**
+   * Categoria OU grupo de frota, num campo só.
+   *
+   * São a mesma pergunta — "que parte da frota?" — e dois campos abririam a
+   * combinação impossível (categoria de um grupo + outro grupo) só para a
+   * pessoa descobrir depois que ela volta vazia. O valor do grupo vai com o
+   * prefixo GRUPO:, que o servidor conhece.
+   */
+  function seletorCategoriaOuGrupo(id, selecionado) {
+    var grupos = OPCOES.grupos || [];
+    return '<select id="' + id + '">' +
+      '<option value="TODAS">TODAS</option>' +
+      (grupos.length
+        ? '<optgroup label="Grupos de frota">' +
+            grupos.map(function (g) {
+              var v = 'GRUPO:' + g;
+              return '<option value="' + esc(v) + '"' +
+                (selecionado === v ? ' selected' : '') + '>' + esc(g) + '</option>';
+            }).join('') + '</optgroup>'
+        : '') +
+      '<optgroup label="Categorias">' +
+        (OPCOES.categorias || []).map(function (c) {
+          return '<option value="' + esc(c) + '"' +
+            (selecionado === c ? ' selected' : '') + '>' + esc(c) + '</option>';
+        }).join('') +
+      '</optgroup></select>';
+  }
+
   function seletor(id, itens, primeiro) {
     return '<select id="' + id + '">' +
       (primeiro ? '<option>' + primeiro + '</option>' : '') +
@@ -1815,8 +1903,8 @@
               return '<option>' + esc(r.nome) + '</option>'; }).join('') + '</select></div>' +
           '<div><label for="relCentro">Centro de custo</label>' +
             seletor('relCentro', OPCOES.centros, 'TODOS') + '</div>' +
-          '<div><label for="relCategoria">Categoria</label>' +
-            seletor('relCategoria', OPCOES.categorias, 'TODAS') + '</div>' +
+          '<div><label for="relCategoria">Categoria ou grupo</label>' +
+            seletorCategoriaOuGrupo('relCategoria') + '</div>' +
           '<div><label for="relVeiculo">Veículo (placa ou patrimônio)</label>' +
             '<input type="text" id="relVeiculo" list="listaVeiculosRel" autocomplete="off" ' +
               'placeholder="TODOS — digite a placa ou o patrimônio">' +
@@ -2243,8 +2331,6 @@
         '<div class="linha">' +
           '<div><label for="vDepreciacao">Depreciação mensal</label>' +
             '<input type="number" id="vDepreciacao" step="0.01" min="0" value="' + (Number(v.depreciacao) || 0) + '"></div>' +
-          '<div><label for="vEmplacamento">Emplacamento</label>' +
-            '<input type="number" id="vEmplacamento" step="0.01" min="0" value="' + (Number(v.emplacamento) || 0) + '"></div>' +
           '<div><label for="vSeguro">Seguro</label>' +
             '<input type="number" id="vSeguro" step="0.01" min="0" value="' + (Number(v.seguro) || 0) + '"></div>' +
         '</div>' +
@@ -2329,7 +2415,7 @@
         placa: el('vPlaca').value, descricao: el('vDescricao').value,
         categoria: el('vCategoria').value, centro: el('vCentro').value,
         codigo: el('vCodigo').value, depreciacao: el('vDepreciacao').value,
-        emplacamento: el('vEmplacamento').value, seguro: el('vSeguro').value,
+        seguro: el('vSeguro').value,
         precoCombustivel: el('vPreco').value,
         ipva: el('vIpva') ? el('vIpva').value : 0,
         combustivel: el('vCombustivel') ? el('vCombustivel').value : '',
@@ -2625,201 +2711,6 @@
                'mas confira se ficou faltando alguém.');
   }
 
-  // ------------------------------------------- comprovantes atrasados (V4.11)
-  // Comprovante que chega depois da competência fechar. Fica num registro
-  // apartado que NÃO toca em fechamento nenhum, e só vira despesa quando alguém
-  // clica em Incorporar — aí no período ABERTO, com a data original guardada.
-  var COMPROVANTES_CLIENTE = null;
-  var FILTRO_COMPROVANTE = 'PENDENTE';
-
-  function telaComprovantes() {
-    carregando('carregando comprovantes…');
-    google.script.run.withSuccessHandler(desenharComprovantes)
-      .withFailureHandler(falha).webComprovantes(TOKEN, FILTRO_COMPROVANTE);
-  }
-
-  function trocarFiltroComprovante() {
-    FILTRO_COMPROVANTE = el('compFiltro') ? el('compFiltro').value : 'PENDENTE';
-    telaComprovantes();
-  }
-
-  function desenharComprovantes(d) {
-    COMPROVANTES_CLIENTE = d;
-    var admin = SESSAO && SESSAO.perfil === 'ADMIN';
-
-    var porComp = (d.porCompetencia || []).map(function (c) {
-      return '<div class="item"><div class="r">' + esc(c.competencia) + '</div>' +
-        '<div class="v">' + brl(c.valor) + '</div>' +
-        '<div class="nota">' + c.qtd + ' comprovante(s)</div></div>';
-    }).join('');
-
-    var lista = (d.itens || []).map(function (i) {
-      var acoes = '';
-      if (admin && i.situacao === 'PENDENTE') {
-        acoes =
-          '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
-            '<button class="acao" id="cinc_' + i.linha + '" ' +
-              'onclick="incorporarComprovante(' + i.linha + ')">Incorporar no mês aberto</button>' +
-            '<button class="acao secundaria" onclick="pedirDescarte(' + i.linha + ')">Descartar</button>' +
-          '</div>' +
-          '<div id="cdesc_' + i.linha + '"></div>';
-      }
-      return '<div class="cartao" style="margin-bottom:10px">' +
-        '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">' +
-          '<div><b>' + esc(i.placa) + ' • ' + esc(i.data) + '</b>' +
-            '<div class="sub2" style="margin-top:4px">' + esc(i.tipo) +
-            (i.documento ? ' • NF ' + esc(i.documento) : '') +
-            ' • ' + esc(i.centro) + '</div></div>' +
-          '<span class="chip">' + esc(i.situacao) + '</span></div>' +
-        '<div class="sub" style="margin:10px 0">' +
-          'Competência de origem <b>' + esc(i.competencia) + '</b> • ' + brl(i.valor) +
-          (i.litros ? ' • ' + num(i.litros, 2) + ' L' : '') +
-          (i.km ? ' • KM ' + num(i.km) : '') + '</div>' +
-        (i.observacao ? '<div class="sub2">' + esc(i.observacao) + '</div>' : '') +
-        acoes + '<div id="cmsg_' + i.linha + '"></div></div>';
-    }).join('');
-
-    el('tela').innerHTML =
-      '<div class="dash-head"><div><div class="dash-eyebrow">Fora do período</div>' +
-        '<h2>Comprovantes atrasados</h2>' +
-        '<p>Comprovante que chegou depois do fechamento. Fica registrado aqui e ' +
-        '<b>não afeta nenhuma competência</b> até ser incorporado.</p></div></div>' +
-      (d.pendentes
-        ? '<div class="dash-mini">' +
-            '<div class="item"><div class="r">Pendentes</div><div class="v">' + num(d.pendentes) + '</div></div>' +
-            '<div class="item"><div class="r">Valor fora do mapa</div><div class="v">' + brl(d.valorPendente) + '</div></div>' +
-            '<div class="item"><div class="r">Litros fora do mapa</div><div class="v">' + num(d.litrosPendentes, 2) + '</div></div>' +
-          '</div>' +
-          (porComp ? '<div class="sub" style="margin:4px 0 8px">Por competência de origem</div>' +
-            '<div class="dash-mini">' + porComp + '</div>' : '')
-        : '<div class="ok-caixa">Nenhum comprovante pendente.</div>') +
-      cartaoRegistrarComprovante() +
-      '<div class="barra"><div><label for="compFiltro">Mostrar</label>' +
-        '<select id="compFiltro" onchange="trocarFiltroComprovante()">' +
-        (d.situacoes || []).map(function (s) {
-          return '<option value="' + esc(s) + '"' + (s === d.situacao ? ' selected' : '') +
-            '>' + esc(s) + '</option>';
-        }).join('') + '</select></div></div>' +
-      (lista || '<div class="cartao sub">Nenhum comprovante nesta situação.</div>');
-  }
-
-  function cartaoRegistrarComprovante() {
-    return '<div class="cartao" style="max-width:720px;margin-top:14px">' +
-      '<b>Registrar comprovante</b>' +
-      '<div class="sub2" style="margin:4px 0 10px">A data é a do abastecimento, não a de hoje. ' +
-        'Data dentro do período aberto é recusada — ali não há atraso, use “Novo lançamento”.</div>' +
-      '<div class="linha">' +
-        '<div style="flex:2"><label for="cpVeiculo">Placa ou patrimônio</label>' +
-          '<input type="text" id="cpVeiculo" list="listaVeicComprovante" autocomplete="off" ' +
-          'placeholder="placa ou nº patrimônio">' + datalistVeiculos('listaVeicComprovante', false) + '</div>' +
-        '<div><label for="cpData">Data do abastecimento</label>' +
-          '<input type="date" id="cpData"></div>' +
-      '</div>' +
-      '<div class="linha">' +
-        '<div style="flex:2"><label for="cpTipo">Tipo de despesa</label>' +
-          seletor('cpTipo', CONFIG.tipos || []) + '</div>' +
-        '<div><label for="cpLitros">Litros / quantidade</label>' +
-          '<input type="number" id="cpLitros" step="0.001" min="0"></div>' +
-        '<div><label for="cpValor">Valor R$</label>' +
-          '<input type="number" id="cpValor" step="0.01" min="0"></div>' +
-      '</div>' +
-      '<div class="linha">' +
-        '<div><label for="cpKm">KM no comprovante</label>' +
-          '<input type="number" id="cpKm" step="1" min="0"></div>' +
-        '<div><label for="cpDoc">NF / Documento</label><input type="text" id="cpDoc"></div>' +
-        '<div style="flex:2"><label for="cpObs">Observação</label><input type="text" id="cpObs"></div>' +
-      '</div>' +
-      '<div class="sub2" style="margin-top:6px">O KM fica guardado no comprovante e aparece ' +
-        'no relatório, mas <b>não entra na série do odômetro</b>: inserir uma leitura antiga ' +
-        'mudaria o KM rodado e o km/l de um mês já apurado.</div>' +
-      '<button class="acao" id="btnComprovante" style="width:100%;margin-top:14px" ' +
-        'onclick="salvarComprovante(false)">Registrar comprovante</button>' +
-      '<div id="msgComprovante" style="margin-top:10px"></div></div>';
-  }
-
-  function salvarComprovante(confirmarDuplicado) {
-    var botao = el('btnComprovante');
-    botao.disabled = true;
-    botao.textContent = 'Registrando…';
-    google.script.run
-      .withSuccessHandler(function (r) {
-        botao.disabled = false;
-        botao.textContent = 'Registrar comprovante';
-        if (r.ok) { status(r.mensagem); telaComprovantes(); return; }
-        el('msgComprovante').innerHTML =
-          '<div class="' + (r.duplicidade ? 'aviso' : 'erro-caixa') + '">' + esc(r.mensagem) + '</div>' +
-          (r.duplicidade
-            ? '<button class="acao secundaria" style="margin-top:8px" ' +
-              'onclick="salvarComprovante(true)">Registrar mesmo assim</button>' : '');
-      })
-      .withFailureHandler(function (e) {
-        botao.disabled = false;
-        botao.textContent = 'Registrar comprovante';
-        el('msgComprovante').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
-      })
-      .webRegistrarComprovante(TOKEN, {
-        veiculo: el('cpVeiculo').value, data: el('cpData').value,
-        tipo: el('cpTipo').value, litros: el('cpLitros').value,
-        valor: el('cpValor').value, km: el('cpKm').value,
-        documento: el('cpDoc').value, observacao: el('cpObs').value,
-        confirmarDuplicado: confirmarDuplicado === true
-      });
-  }
-
-  function incorporarComprovante(linha) {
-    var botao = el('cinc_' + linha);
-    botao.disabled = true;
-    botao.textContent = 'Incorporando…';
-    google.script.run
-      .withSuccessHandler(function (r) {
-        if (!r.ok) {
-          botao.disabled = false;
-          botao.textContent = 'Incorporar no mês aberto';
-          el('cmsg_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
-            esc(r.mensagem) + '</div>';
-          return;
-        }
-        status(r.mensagem);
-        INICIO_CLIENTE = null;   // o painel mudou: o custo do mês aberto subiu
-        telaComprovantes();
-      })
-      .withFailureHandler(function (e) {
-        botao.disabled = false;
-        botao.textContent = 'Incorporar no mês aberto';
-        el('cmsg_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
-          esc(e.message) + '</div>';
-      })
-      .webIncorporarComprovante(TOKEN, linha);
-  }
-
-  function pedirDescarte(linha) {
-    el('cdesc_' + linha).innerHTML =
-      '<div class="linha" style="margin-top:10px">' +
-        '<div style="flex:2"><label for="cmot_' + linha + '">Motivo do descarte</label>' +
-          '<input type="text" id="cmot_' + linha + '" placeholder="duplicata, papel ilegível, não é nosso…"></div>' +
-        '<div style="flex:0 0 auto;align-self:flex-end">' +
-          '<button class="acao secundaria" onclick="confirmarDescarte(' + linha + ')">Confirmar</button></div>' +
-      '</div>';
-  }
-
-  function confirmarDescarte(linha) {
-    google.script.run
-      .withSuccessHandler(function (r) {
-        if (!r.ok) {
-          el('cmsg_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
-            esc(r.mensagem) + '</div>';
-          return;
-        }
-        status(r.mensagem);
-        telaComprovantes();
-      })
-      .withFailureHandler(function (e) {
-        el('cmsg_' + linha).innerHTML = '<div class="erro-caixa" style="margin-top:8px">' +
-          esc(e.message) + '</div>';
-      })
-      .webDescartarComprovante(TOKEN, linha, el('cmot_' + linha).value);
-  }
-
   function telaCentros() {
     carregando();
     google.script.run.withSuccessHandler(desenharCentros)
@@ -2864,7 +2755,16 @@
           : num(item.percentual, 3)) + '</td>' +
         '<td class="num">' + (editavel
           ? '<input type="checkbox" id="rc' + i + '"' + (item.recebe ? ' checked' : '') + '>'
-          : (item.recebe ? 'SIM' : 'NAO')) + '</td></tr>';
+          : (item.recebe ? 'SIM' : 'NAO')) + '</td>' +
+        // Combustível NÃO é por competência, como o percentual: a loja
+        // abastece ou não abastece, hoje. Por isso grava na hora, sozinho,
+        // em vez de esperar o botão "Salvar rateio".
+        '<td class="num">' + (item.combustivel === false
+            ? '<span class="sub2">não lança</span>' : 'lança') +
+          (admin ? ' <button class="acao secundaria" style="padding:2px 8px;font-size:12px" ' +
+            'onclick="alternarCombustivelLoja(' + i + ')">' +
+            (item.combustivel === false ? 'liberar' : 'bloquear') + '</button>' : '') +
+        '</td></tr>';
     }).join('');
 
     el('tela').innerHTML =
@@ -2888,7 +2788,8 @@
         : '') +
       '<div class="cartao" style="padding:0;overflow:hidden"><div class="rolagem">' +
         '<table><thead><tr><th>Centro de custo</th><th class="num">% de rateio</th>' +
-        '<th class="num">Recebe rateio</th></tr></thead><tbody>' + linhas + '</tbody></table>' +
+        '<th class="num">Recebe rateio</th><th class="num">Combustível</th>' +
+        '</tr></thead><tbody>' + linhas + '</tbody></table>' +
       '</div></div>' +
       '<div id="somaCentros" style="margin-top:12px"></div>' +
       (editavel
@@ -2913,6 +2814,22 @@
     el(onde).innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
       esc(r.mensagem) + '</div>';
     if (r.ok) recarregarCentros();
+  }
+
+  function alternarCombustivelLoja(i) {
+    var item = CENTROS_DADOS.itens[i];
+    if (!item) return;
+    var bloquear = item.combustivel !== false;
+    if (!confirm(bloquear
+      ? 'Bloquear o combustível da loja ' + item.centro + '?\n\n' +
+        'Os veículos dela deixam de aceitar lançamento de combustível e saem do ' +
+        'cálculo de km/l. O que já foi lançado não muda.'
+      : 'Liberar o combustível da loja ' + item.centro + '?')) return;
+    carregando('gravando…');
+    google.script.run.withSuccessHandler(function (r) {
+      recarregarCentros();
+      status(r.mensagem);
+    }).withFailureHandler(falha).webCentroCombustivel(TOKEN, item.centro, !bloquear);
   }
 
   function criarLoja() {
@@ -4256,9 +4173,9 @@
             'ANTES (restaurável em Saúde do sistema). Usuários, Parâmetros e o Log de atividade são mantidos.</p>' +
           '<label for="zerarEscopo">O que apagar</label>' +
           '<select id="zerarEscopo">' +
-            '<option value="valores">ZERAR VALORES e manter os veículos — apaga lançamentos, KM, bomba, histórico e fechamentos e zera os valores do cadastro (depreciação, emplacamento, seguro, IPVA, bônus, preço)</option>' +
+            '<option value="valores">ZERAR VALORES e manter os veículos — apaga lançamentos, KM, bomba, histórico e fechamentos e zera os valores do cadastro (depreciação, seguro, IPVA, bônus, preço)</option>' +
             '<option value="tudo">TUDO — lançamentos, KM, bomba, histórico, fechamentos E cadastro de veículos, centros e fornecedores</option>' +
-            '<option value="movimento">Só o movimento — mantém veículos, centros e fornecedores (o Resumo continua mostrando seguro/emplacamento/IPVA do cadastro)</option>' +
+            '<option value="movimento">Só o movimento — mantém veículos, centros e fornecedores (o Resumo continua mostrando o seguro do cadastro)</option>' +
           '</select>' +
           '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
             '<input type="checkbox" id="zerarLog" style="width:auto">' +

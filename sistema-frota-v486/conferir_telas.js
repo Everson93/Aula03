@@ -103,17 +103,32 @@ ok('ADMIN enxerga tudo que OPERADOR enxerga', operadorForaDeAdmin.length === 0,
   operadorForaDeAdmin.join(', ') + '\n        -> perfil mais alto com MENOS acesso é sempre esquecimento');
 
 console.log('\n6. As telas desta rodada, por nome');
-['orcamento', 'comprovantes'].forEach(function (id) {
+['orcamento'].forEach(function (id) {
   const item = menu.filter(function (i) { return i.id === id; })[0];
   ok('"' + id + '" está no menu e visível para o ADMIN',
     !!item && perfis.ADMIN.indexOf(id) !== -1,
     'era exatamente o defeito: entregue e invisível');
 });
-ok('"comprovantes" também para o OPERADOR, que é quem recebe o papel',
-  perfis.OPERADOR.indexOf('comprovantes') !== -1);
-ok('"comprovantes" NÃO para CONSULTA, que não registra nada',
-  perfis.CONSULTA.indexOf('comprovantes') === -1,
-  'a tela é um formulário de registro; mostrá-la a quem o servidor recusa é promessa falsa');
+
+console.log('\n6b. Tela REMOVIDA some das três listas, não de uma');
+// O espelho da regra de cima, e o mesmo defeito ao contrário: sobrar numa
+// lista deixa um item de menu que chama uma funcao que nao existe mais — a
+// tela abre em branco, ou o <script> inteiro quebra. 'comprovantes' saiu na
+// V4.36.
+['comprovantes'].forEach(function (id) {
+  ok('"' + id + '" saiu do menu', menu.every(function (i) { return i.id !== id; }));
+  ok('"' + id + '" saiu de TELAS_WEB (?p=' + id + ' não entra mais)',
+    telasWeb.indexOf(id) === -1);
+  ['CONSULTA', 'OPERADOR', 'ADMIN'].forEach(function (perfil) {
+    ok('"' + id + '" saiu do perfil ' + perfil, perfis[perfil].indexOf(id) === -1);
+  });
+  ok('e nenhuma função da tela ficou para trás no App.html',
+    !new RegExp('tela' + id[0].toUpperCase() + id.slice(1), 'i').test(app),
+    'função órfã é o que faz o menu chamar o que não existe');
+  ok('nem o endpoint no servidor',
+    !/function web(Registrar|Incorporar|Descartar)Comprovante\b/.test(gs),
+    'endpoint vivo sem tela é superfície de ataque sem dono');
+});
 
 console.log('\n4. Depois de gravar, o formulário não guarda o veículo');
 // Placa que fica preenchida lança o gasto seguinte no veículo anterior — e

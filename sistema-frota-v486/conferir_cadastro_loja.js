@@ -32,6 +32,9 @@ function novaAba(linhas, colunas) {
     linhas: linhas, colunas: colunas || 3, apagadas: [], escritas: 0,
     getLastRow: function () { return aba.linhas.length + 1; },
     getMaxRows: function () { return aba.linhas.length + 1; },
+    // V4.36: a aba Centros ganhou a coluna Combustível, e a leitura pergunta
+    // quantas colunas existem antes de pedi-las.
+    getMaxColumns: function () { return aba.colunas; },
     insertRowsAfter: function () {},
     deleteRow: function (n) { aba.apagadas.push(n); aba.linhas.splice(n - 2, 1); },
     getRange: function (linha, coluna, nL, nC) {
