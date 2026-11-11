@@ -4565,6 +4565,72 @@ mesmo período que se queria provar completo).
 
 `Codigo.gs`. **Não precisa** rodar *Instalar / atualizar sistema*.
 
+## V4.40.0 — KM acima do normal pede confirmação
+
+*"Algumas vezes está aparecendo KM muito alto do que o normal, teria como
+colocar um aviso e pedir confirmação?"*
+
+O sistema recusava KM **menor** que a leitura anterior desde o começo. O lado
+de cima estava aberto — e é por onde entra o dígito a mais. Digitar
+**1.015.000** no lugar de **101.500** não volta: estraga o km/l e o R$/km
+daquele veículo e da frota inteira, e só aparece no fechamento, quando
+ninguém lembra mais do lançamento.
+
+### A conta é km por DIA, contra o próprio veículo
+
+Comparar o KM absoluto não diria nada: 400.000 é normal numa carreta e absurdo
+numa moto. A referência é o **ritmo** do veículo — a **mediana** de km/dia
+entre as suas últimas 12 leituras — e o limite é **3× essa mediana**.
+
+Mediana, não média, e por um motivo prático: uma leitura errada multiplica a
+média e passa a **autorizar o erro seguinte, ainda maior**. A mediana ignora o
+ponto fora da curva. Por mutação, trocar uma pela outra é pego.
+
+Três bordas, todas com prova:
+
+- **Piso de 200 km/dia.** Empilhadeira que faz 8 km/dia dispararia aviso ao
+  sair uma vez para a oficina. Aviso que toca à toa é aviso que a pessoa
+  aprende a fechar sem ler.
+- **Teto de 1.500 km/dia** (parâmetro `KM_DIA_MAXIMO`), que vale **sempre**:
+  veículo de ritmo alto não ganha licença para o dígito a mais.
+- **Sem histórico** (menos de 3 intervalos), vale só o teto. Transformar a
+  primeira leitura do veículo em regra é pior que não ter regra.
+
+### A tela avisa; o servidor é que barra
+
+A tela calcula na hora de digitar — o ritmo vem junto da última leitura, na
+mesma ida — e mostra a conta por extenso: *"São 913.500 km em 2 dias —
+456.750 km por dia, contra 400 km/dia que este veículo costuma fazer. Entrou
+um dígito a mais?"*, com a caixa **"Confirmo: o KM está certo"**.
+
+O servidor recalcula e **recusa** se não vier confirmado. Aviso que a tela dá
+e o servidor não cobra é aviso que se fecha sem ler.
+
+A mesma guarda entrou em **corrigir uma leitura** pelo painel de histórico —
+que é onde o dígito a mais tem a melhor chance de entrar, porque a pessoa já
+está convencida de que o valor gravado está errado e digita o "certo" com
+pressa. Ali a recusa volta marcada com `kmAlto`, e a tela **pergunta** em vez
+de só recusar.
+
+`forçar` também confirma, e isso não afrouxa nada: as duas condições são
+**mutuamente exclusivas** — um KM não pode ser ao mesmo tempo menor que a
+leitura anterior e muito acima dela. Sem isso, o formulário da planilha e a
+Central, que têm "forçar" e não têm a caixa nova, ficariam sem saída.
+
+### Suítes
+
+`conferir_km_alto.js`, nova, com **35 provas**. **41 suítes, ~1.645 provas.**
+Por mutação, 14 defeitos reintroduzidos, **14 pegos**. Um sobreviveu na
+primeira rodada: a prova de "mediana, não média" punha a leitura absurda
+**antes** de toda a sequência, onde ela só produz percurso negativo — que o
+cálculo já descarta. Dentro da sequência, cai.
+
+### Instalação
+
+`Codigo.gs` e `App.html`. **Precisa** rodar *Instalar / atualizar sistema*
+uma vez: o parâmetro `KM_DIA_MAXIMO` é novo. Sem rodar, vale o padrão de
+1.500 km/dia (`paramOuPadrao_`), e nada quebra.
+
 ---
 
 # Pendente

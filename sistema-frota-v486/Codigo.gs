@@ -606,6 +606,8 @@ const PARAMETROS_PADRAO = [
   ['EMAIL_ALERTAS', '', 'E-mails que recebem o alerta diário, separados por vírgula (vazio desliga)'],
   ['HORA_ALERTA', 7, 'Hora do dia (0-23) em que o alerta diário é enviado'],
   ['ESTOQUE_MINIMO_L', 500, 'Litros abaixo dos quais o tanque interno entra no alerta diário'],
+  ['KM_DIA_MAXIMO', 1500,
+    'Teto de km por dia entre duas leituras. Acima disso o lançamento pede confirmação'],
   ['MANUTENCAO_RELEVANTE_RS', 1500,
     'Valor de oficina+pneus no mês a partir do qual o veículo entra no bloco de manutenção'],
   ['GRUPOS_FROTA',
@@ -641,7 +643,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.39.1';
+const VERSAO_SISTEMA = '4.40.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -3713,6 +3715,96 @@ function ultimoOdometro(placa) {
  * Usa datas estritamente menores/maiores porque o modelo guarda somente o dia,
  * não a hora; várias leituras no mesmo dia não têm ordem cronológica confiável.
  */
+/**
+ * Ritmo normal do veiculo: a MEDIANA de km por dia entre leituras seguidas.
+ *
+ * Mediana, nao media: uma unica leitura errada (o digito a mais que criou
+ * este recurso) multiplica a media e passa a "autorizar" o proximo erro
+ * ainda maior. A mediana ignora o ponto fora da curva.
+ *
+ * Usa as ultimas leituras, nao a serie inteira: caminhao que mudou de rota em
+ * marco nao deve ser julgado pelo que fazia em janeiro.
+ */
+const LEITURAS_RITMO_ = 12;
+const FATOR_KM_ALTO_ = 3;
+/**
+ * Piso em km/dia. Sem ele, veiculo que roda 8 km por dia dentro do galpao
+ * dispararia aviso ao sair uma vez para a oficina — e aviso que toca sem
+ * motivo e aviso que a pessoa aprende a ignorar.
+ */
+const PISO_KM_DIA_ = 200;
+
+function ritmoDoVeiculo_(placa) {
+  const alvo = normalizaPlaca_(placa);
+  const leituras = [];
+  lerOdometro_().forEach(function (linha) {
+    if (normalizaPlaca_(linha[1]) !== alvo) return;
+    const d = linha[0];
+    const km = Number(linha[2]);
+    if (!ehDataReal_(d) || !isFinite(km) || km <= 0) return;
+    leituras.push({ data: d, km: km });
+  });
+  leituras.sort(function (a, b) { return a.data - b.data; });
+  const recentes = leituras.slice(-LEITURAS_RITMO_);
+  const ritmos = [];
+  for (let i = 1; i < recentes.length; i++) {
+    const dias = (recentes[i].data - recentes[i - 1].data) / 86400000;
+    const percurso = recentes[i].km - recentes[i - 1].km;
+    // Percurso negativo e troca de odometro ou erro ja corrigido; dia zero
+    // seriam duas leituras no mesmo dia, que nao medem ritmo nenhum.
+    if (dias < 1 || percurso < 0) continue;
+    ritmos.push(percurso / dias);
+  }
+  return { leituras: recentes.length, amostras: ritmos.length, mediana: mediana_(ritmos) };
+}
+
+/**
+ * Este KM implica um percurso grande demais desde a leitura anterior?
+ *
+ * O caso real: digitar 1.015.000 no lugar de 101.500. O sistema ja recusava
+ * KM MENOR que o anterior, mas o lado de cima estava aberto — e um digito a
+ * mais nao volta: ele estraga o km/l e o R$/km do veiculo e da frota inteira,
+ * e so aparece no fechamento.
+ */
+function avaliarPercursoAlto_(placa, km, data, anteriorOpcional) {
+  const vazio = { alto: false, percurso: 0, dias: 0, kmPorDia: 0, limite: 0, mediana: 0 };
+  if (!isFinite(km) || !(km > 0) || !ehDataReal_(data)) return vazio;
+  const anterior = anteriorOpcional !== undefined
+    ? anteriorOpcional : vizinhosOdometro_(placa, data).anterior;
+  if (!anterior) return vazio;
+  const dias = Math.max((data - anterior.data) / 86400000, 1);
+  const percurso = km - anterior.km;
+  if (percurso <= 0) return vazio;      // o lado de baixo ja tem guarda propria
+  const kmPorDia = percurso / dias;
+  const ritmo = ritmoDoVeiculo_(placa);
+  const teto = Number(paramOuPadrao_('KM_DIA_MAXIMO', 1500)) || 1500;
+  // Sem historico suficiente vale so o teto: inventar um "normal" a partir de
+  // uma amostra seria transformar a primeira leitura do veiculo em regra.
+  const limiteVeiculo = ritmo.amostras >= 3
+    ? Math.max(ritmo.mediana * FATOR_KM_ALTO_, PISO_KM_DIA_)
+    : teto;
+  // O teto vale SEMPRE: veiculo com historico alto nao ganha licenca para o
+  // digito a mais.
+  const limite = Math.min(limiteVeiculo, teto);
+  return {
+    alto: kmPorDia > limite,
+    percurso: percurso, dias: dias, kmPorDia: kmPorDia,
+    limite: limite, mediana: ritmo.mediana, amostras: ritmo.amostras,
+    anterior: anterior,
+  };
+}
+
+/** A frase do aviso, uma vez só: a tela e o servidor dizem a MESMA coisa. */
+function textoPercursoAlto_(a) {
+  return 'Esse KM dá ' + numBR_(a.percurso, 0) + ' km em ' +
+    numBR_(a.dias, 0) + ' dia(s) — ' + numBR_(a.kmPorDia, 0) + ' km por dia, ' +
+    (a.amostras >= 3
+      ? 'contra ' + numBR_(a.mediana, 0) + ' km/dia que este veículo costuma fazer'
+      : 'acima do teto de ' + numBR_(a.limite, 0) + ' km/dia') +
+    '. A leitura anterior é ' + numBR_(a.anterior.km, 0) + ' em ' +
+    formatarData_(a.anterior.data) + '. Confira se não entrou um dígito a mais.';
+}
+
 function vizinhosOdometro_(placa, data) {
   const sheet = aba_(ABAS.ODOMETRO);
   if (!data || !(data instanceof Date) || sheet.getLastRow() < 2) {
@@ -3879,6 +3971,20 @@ function salvarLancamento_(dados, opcoesSalvar) {
           erros.push('KM ' + km.toLocaleString('pt-BR') + ' é maior que uma leitura posterior (' +
             vizinhos.posterior.km.toLocaleString('pt-BR') + ' em ' + formatarData_(vizinhos.posterior.data) +
             '). Confira a data/KM ou marque "forçar" somente se a sequência excepcional for legítima.');
+        }
+        // O lado de CIMA. A recusa e do servidor, nao so da tela: aviso que a
+        // tela da e o servidor nao cobra e aviso que se fecha sem ler.
+        //
+        // `forcarKm` tambem confirma, e isso nao afrouxa nada: as duas
+        // condicoes sao mutuamente exclusivas — um KM nao pode ser ao mesmo
+        // tempo MENOR que a leitura anterior e muito ACIMA dela. Sem isso, o
+        // formulario da planilha e a Central, que tem "forcar" e nao tem a
+        // caixa nova, ficariam sem saida nenhuma.
+        const alto = avaliarPercursoAlto_(placa, km, data, vizinhos.anterior);
+        if (alto.alto && dados.confirmarKmAlto !== true && dados.forcarKm !== true) {
+          erros.push(textoPercursoAlto_(alto) +
+            ' Se estiver certo, marque "confirmar KM acima do normal" ' +
+            '(ou "forçar", no formulário da planilha).');
         }
       }
     }
@@ -6864,12 +6970,24 @@ function webContextoLancamento(token, placa) {
   }
   const alvo = normalizaPlaca_(resolvido.veiculo.placa);
   const centro = classificacaoVeiculoAtual_(alvo).centro;
+  const ritmo = ritmoDoVeiculo_(alvo);
+  const teto = Number(paramOuPadrao_('KM_DIA_MAXIMO', 1500)) || 1500;
   return {
     ok: true,
     placa: resolvido.veiculo.placa,
     centro: centro,
     permiteCombustivel: centroPermiteCombustivel_(centro),
     ultimaLeitura: ultimaLeituraOdometro_(alvo),
+    // Vai junto para a tela avisar ANTES de a pessoa clicar em gravar, sem
+    // uma segunda ida. O servidor recalcula e recusa de qualquer jeito: a
+    // tela avisa, o servidor e que barra.
+    ritmoKmDia: {
+      mediana: ritmo.mediana,
+      amostras: ritmo.amostras,
+      limite: ritmo.amostras >= 3
+        ? Math.min(Math.max(ritmo.mediana * FATOR_KM_ALTO_, PISO_KM_DIA_), teto)
+        : teto,
+    },
   };
 }
 
@@ -12367,11 +12485,19 @@ function recusarLeituraDePeriodoFechado_(dia) {
  * clique arriscaria o limite de 6 minutos — o mesmo que travou o botao de
  * divergencias na V4.20. A mensagem avisa o que falta.
  */
-function ajustarLeituraOdometro_(ref, novoKm) {
+function ajustarLeituraOdometro_(ref, novoKm, confirmarAlto) {
   exigirExecucaoMutacao_();
   const km = Number(novoKm);
   if (!isFinite(km) || km <= 0) {
     return { ok: false, mensagem: 'Informe um KM maior que zero.' };
+  }
+  // A MESMA guarda do lançamento. Corrigir uma leitura é onde o dígito a mais
+  // tem a melhor chance de entrar: a pessoa já está convencida de que o valor
+  // gravado está errado, e digita o "certo" com pressa.
+  const dataRef = parseDataIsoEstrita_(ref && ref.data);
+  const alto = avaliarPercursoAlto_(ref && ref.placa, km, dataRef);
+  if (alto.alto && confirmarAlto !== true) {
+    return { ok: false, kmAlto: true, mensagem: textoPercursoAlto_(alto) };
   }
   if (km === Number(ref && ref.km)) {
     return { ok: false, mensagem: 'O KM informado é igual ao que já está gravado.' };
@@ -12434,9 +12560,9 @@ function excluirLeituraOdometro_(ref) {
   }
 }
 
-function webAjustarOdometro(token, ref, novoKm) {
+function webAjustarOdometro(token, ref, novoKm, confirmarAlto) {
   autorizarContextoWeb_(token, ['OPERADOR', 'ADMIN']);
-  return ajustarLeituraOdometro_(ref, novoKm);
+  return ajustarLeituraOdometro_(ref, novoKm, confirmarAlto === true);
 }
 
 function webExcluirOdometro(token, ref) {

@@ -1324,6 +1324,7 @@
           '<label for="km">KM / horímetro</label>' +
           '<input type="number" id="km" step="1" min="0" inputmode="numeric">' +
           '<div class="sub2" id="dicaKm" style="margin-top:4px"></div>' +
+          '<div id="avisoKmAlto"></div>' +
           '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">' +
             '<input type="checkbox" id="forcarKm" style="width:auto">' +
             '<label for="forcarKm" style="margin:0;font-weight:400">Forçar KM menor que a última leitura</label>' +
@@ -1372,6 +1373,8 @@
     el('tipoAbastecimento').addEventListener('change', ajustarAbastecimento);
     el('data').addEventListener('change', function(){
       if (ehCombustivel()) consultarCustoBomba();
+      // A data entra na conta de km/dia: mudá-la muda o veredito.
+      avaliarKmAlto();
     });
     el('litros').addEventListener('input', atualizarValorInterno);
     // No 'change', não no 'input': enquanto a pessoa digita 3 de 31.500 o
@@ -1550,6 +1553,58 @@
 
   var ULTIMO_ODOMETRO = null;
   var LOJA_DO_VEICULO = null;
+  var RITMO_KM = null;
+
+  /**
+   * KM muito ACIMA do normal: avisa e pede confirmação.
+   *
+   * O lado de baixo (KM menor que o último) já tinha guarda desde o começo.
+   * O de cima estava aberto, e é por onde entra o dígito a mais: digitar
+   * 1.015.000 no lugar de 101.500 não volta — estraga o km/l e o R$/km do
+   * veículo e da frota, e só aparece no fechamento.
+   *
+   * A conta é km POR DIA desde a última leitura, contra o que este veículo
+   * costuma fazer. Comparar o KM absoluto não diria nada: 400.000 é normal
+   * numa carreta e absurdo numa moto.
+   */
+  function avaliarKmAlto() {
+    var caixa = el('avisoKmAlto');
+    if (!caixa) return false;
+    var km = Number(el('km').value || 0);
+    if (!ULTIMO_ODOMETRO || !RITMO_KM || !(km > 0) || !el('data')) {
+      caixa.innerHTML = ''; return false;
+    }
+    var percurso = km - Number(ULTIMO_ODOMETRO.km || 0);
+    if (!(percurso > 0)) { caixa.innerHTML = ''; return false; }
+    var dias = diasEntre(ULTIMO_ODOMETRO.data, el('data').value);
+    var kmDia = percurso / Math.max(dias, 1);
+    if (!(kmDia > RITMO_KM.limite)) { caixa.innerHTML = ''; return false; }
+    caixa.innerHTML =
+      '<div class="erro-caixa" style="margin-top:8px">' +
+        '<b>Confira esse KM.</b> São ' + num(percurso) + ' km em ' + num(Math.max(dias, 1)) +
+        ' dia(s) — <b>' + num(Math.round(kmDia)) + ' km por dia</b>' +
+        (RITMO_KM.amostras >= 3
+          ? ', contra ' + num(Math.round(RITMO_KM.mediana)) + ' km/dia que este veículo costuma fazer'
+          : ', acima do teto de ' + num(Math.round(RITMO_KM.limite)) + ' km/dia') +
+        '. A última leitura é ' + num(ULTIMO_ODOMETRO.km) + ' em ' + esc(ULTIMO_ODOMETRO.data) +
+        '. Entrou um dígito a mais?' +
+        '<div style="margin-top:8px;display:flex;align-items:center;gap:8px">' +
+          '<input type="checkbox" id="confirmarKmAlto" style="width:auto">' +
+          '<label for="confirmarKmAlto" style="margin:0;font-weight:400">' +
+            'Confirmo: o KM está certo, o veículo rodou isso mesmo</label>' +
+        '</div></div>';
+    return true;
+  }
+
+  /** Dias entre a última leitura (dd/mm/aaaa) e a data do lançamento (aaaa-mm-dd). */
+  function diasEntre(dataBR, dataIso) {
+    var p = String(dataBR || '').split('/');
+    var q = String(dataIso || '').split('-');
+    if (p.length !== 3 || q.length !== 3) return 1;
+    var a = new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0]));
+    var b = new Date(Number(q[0]), Number(q[1]) - 1, Number(q[2]));
+    return Math.max(Math.round((b - a) / 86400000), 1);
+  }
 
   /**
    * Loja que não lança combustível: os tipos de combustível somem da lista.
@@ -1598,6 +1653,7 @@
       dica.textContent = ultimo
         ? 'Última leitura: ' + num(ultimo.km) + ' em ' + ultimo.data
         : 'Sem leitura anterior registrada.';
+      RITMO_KM = ctxv && ctxv.ritmoKmDia ? ctxv.ritmoKmDia : null;
       aplicarCombustivelDaLoja(ctxv);
       avaliarKmDigitado();
     }).webContextoLancamento(TOKEN, el('placa').value);
@@ -1612,6 +1668,10 @@
    * para saber qual dos dois é o furado, e corrigir obrigava a sair daqui.
    */
   function avaliarKmDigitado() {
+    // Os DOIS lados do mesmo campo: abaixo da última leitura abre o
+    // histórico; muito acima do normal pede confirmação. Avaliar só um
+    // deixaria o outro passar em silêncio.
+    avaliarKmAlto();
     var caixa = el('histAbast');
     if (!caixa || !ULTIMO_ODOMETRO) return;
     var km = Number(el('km').value || 0);
@@ -1760,12 +1820,26 @@
     if (!novo || isNaN(Number(novo))) { avisoHistorico('KM inválido.', false); return; }
     el('histAbast').innerHTML = '<div class="carregando">alterando a leitura…</div>';
     google.script.run.withSuccessHandler(function (r) {
+      // `kmAlto` é recusa que o usuário pode levantar: o servidor explica a
+      // conta e pergunta. Sem este ramo, a única saída seria desistir.
+      if (r.kmAlto && confirm(r.mensagem + '\n\nGravar assim mesmo?')) {
+        google.script.run.withSuccessHandler(function (r2) {
+          abrirHistoricoAbastecimento('');
+          avisoHistorico(r2.mensagem, r2.ok);
+        }).withFailureHandler(function (e2) {
+          abrirHistoricoAbastecimento('');
+          avisoHistorico(e2.message, false);
+        }).webAjustarOdometro(TOKEN, { placa: HIST_ABAST.placa, data: l.dataIso, km: l.km },
+          Number(novo), true);
+        return;
+      }
       abrirHistoricoAbastecimento('');
       avisoHistorico(r.mensagem, r.ok);
     }).withFailureHandler(function (e) {
       abrirHistoricoAbastecimento('');
       avisoHistorico(e.message, false);
-    }).webAjustarOdometro(TOKEN, { placa: HIST_ABAST.placa, data: l.dataIso, km: l.km }, Number(novo));
+    }).webAjustarOdometro(TOKEN, { placa: HIST_ABAST.placa, data: l.dataIso, km: l.km },
+      Number(novo), false);
   }
 
   function estornarAbastecimento(i) {
@@ -1821,6 +1895,7 @@
       data: el('data').value, placa: String(el('placa').value || '').trim(), tipo: el('tipo').value,
       litros: el('litros').value, valor: el('valor').value, km: el('km').value,
       forcarKm: el('forcarKm').checked,
+      confirmarKmAlto: !!(el('confirmarKmAlto') && el('confirmarKmAlto').checked),
       fornecedor: el('fornecedor') ? el('fornecedor').value : '',
       tipoAbastecimento: el('blocoAbastecimento') &&
         el('blocoAbastecimento').style.display !== 'none' && el('tipoAbastecimento')
