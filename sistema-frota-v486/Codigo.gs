@@ -641,7 +641,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.38.1';
+const VERSAO_SISTEMA = '4.39.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -7391,6 +7391,33 @@ const CATALOGO_RELATORIOS = {
     ],
   },
 
+  'Extrato do tanque': {
+    descricao: 'Quantos litros foram dados BAIXA do estoque no período, com saldo inicial, ' +
+      'cargas recebidas, aferições e saldo final. Dia a dia, com o saldo ao fim de cada dia. ' +
+      'Baixa é o abastecimento interno do veículo — compra feita fora não passa pelo tanque.',
+    fonte: 'lancamentos',
+    filtros: [],
+    colunas: [
+      ['Produto', '@', 130], ['Saldo inicial (L)', '#,##0.0', 125],
+      ['Entrou (L)', '#,##0.0', 110], ['Baixa do estoque (L)', '#,##0.0', 145],
+      ['Ajustes (L)', '#,##0.0', 110], ['Saldo final (L)', '#,##0.0', 120],
+      ['Valor em estoque', 'R$ #,##0.00', 130],
+    ],
+    somenteApp: true,
+  },
+
+  'Aferições de estoque do tanque': {
+    descricao: 'Cada medição do tanque que corrigiu o saldo: data, produto, diferença em ' +
+      'litros, valor e a justificativa de quem fez.',
+    fonte: 'lancamentos',
+    filtros: [],
+    colunas: [
+      ['Data', 'dd/mm/yyyy', 95], ['Produto', '@', 130], ['Diferença (L)', '#,##0.0', 115],
+      ['Valor', 'R$ #,##0.00', 115], ['Quem fez e por quê', '@', 320],
+    ],
+    somenteApp: true,
+  },
+
   'Diesel por mês e por semana': {
     descricao: 'Mês a mês (e, abaixo, semana a semana) quantos litros de diesel a frota ' +
       'consumiu, quanto custou, o preço médio pago e quanto variou em relação ao período ' +
@@ -9451,50 +9478,54 @@ function escreverRelatorioNaAba_(aba, rel, titulo, subtitulo, larguras) {
     const l = Number(larguras && larguras[i]) || padrao[i];
     aba.setColumnWidth(i + 1, Math.max(60, Math.min(l, 320)));
   }
-  // O bloco `consolidado`, quando existe, sai LOGO ABAIXO do total — o mesmo
-  // que o PDF faz. Antes ele so ia para a tela, e o catalogo precisava avisar
-  // "a versao da planilha nao traz o consolidado": o arquivo que ia para a
-  // contabilidade era menor que o que estava na tela.
-  const consolidado = rel.consolidado;
-  if (consolidado && consolidado.colunas && consolidado.linhas && consolidado.linhas.length) {
-    const inicio = linhaTotal + 2;
-    const necessariasCons = inicio + consolidado.linhas.length + 2;
-    if (aba.getMaxRows() < necessariasCons) {
-      aba.insertRowsAfter(aba.getMaxRows(), necessariasCons - aba.getMaxRows());
+  // Os blocos extras saem LOGO ABAIXO do total, um depois do outro — o mesmo
+  // que o PDF faz, pela mesma lista. Antes so ia para a tela, e o catalogo
+  // precisava avisar "a versao da planilha nao traz o consolidado": o arquivo
+  // que ia para a contabilidade era menor que o que estava na tela.
+  let proxima = linhaTotal + 2;
+  blocosDoRelatorio_(rel, 'antes').concat(blocosDoRelatorio_(rel, 'depois'))
+    .forEach(function (bloco) {
+    const nColsB = bloco.colunas.length;
+    const temTotal = !!(bloco.totais && bloco.totais.length && bloco.linhas.length > 1);
+    const altura = 2 + bloco.linhas.length + (temTotal ? 1 : 0) + 1;
+    if (aba.getMaxRows() < proxima + altura) {
+      aba.insertRowsAfter(aba.getMaxRows(), proxima + altura - aba.getMaxRows());
     }
-    const nColsCons = consolidado.colunas.length;
-    if (aba.getMaxColumns() < nColsCons) {
-      aba.insertColumnsAfter(aba.getMaxColumns(), nColsCons - aba.getMaxColumns());
+    if (aba.getMaxColumns() < nColsB) {
+      aba.insertColumnsAfter(aba.getMaxColumns(), nColsB - aba.getMaxColumns());
     }
-    aba.getRange(inicio, 1).setValue(consolidado.titulo || 'Consolidado')
-      .setFontWeight('bold').setFontSize(12);
-    aba.getRange(inicio + 1, 1, 1, nColsCons)
-      .setValues([consolidado.colunas.map(function (c) { return c.titulo; })])
+    // Titulo e subtitulo numa escrita so: escrita por celula e o custo mais
+    // caro do Apps Script, e com varios blocos isso vira uma por bloco.
+    aba.getRange(proxima, 1, 1, Math.min(2, nColsB))
+      .setValues([[bloco.titulo || 'Consolidado', bloco.subtitulo || ''].slice(0, Math.min(2, nColsB))]);
+    aba.getRange(proxima, 1).setFontWeight('bold').setFontSize(12);
+    aba.getRange(proxima + 1, 1, 1, nColsB)
+      .setValues([bloco.colunas.map(function (c) { return c.titulo; })])
       .setBackground(CORES.LARANJA).setFontColor(CORES.PRETO).setFontWeight('bold').setWrap(true);
-    if (consolidado.linhas.length) {
-      aba.getRange(inicio + 2, 1, consolidado.linhas.length, nColsCons)
-        .setValues(consolidado.linhas);
+    if (bloco.linhas.length) {
+      aba.getRange(proxima + 2, 1, bloco.linhas.length, nColsB).setValues(bloco.linhas);
     }
-    const formatoCons = consolidado.colunas.map(function (c) { return formatoPlanilha_(c.tipo); });
-    const alinhoCons = consolidado.colunas.map(function (c) {
-      return tipoEhNumerico_(c.tipo) ? 'right' : 'left';
-    });
-    let linhasCons = consolidado.linhas.length;
-    if (consolidado.totais && consolidado.totais.length && consolidado.linhas.length > 1) {
-      const totalCons = consolidado.totais.map(function (v, i) {
+    let nLinhasB = bloco.linhas.length;
+    if (temTotal) {
+      const totalB = bloco.totais.map(function (v, i) {
         if (v === null || v === undefined) return i === 0 ? 'TOTAL' : '';
         return v;
       });
-      aba.getRange(inicio + 2 + linhasCons, 1, 1, nColsCons).setValues([totalCons])
+      aba.getRange(proxima + 2 + nLinhasB, 1, 1, nColsB).setValues([totalB])
         .setFontWeight('bold').setBackground(CORES.CINZA);
-      linhasCons++;
+      nLinhasB++;
     }
-    const formatosCons = [], alinhosCons = [];
-    for (let i = 0; i < linhasCons; i++) { formatosCons.push(formatoCons); alinhosCons.push(alinhoCons); }
-    const blocoCons = aba.getRange(inicio + 2, 1, linhasCons, nColsCons);
-    blocoCons.setNumberFormats(formatosCons);
-    blocoCons.setHorizontalAlignments(alinhosCons);
-  }
+    const formatoB = bloco.colunas.map(function (c) { return formatoPlanilha_(c.tipo); });
+    const alinhoB = bloco.colunas.map(function (c) {
+      return tipoEhNumerico_(c.tipo) ? 'right' : 'left';
+    });
+    const formatosB = [], alinhosB = [];
+    for (let i = 0; i < nLinhasB; i++) { formatosB.push(formatoB); alinhosB.push(alinhoB); }
+    const faixa = aba.getRange(proxima + 2, 1, nLinhasB, nColsB);
+    faixa.setNumberFormats(formatosB);
+    faixa.setHorizontalAlignments(alinhosB);
+    proxima += altura + 1;
+  });
   return linhaTotal;
 }
 
@@ -9643,26 +9674,56 @@ function webRelatorioXlsx(token, tipo, filtros, emails) {
  * tela e ficava de fora do arquivo: o relatorio de diesel, que o usuario
  * pediu "semanal mensal", perderia justamente a metade mensal.
  */
+/**
+ * Os blocos extras de um relatorio, em ordem.
+ *
+ * `consolidado` (V4.31) era UM bloco; o extrato do tanque precisa de varios —
+ * dia a dia, cargas, afericoes. Em vez de um segundo campo com outra regra,
+ * `blocos` e a forma geral e `consolidado` continua valendo como o ultimo
+ * bloco. Dono unico para os tres renderizadores: tela, PDF e planilha lendo
+ * listas diferentes era a chance de o arquivo sair com menos coisa que a tela
+ * — que ja aconteceu uma vez neste projeto.
+ */
+function blocosDoRelatorio_(rel, quando) {
+  const alvo = quando === 'antes' ? 'antes' : 'depois';
+  const lista = [];
+  (rel && rel.blocos ? rel.blocos : []).forEach(function (b) {
+    if (b && b.colunas && b.colunas.length) lista.push(b);
+  });
+  if (rel && rel.consolidado && rel.consolidado.colunas && rel.consolidado.colunas.length) {
+    lista.push(rel.consolidado);
+  }
+  return lista.filter(function (b) {
+    // 'depois' e o padrao. Um bloco que diz "a tabela acima" tem de sair
+    // DEPOIS dela — e era o que nao acontecia: a tela desenhava o bloco antes
+    // e o PDF depois, com o mesmo subtitulo nos dois.
+    const posicao = b.posicao === 'antes' ? 'antes' : 'depois';
+    return posicao === alvo && b.linhas && b.linhas.length;
+  });
+}
+
 function htmlRelatorioPdf_(tipo, rel, filtrosTexto) {
   const mes = normalizarMesReferencia_(param_('MES_REFERENCIA'));
-  const consolidado = (rel.consolidado && rel.consolidado.colunas &&
-    rel.consolidado.linhas && rel.consolidado.linhas.length) ? rel.consolidado : null;
+  const blocosAntes = blocosDoRelatorio_(rel, 'antes');
+  const blocos = blocosDoRelatorio_(rel, 'depois');
+  function blocoHtml(b) {
+    return '<h2 style="margin:16px 0 6px;font-size:13px">' +
+      escHtml_(b.titulo || 'Consolidado') + '</h2>' +
+      (b.subtitulo
+        ? '<p class="sub" style="margin:0 0 6px">' + escHtml_(b.subtitulo) + '</p>'
+        : '') +
+      tabelaRelatorioPdf_(b, { compacta: b.colunas.length > 10 });
+  }
   return '<!doctype html><html><head><meta charset="utf-8"><style>' + estiloPdf_() +
     '</style></head><body>' +
     cabecalhoPdf_(String(tipo || ''), mes, periodoDoMes_(mes),
       filtrosTexto ? escHtml_(filtrosTexto) : '') +
     (rel.mensagem ? '<p class="sub" style="margin:0 0 8px">' + escHtml_(rel.mensagem) + '</p>' : '') +
+    blocosAntes.map(blocoHtml).join('') +
     (rel.titulo ? '<h2 style="margin:10px 0 6px;font-size:13px">' +
       escHtml_(rel.titulo) + '</h2>' : '') +
     tabelaRelatorioPdf_(rel, { compacta: rel.colunas.length > 10 }) +
-    (consolidado
-      ? '<h2 style="margin:16px 0 6px;font-size:13px">' +
-          escHtml_(consolidado.titulo || 'Consolidado') + '</h2>' +
-        (consolidado.subtitulo
-          ? '<p class="sub" style="margin:0 0 6px">' + escHtml_(consolidado.subtitulo) + '</p>'
-          : '') +
-        tabelaRelatorioPdf_(consolidado, { compacta: consolidado.colunas.length > 10 })
-      : '') +
+    blocos.map(blocoHtml).join('') +
     rodapePdf_('') +
     '</body></html>';
 }
@@ -10806,6 +10867,8 @@ function relatorioPorTipo_(tipo, centro, categoria, placa, termo, periodo) {
     case 'Detalhamento de oficina por veículo': return relatorioDetalhamentoOficina_(centro, categoria, placa, periodo);
     case 'Combustível lançado por veículo': return relatorioCombustivelLancado_(centro, categoria, placa, periodo);
     case 'Diesel por mês e por semana': return relatorioDieselPeriodo_(centro, categoria, placa, periodo);
+    case 'Extrato do tanque': return relatorioExtratoTanque_(periodo);
+    case 'Aferições de estoque do tanque': return relatorioAfericoes_(periodo);
     case 'Abastecimento e consumo': return relatorioAbastecimento_(centro, categoria, placa);
     case 'Ranking de custo por KM': return relatorioRanking_(centro, categoria, placa);
     case 'IPVA por veículo': return relatorioIpva_(centro, categoria, placa);
@@ -11268,6 +11331,9 @@ function relatorioManutencao_(centro, categoria, placa) {
 function consolidadoOficina_(itens) {
   const ordenados = itens.slice().sort(function (a, b) { return b.valor - a.valor; });
   return {
+    // Vai no topo: responde "qual veiculo esta consumindo oficina" sem
+    // obrigar a rolar a lista de servicos inteira.
+    posicao: 'antes',
     colunas: [col_('Placa'), col_('Veículo'), col_('Serviços', 'numero'),
       col_('Natureza que mais pesou'), col_('Total', 'moeda')],
     linhas: ordenados.map(function (v) {
@@ -11512,6 +11578,219 @@ function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
   };
 }
 
+/**
+ * Movimentos do tanque num periodo, ja separados.
+ *
+ * Fonte unica das duas saidas (extrato e afericoes) e dos dois numeros que
+ * precisam fechar entre si: o que ENTROU e o que foi dado BAIXA. Calcular
+ * cada um no seu relatorio seria a chance classica de o extrato dizer um
+ * total e a conferencia dizer outro.
+ *
+ * Carga com `AJUSTE-ESTOQUE` no documento NAO e compra: e afericao. Somar as
+ * duas como "entrada" faria uma correcao para menos aparecer como compra
+ * negativa no meio das notas fiscais.
+ */
+function movimentosDoTanque_(produto, janela) {
+  const alvo = String(produto || '').trim().toUpperCase();
+  const cargas = [];
+  const ajustes = [];
+  lerCargasBomba_().forEach(function (c) {
+    if (String(c[COL_CARGA.PRODUTO - 1] || '').trim().toUpperCase() !== alvo) return;
+    const data = c[COL_CARGA.DATA - 1];
+    if (!janela.contem(data)) return;
+    const item = {
+      data: data,
+      documento: String(c[COL_CARGA.DOCUMENTO - 1] || ''),
+      litros: Number(c[COL_CARGA.QUANTIDADE - 1]) || 0,
+      valor: Number(c[COL_CARGA.VALOR - 1]) || 0,
+      observacao: String(c[COL_CARGA.OBSERVACAO - 1] || ''),
+    };
+    if (ehAjusteEstoque_(item.documento)) ajustes.push(item); else cargas.push(item);
+  });
+
+  // A BAIXA e o abastecimento interno do veiculo. Nao ha "lancamento de
+  // saida" separado de proposito: a saida E o abastecimento, e e isso que
+  // garante que o estoque e o custo por veiculo contem a mesma coisa.
+  const baixas = [];
+  lerLancamentos_().forEach(function (l) {
+    if (produtoDoTipo_(l[L_.TIPO]) !== alvo) return;
+    if (tipoAbastecimentoDe_(l[L_.TIPO], l[L_.TIPO_ABASTECIMENTO]) !== ABASTECIMENTO_INTERNO) return;
+    const data = l[L_.DATA];
+    if (!janela.contem(data)) return;
+    const litros = Number(l[L_.LITROS]) || 0;
+    if (litros <= 0) return;
+    baixas.push({ data: data, placa: String(l[L_.PLACA] || ''), litros: litros,
+      valor: Number(l[L_.VALOR]) || 0, id: String(l[L_.ID] || '') });
+  });
+
+  function soma(lista, campo) {
+    return lista.reduce(function (t, i) { return t + i[campo]; }, 0);
+  }
+  return {
+    produto: alvo,
+    cargas: cargas, ajustes: ajustes, baixas: baixas,
+    litrosEntrada: soma(cargas, 'litros'),
+    valorEntrada: soma(cargas, 'valor'),
+    litrosBaixa: soma(baixas, 'litros'),
+    valorBaixa: soma(baixas, 'valor'),
+    litrosAjuste: soma(ajustes, 'litros'),
+    valorAjuste: soma(ajustes, 'valor'),
+  };
+}
+
+/** Saldo do tanque no instante ANTERIOR ao inicio do periodo. */
+function saldoAntesDe_(produto, inicio) {
+  if (!inicio) return estadoTanque_(produto, null);
+  return estadoTanque_(produto, new Date(inicio.getTime() - 1));
+}
+
+/**
+ * Extrato do tanque: saldo inicial, o que entrou, o que foi dado BAIXA, as
+ * afericoes e o saldo final.
+ *
+ * O numero que o usuario pediu em primeiro lugar — quantos litros sairam do
+ * estoque — abre o relatorio e e coluna propria, nao uma conta que ele tenha
+ * de fazer somando linhas.
+ */
+function relatorioExtratoTanque_(periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido, periodoAtual_());
+  const porProduto = PRODUTOS_BOMBA.map(function (produto) {
+    const m = movimentosDoTanque_(produto, janela);
+    const inicial = saldoAntesDe_(produto, janela.inicio);
+    const final = estadoTanque_(produto, janela.fim);
+    return { produto: produto, m: m, inicial: inicial, final: final };
+  });
+
+  const resumo = porProduto.map(function (p) {
+    return [p.produto, p.inicial.litros, p.m.litrosEntrada, p.m.litrosBaixa,
+      p.m.litrosAjuste, p.final.litros, p.final.valor];
+  });
+
+  // Dia a dia do produto principal: e a ficha de estoque, a tabela que se
+  // poe na frente de quem vai conferir. Saldo ao fim de CADA dia, para a
+  // conferencia nao precisar refazer a conta.
+  const principal = porProduto[0];
+  const dias = {};
+  function diaDe(data, campo, litros) {
+    const chave = isoDoDia_(data);
+    if (!chave) return;
+    if (!dias[chave]) dias[chave] = { data: data, entrada: 0, baixa: 0, ajuste: 0 };
+    dias[chave][campo] += litros;
+  }
+  principal.m.cargas.forEach(function (c) { diaDe(c.data, 'entrada', c.litros); });
+  principal.m.baixas.forEach(function (b) { diaDe(b.data, 'baixa', b.litros); });
+  principal.m.ajustes.forEach(function (a) { diaDe(a.data, 'ajuste', a.litros); });
+  const chavesDia = Object.keys(dias).sort();
+  let saldoCorrente = principal.inicial.litros;
+  const linhasDia = chavesDia.map(function (k) {
+    const d = dias[k];
+    saldoCorrente += d.entrada + d.ajuste - d.baixa;
+    return [formatarData_(d.data), d.entrada, d.baixa, d.ajuste, saldoCorrente];
+  }).reverse();
+
+  const blocos = [];
+  if (linhasDia.length) {
+    blocos.push({
+      titulo: 'Dia a dia — ' + principal.produto,
+      subtitulo: 'Saldo ao fim de cada dia. Entradas e ajustes somam, baixa subtrai.',
+      colunas: [col_('Dia', 'data'), col_('Entrou (L)', 'volume'),
+        col_('Baixa do estoque (L)', 'volume'), col_('Ajuste (L)', 'volume'),
+        col_('Saldo no fim do dia (L)', 'volume')],
+      linhas: linhasDia,
+      totais: [null, principal.m.litrosEntrada, principal.m.litrosBaixa,
+        principal.m.litrosAjuste, null],
+    });
+  }
+  const cargasTodas = [];
+  porProduto.forEach(function (p) {
+    p.m.cargas.forEach(function (c) {
+      cargasTodas.push([formatarData_(c.data), p.produto, c.documento, c.litros, c.valor,
+        c.litros > 0 ? c.valor / c.litros : 0]);
+    });
+  });
+  if (cargasTodas.length) {
+    blocos.push({
+      titulo: 'Cargas recebidas no período',
+      colunas: [col_('Data', 'data'), col_('Produto'), col_('NF / Documento'),
+        col_('Litros', 'volume'), col_('Valor', 'moeda'), col_('R$ / litro', 'moeda3')],
+      linhas: cargasTodas.sort(function (a, b) { return a[0] < b[0] ? 1 : -1; }),
+      totais: [null, null, null,
+        porProduto.reduce(function (t, p) { return t + p.m.litrosEntrada; }, 0),
+        porProduto.reduce(function (t, p) { return t + p.m.valorEntrada; }, 0), null],
+    });
+  }
+  const afericoes = linhasDeAfericao_(porProduto);
+  if (afericoes.length) {
+    blocos.push({
+      titulo: 'Aferições no período',
+      subtitulo: 'Diferença entre o saldo medido no tanque e o saldo do sistema.',
+      colunas: COLUNAS_AFERICAO_,
+      linhas: afericoes,
+      totais: [null, null,
+        porProduto.reduce(function (t, p) { return t + p.m.litrosAjuste; }, 0), null, null],
+    });
+  }
+
+  const baixaTotal = porProduto.reduce(function (t, p) { return t + p.m.litrosBaixa; }, 0);
+  return {
+    titulo: 'Resumo do período',
+    colunas: [col_('Produto'), col_('Saldo inicial (L)', 'volume'),
+      col_('Entrou (L)', 'volume'), col_('Baixa do estoque (L)', 'volume'),
+      col_('Ajustes (L)', 'volume'), col_('Saldo final (L)', 'volume'),
+      col_('Valor em estoque', 'moeda')],
+    linhas: resumo,
+    totais: null,
+    blocos: blocos,
+    mensagem: 'Baixa do estoque no período: ' + numBR_(baixaTotal, 1) + ' L' +
+      ' (' + janela.rotulo + '). Baixa é o abastecimento interno do veículo — ' +
+      'o que sai do tanque. Compra feita fora não passa por aqui.',
+  };
+}
+
+/** Colunas da aferição, declaradas uma vez: o extrato e o relatório próprio usam as duas. */
+const COLUNAS_AFERICAO_ = [
+  { titulo: 'Data', tipo: 'data' }, { titulo: 'Produto', tipo: 'texto' },
+  { titulo: 'Diferença (L)', tipo: 'volume' }, { titulo: 'Valor', tipo: 'moeda' },
+  { titulo: 'Quem fez e por quê', tipo: 'texto' },
+];
+
+function linhasDeAfericao_(porProduto) {
+  const linhas = [];
+  porProduto.forEach(function (p) {
+    p.m.ajustes.forEach(function (a) {
+      linhas.push([formatarData_(a.data), p.produto, a.litros, a.valor, a.observacao]);
+    });
+  });
+  return linhas.sort(function (a, b) { return a[0] < b[0] ? 1 : -1; });
+}
+
+/**
+ * So as afericoes, com a justificativa de cada uma.
+ *
+ * Existe separado porque a pergunta e outra: o extrato responde "quanto saiu";
+ * este responde "quem mexeu no saldo, quando e com que justificativa" — que e
+ * a pergunta de quem audita.
+ */
+function relatorioAfericoes_(periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido, periodoAtual_());
+  const porProduto = PRODUTOS_BOMBA.map(function (produto) {
+    return { produto: produto, m: movimentosDoTanque_(produto, janela) };
+  });
+  const linhas = linhasDeAfericao_(porProduto);
+  const totalLitros = porProduto.reduce(function (t, p) { return t + p.m.litrosAjuste; }, 0);
+  const totalValor = porProduto.reduce(function (t, p) { return t + p.m.valorAjuste; }, 0);
+  return {
+    colunas: COLUNAS_AFERICAO_,
+    linhas: linhas,
+    totais: [null, null, totalLitros, totalValor, null],
+    mensagem: linhas.length
+      ? linhas.length + ' aferição(ões) ' + janela.rotulo + ', somando ' +
+        numBR_(totalLitros, 1) + ' L de diferença. Sobra é entrada, falta é saída; ' +
+        'as duas valem pelo mesmo preço que o tanque cobra do abastecimento.'
+      : 'Nenhuma aferição de estoque ' + janela.rotulo + '.',
+  };
+}
+
 function relatorioCombustivelLancado_(centro, categoria, placa, periodoEscolhido) {
   const janela = intervaloDeDatas_(periodoEscolhido);
   const veiculos = {};
@@ -11569,6 +11848,9 @@ function relatorioCombustivelLancado_(centro, categoria, placa, periodoEscolhido
     totais: [null, null, null, null, null, null, null, somaLitros, somaValor,
       somaLitros > 0 ? somaValor / somaLitros : 0, null, null],
     consolidado: {
+      // 'antes': este responde "quem está consumindo" e vai no topo, para nao
+      // obrigar a rolar centenas de linhas ate chegar nele.
+      posicao: 'antes',
       colunas: [col_('Placa'), col_('Veículo'), col_('Abastecimentos', 'numero'),
         col_('Litros', 'litros'), col_('Valor', 'moeda'), col_('R$ / litro', 'moeda3')],
       linhas: porVeiculo.map(function (v) {

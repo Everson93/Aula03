@@ -166,15 +166,26 @@ ok('e usa o mesmo montador de filtros da planilha',
   'a função e as duas chamadas');
 ok('o servidor refaz o relatório para o PDF também',
   /function gerarPdfRelatorio_[\s\S]{0,900}relatorioPorTipo_\(nome,/.test(gs));
+const pdfRel = gs.slice(gs.indexOf('function htmlRelatorioPdf_'));
+const corpoPdfRel = pdfRel.slice(0, pdfRel.indexOf('\nfunction gerarPdfRelatorio_'));
 ok('e usa o MESMO renderizador de tabela do PDF do fechamento',
-  /function htmlRelatorioPdf_[\s\S]{0,900}tabelaRelatorioPdf_\(rel,/.test(gs),
+  /tabelaRelatorioPdf_\(rel,/.test(corpoPdfRel),
   'um gerador próprio aqui faria o fechamento sair formatado e o resto com número cru');
-ok('o consolidado também entra no PDF',
-  /function htmlRelatorioPdf_[\s\S]{0,1200}tabelaRelatorioPdf_\(consolidado,/.test(gs),
+ok('os blocos extras também entram no PDF',
+  /tabelaRelatorioPdf_\(b,/.test(corpoPdfRel) &&
+  /blocosDoRelatorio_\(rel, 'antes'\)/.test(corpoPdfRel) &&
+  /blocosDoRelatorio_\(rel, 'depois'\)/.test(corpoPdfRel),
   'o relatório de diesel perderia justamente a metade mensal');
 ok('e na planilha',
-  /const consolidado = rel\.consolidado;/.test(gs) &&
-  /escreverRelatorioNaAba_[\s\S]*?consolidado\.linhas/.test(gs));
+  /blocosDoRelatorio_\(rel, 'antes'\)\.concat\(blocosDoRelatorio_\(rel, 'depois'\)\)/.test(gs));
+// Um bloco que diz "a tabela acima" tem de sair DEPOIS dela. A tela desenhava
+// antes e o PDF depois, com o mesmo subtitulo nos dois.
+ok('e os TRÊS respeitam a posição declarada pelo bloco',
+  /b\.posicao === 'antes' \? 'antes' : 'depois'/.test(gs) &&
+  /b && b\.posicao === 'antes' \? 'antes' : 'depois'/.test(app),
+  'tela e PDF com ordens diferentes fazem o subtítulo mentir num dos dois');
+ok('e o padrão é DEPOIS',
+  /const alvo = quando === 'antes' \? 'antes' : 'depois';/.test(gs));
 ok('o servidor refaz o relatório em vez de receber a tabela pronta',
   /function gerarXlsxRelatorio_[\s\S]{0,900}relatorioPorTipo_\(nome,/.test(gs),
   'tabela vinda do cliente envelhece entre o desenho e o clique, e é adulterável');

@@ -109,6 +109,12 @@ const ACEITAS = {
     'colagem no Odômetro: limitado às linhas coladas, não à frota',
   'webTanques -> estadoTanque_':
     'laço sobre PRODUTOS_BOMBA (punhado de produtos), não sobre a frota',
+  'relatorioExtratoTanque_ -> movimentosDoTanque_':
+    'idem: um por produto da bomba, e cada um lê caches de execução',
+  'relatorioExtratoTanque_ -> estadoTanque_':
+    'idem: saldo inicial e final de cada produto',
+  'relatorioAfericoes_ -> movimentosDoTanque_':
+    'idem: um por produto da bomba',
   'alertasTanqueEPendencias_ -> estadoTanque_':
     'idem: um por produto da bomba',
   'corrigirLancamento_ -> recalcularAbastecimentosInternos_':
@@ -127,7 +133,13 @@ const ACEITAS = {
 
 // Escrita de planilha dentro de laço: a maioria é montagem de aba, que só roda
 // no "Instalar / atualizar sistema". Lentidão ali é aceitável; nas demais, não.
-const ESCRITA_ACEITA = /^(montar|formatar|gravarParam_|gravarHistorico_|escreverCabecalhoRelatorio_|arquivarExcedenteLog_|corrigirCelulasComErroVeiculos_|atualizarResumoSemLock_|zerarSistema_|restaurarDadosDeBackupSemLock_|removerLinhaLancamento_|webExcluirCargaBomba|repararLancamentosDeslocados_|webCorrigirPendencia)/;
+//
+// `escreverRelatorioNaAba_` entrou na lista com um motivo diferente: o laço
+// dele é sobre os BLOCOS do relatório (um punhado: dia a dia, cargas,
+// aferições), não sobre linhas. Cada bloco é um intervalo próprio, de forma
+// diferente e não contíguo — não há como juntar os blocos numa escrita só, e
+// as linhas DENTRO de cada bloco já saem num `setValues` único.
+const ESCRITA_ACEITA = /^(montar|formatar|gravarParam_|gravarHistorico_|escreverRelatorioNaAba_|escreverCabecalhoRelatorio_|arquivarExcedenteLog_|corrigirCelulasComErroVeiculos_|atualizarResumoSemLock_|zerarSistema_|restaurarDadosDeBackupSemLock_|removerLinhaLancamento_|webExcluirCargaBomba|repararLancamentosDeslocados_|webCorrigirPendencia)/;
 
 let provas = 0, falhas = 0;
 function ok(nome, cond, detalhe) {

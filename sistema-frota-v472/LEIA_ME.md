@@ -4435,6 +4435,82 @@ planilha estava quebrada), e dois `return` que começavam igual.
 `Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
 sistema*.
 
+## V4.39.0 — extrato do tanque e aferições
+
+*"Extrato do tanque por período, histórico de aferições, no relatório eu
+preciso saber só quantos litros foram dados baixa do estoque."*
+
+A última frase é a que manda no desenho. O relatório **abre** com esse número
+— *"Baixa do estoque no período: 3.500,0 L"* — e ele é **coluna própria**, não
+uma conta que alguém tenha de fazer somando linhas.
+
+### O que é "baixa", escrito no próprio relatório
+
+Baixa é o **abastecimento interno** do veículo: o que sai do tanque. Compra
+feita fora não encosta no estoque. Isso vai na mensagem, porque é a confusão
+mais fácil de cometer — e somar as duas dobraria o consumo.
+
+Não existe "lançamento de saída" separado, de propósito: a saída **é** o
+abastecimento, e é isso que garante que o estoque e o custo por veículo contam
+a mesma coisa.
+
+### O extrato
+
+| bloco | o que responde |
+|---|---|
+| **Resumo do período** | por produto: saldo inicial, entrou, **baixa do estoque**, ajustes, saldo final, valor em estoque |
+| **Dia a dia** | entradas, baixa, ajustes e o **saldo ao fim de cada dia** — a ficha que se põe na frente de quem vai conferir |
+| **Cargas recebidas** | data, NF, litros, valor e R$/litro |
+| **Aferições** | data, produto, diferença e **quem fez e por quê** |
+
+A conta fecha por construção, e isso é prova: *saldo inicial + entradas +
+ajustes − baixa = saldo final*. **Extrato que não fecha é pior que extrato
+nenhum, porque parece conferido.**
+
+Dois detalhes que custaram decisão:
+
+- **Aferição não é carga.** Ela mora na mesma aba (`Carga na Bomba`) com o
+  documento `AJUSTE-ESTOQUE`. Somá-la às notas faria uma correção para menos
+  virar "compra negativa" no meio das NFs. Por mutação, confundir as duas
+  derruba **7 provas**.
+- **O saldo inicial é o do instante ANTERIOR ao início do período**, e o dia a
+  dia parte dele. Começar do zero faria a ficha fechar num número que não
+  existe, e o extrato não bateria com o do mês anterior.
+- O rodapé do dia a dia **não totaliza o saldo**: somar saldos de dias
+  diferentes não significa nada.
+
+### As aferições, também como relatório próprio
+
+Porque a pergunta é outra: o extrato responde *"quanto saiu"*; este responde
+*"quem mexeu no saldo, quando e com que justificativa"* — que é a pergunta de
+quem audita. As colunas são declaradas **uma vez** e usadas nos dois lugares;
+duas definições seriam a chance de uma ganhar coluna e a outra não.
+
+### O que isso exigiu por baixo: blocos
+
+O payload de relatório tinha **um** `consolidado`. O extrato precisa de
+vários. Entrou `blocos`, e com ele uma correção de algo que eu mesmo tinha
+deixado quebrado na V4.38: **na tela o bloco saía ANTES da tabela e no PDF
+DEPOIS** — com o mesmo subtítulo nos dois. O do diesel dizia *"o mesmo período
+da tabela acima"* e, na tela, saía **acima** dela.
+
+Agora cada bloco declara `posicao` (`antes` / `depois`, com `depois` como
+padrão) e os **três** renderizadores obedecem. O consolidado "por veículo"
+continua no topo, que é onde ele serve.
+
+### Suítes
+
+`conferir_extrato_tanque.js`, nova, com **38 provas**. **40 suítes, ~1.605
+provas.** Por mutação, 15 defeitos reintroduzidos, **15 pegos**. Um sobreviveu
+na primeira rodada: o saldo corrente partindo do zero passava despercebido
+porque o fixture começava com o tanque vazio — com um recorte que começa no
+meio do mês, cai.
+
+### Instalação
+
+`Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
+sistema*.
+
 ---
 
 # Pendente

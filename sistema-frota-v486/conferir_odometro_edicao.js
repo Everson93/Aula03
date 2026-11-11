@@ -300,7 +300,7 @@ ok('e o servidor exige os mesmos perfis',
 ok('a linha sem referência não ganha botão',
   /if \(!dados\.refs\[i\]\) return l\.concat\(\[''\]\);/.test(app));
 ok('a confirmação sobrevive ao recarregamento do relatório',
-  /AVISO_LEITURA = ''/.test(app) && /aviso \+ resumo \+/.test(app),
+  /AVISO_LEITURA = ''/.test(app) && /innerHTML = aviso \+ blocosEm\('antes'\)/.test(app),
   'escrever direto no saidaRel some quando o relatório recalcula');
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S) de ' + provas : '\nTUDO OK: ' + provas + ' provas');

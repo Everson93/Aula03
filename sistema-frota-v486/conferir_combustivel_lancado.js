@@ -212,8 +212,14 @@ ok('e na mesma ordem',
 
 const app = fs.readFileSync('App.html', 'utf8');
 ok('a tela desenha o consolidado que o servidor manda',
-  /tabela\(dados\.consolidado\)/.test(app) && app.indexOf('porVeiculo') === -1,
+  /blocos\.push\(dados\.consolidado\)/.test(app) &&
+  /return tabela\(b\);/.test(app) && app.indexOf('porVeiculo') === -1,
   'a tela montava as colunas do consolidado, amarrando todos ao formato da oficina');
+// V4.39: o consolidado "por veiculo" continua NO TOPO, que e onde ele serve —
+// responde "quem esta consumindo" sem obrigar a rolar centenas de linhas.
+ok('e esse, por veículo, continua no topo',
+  /posicao: 'antes'/.test(fs.readFileSync('Codigo.gs', 'utf8')),
+  'bloco que responde "quem está consumindo" embaixo de 300 linhas não responde nada');
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S) de ' + provas : '\nTUDO OK: ' + provas + ' provas');
 process.exit(falhas ? 1 : 0);

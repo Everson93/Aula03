@@ -459,7 +459,7 @@ ok('e a planilha também', (function () {
   const escritor = fonte7.slice(fonte7.indexOf('function escreverRelatorioNaAba_'));
   const corpo = escritor.slice(0, escritor.indexOf('\nfunction '));
   return /rel\.totais && rel\.totais\.length && rel\.linhas\.length > 1/.test(corpo) &&
-    /consolidado\.totais\.length && consolidado\.linhas\.length > 1/.test(corpo);
+    /bloco\.totais\.length && bloco\.linhas\.length > 1/.test(corpo);
 })());
 
 console.log('\n9. Duas tabelas seguidas dizem qual é qual');
@@ -479,8 +479,8 @@ ok('a tela desenha o título da tabela', (function () {
 })(), 'inclusive na tabela vazia: sem título, "Nada para mostrar" não diz de quê');
 ok('e o PDF desenha os dois títulos e o subtítulo',
   /escHtml_\(rel\.titulo\)/.test(fonte7) &&
-  /escHtml_\(consolidado\.titulo \|\| 'Consolidado'\)/.test(fonte7) &&
-  /escHtml_\(consolidado\.subtitulo\)/.test(fonte7));
+  /escHtml_\(b\.titulo \|\| 'Consolidado'\)/.test(fonte7) &&
+  /escHtml_\(b\.subtitulo\)/.test(fonte7));
 
 console.log(falhas ? '\n' + falhas + ' FALHA(S) de ' + provas : '\nTUDO OK: ' + provas + ' provas');
 process.exit(falhas ? 1 : 0);
