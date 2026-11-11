@@ -641,7 +641,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.39.0';
+const VERSAO_SISTEMA = '4.39.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -11369,6 +11369,39 @@ function consolidadoOficina_(itens) {
 const SEMANAS_DIESEL_ = 12;
 const MESES_DIESEL_ = 12;
 
+/**
+ * O periodo cabe INTEIRO no que esta sendo contado?
+ *
+ * Tres jeitos de um periodo sair pela metade, e os tres davam variacao
+ * mentirosa:
+ *  1. ele ainda nao terminou (o mes em curso, a semana em curso);
+ *  2. o recorte de datas do usuario cortou uma ponta dele;
+ *  3. a BASE comeca no meio dele — foi o caso que apareceu: o mes mais antigo
+ *     tinha 4 abastecimentos e 110 L porque era quando o sistema comecou, e o
+ *     mes seguinte aparecia com "+14.079%". O numero estava certo; a base de
+ *     comparacao e que nao existia.
+ *
+ * `primeiraData` nao e passada como "primeiro dia do recorte" de proposito: e
+ * a primeira data da base inteira. O recorte ja e tratado no item 2.
+ */
+function periodoEstaInteiro_(inicio, fim, hoje, janela, primeiraData) {
+  // `instanceof Date` NAO serve aqui: uma Date criada noutro realm (o caso de
+  // qualquer prova que monte o fixture fora do vm) nao passa nele, e a
+  // guarda seria pulada em silencio — o periodo apareceria completo e a
+  // variacao mentiria. Ver a regra do CLAUDE.md.
+  if (!ehDataReal_(inicio) || !ehDataReal_(fim)) return false;
+  if (!(fim < hoje)) return false;
+  if (janela && janela.inicio && inicio < janela.inicio) return false;
+  if (janela && janela.fim && fim > janela.fim) return false;
+  if (ehDataReal_(primeiraData) && inicio < primeiraData) return false;
+  return true;
+}
+
+/** Date de verdade, de qualquer realm, e com valor valido. */
+function ehDataReal_(valor) {
+  return Object.prototype.toString.call(valor) === '[object Date]' && !isNaN(valor.getTime());
+}
+
 /** Segunda-feira da semana da data, a zero hora. Semana operacional seg-dom. */
 function inicioDaSemana_(data) {
   const d = new Date(data.getFullYear(), data.getMonth(), data.getDate(), 0, 0, 0, 0);
@@ -11431,11 +11464,23 @@ function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
   const meses = {};
   let litrosSemDeclaracao = 0;
   const placasSemDeclaracao = {};
+  // Primeira data com diesel na base INTEIRA, antes de qualquer recorte.
+  // Serve para marcar como parcial o periodo em que a base COMECA: ele nao
+  // tem um mes inteiro de operacao dentro, e comparar o periodo seguinte com
+  // ele produz coisas como "+14.079%" — um numero certo sobre uma base que
+  // nao existe.
+  let primeiraData = null;
 
   function balde(mapa, chave) {
     if (!mapa[chave]) {
       mapa[chave] = { rotulo: '', ordem: chave, litros: 0, valor: 0,
-        litrosInterno: 0, litrosExterno: 0, abastecimentos: 0, completo: true };
+        litrosInterno: 0, litrosExterno: 0, abastecimentos: 0,
+        // As pontas do periodo ficam guardadas; se esta INTEIRO so se decide
+        // depois do laco, quando `primeiraData` ja e a menor de todas.
+        // Decidir aqui dentro usava um `primeiraData` provisorio — o da
+        // primeira linha LIDA, nao a primeira da base — e o resultado mudava
+        // com a ordem das linhas na planilha.
+        inicioPeriodo: null, fimPeriodo: null };
     }
     return mapa[chave];
   }
@@ -11448,7 +11493,7 @@ function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
     if (placa && chavePlaca !== placa) return;
     const data = l[L_.DATA];
     if (Object.prototype.toString.call(data) !== '[object Date]' || isNaN(data.getTime())) return;
-    if (janela.ativo && !janela.contem(data)) return;
+    const foraDoRecorte = janela.ativo && !janela.contem(data);
 
     const interno = tipoAbastecimentoDe_(l[L_.TIPO], l[L_.TIPO_ABASTECIMENTO]) === ABASTECIMENTO_INTERNO;
     const veredito = ehDieselDoVeiculo_(combustivelPorPlaca[chavePlaca]);
@@ -11456,6 +11501,10 @@ function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
     // outra coisa. Divergencia assim e erro de cadastro, nao de combustivel —
     // e tirar esses litros faria o relatorio nao fechar com o saldo do tanque.
     if (!interno && !veredito.diesel) return;
+    // Antes do recorte: a primeira data da BASE nao muda porque o usuario
+    // escolheu um periodo.
+    if (!primeiraData || data < primeiraData) primeiraData = data;
+    if (foraDoRecorte) return;
 
     const litros = Number(l[L_.LITROS]) || 0;
     const valor = Number(l[L_.VALOR]) || 0;
@@ -11469,8 +11518,8 @@ function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
       const b = balde(semanas, isoDoDia_(inicio));
       const fim = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + 6);
       b.rotulo = formatarData_(inicio) + ' a ' + formatarData_(fim);
-      // Semana que ainda nao terminou nao se compara com uma semana inteira.
-      b.completo = fim < hoje;
+      b.inicioPeriodo = inicio;
+      b.fimPeriodo = new Date(fim.getFullYear(), fim.getMonth(), fim.getDate(), 23, 59, 59, 999);
       b.litros += litros; b.valor += valor; b.abastecimentos++;
       if (interno) b.litrosInterno += litros; else b.litrosExterno += litros;
     }
@@ -11479,9 +11528,13 @@ function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
     if (comp && (janela.ativo || comp >= limiteMes)) {
       const bm = balde(meses, comp);
       bm.rotulo = nomeDoMes_(comp);
-      // A competencia ABERTA esta em curso: comparar meio mes com um mes
-      // inteiro e uma mentira que nao da erro — so uma seta para baixo.
-      bm.completo = comp < mesCorrente;
+      if (!bm.inicioPeriodo) {
+        const p = periodoDoMes_(comp);
+        bm.inicioPeriodo = p.inicio;
+        // A competencia ABERTA esta em curso por definicao, qualquer que seja
+        // a data de hoje: ela ainda vai receber lancamento.
+        bm.fimPeriodo = comp < mesCorrente ? p.fim : null;
+      }
       bm.litros += litros; bm.valor += valor; bm.abastecimentos++;
       if (interno) bm.litrosInterno += litros; else bm.litrosExterno += litros;
     }
@@ -11497,6 +11550,11 @@ function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
    */
   function tabela(mapa, tituloPrimeira) {
     const chaves = Object.keys(mapa).sort().reverse();
+    // Agora sim: `primeiraData` ja e a menor data da base inteira.
+    chaves.forEach(function (k) {
+      const b = mapa[k];
+      b.completo = periodoEstaInteiro_(b.inicioPeriodo, b.fimPeriodo, hoje, janela, primeiraData);
+    });
     const linhas = chaves.map(function (k, i) {
       const b = mapa[k];
       const anterior = i + 1 < chaves.length ? mapa[chaves[i + 1]] : null;

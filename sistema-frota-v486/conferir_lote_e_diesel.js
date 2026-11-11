@@ -47,6 +47,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     classificarVeiculosEmLote_, itensColados_, relatorioDieselPeriodo_,
     intervaloDeDatas_, relatorioAceitaPeriodo_, textoDosFiltros_, CATALOGO_RELATORIOS,
+    periodoEstaInteiro_, periodoDoMes_, hojeNoFuso_,
     formatoPlanilha_, TIPOS_NUMERICOS_RELATORIO_, relatorioPorTipo_, TIPOS_RELATORIO,
     inicioDaSemana_, ehDieselDoVeiculo_, tipoEhNumerico_, tabelaRelatorioPdf_,
     COL_VEIC, TOTAL_COL_VEIC, L_, TOTAL_COL_LANC, SEMANAS_DIESEL_, MESES_DIESEL_,
@@ -59,7 +60,14 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   invalidarCacheInicio_ = function () {};
   atualizarResumoSeguro_ = function () {};
   timezone_ = function () { return 'America/Sao_Paulo'; };
-  param_ = function (n) { return n === 'MES_REFERENCIA' ? '2026-11' : (n === 'EMPRESA' ? 'Giassi' : ''); };
+  // Corte 25: a competencia vai de 26 a 25, como no sistema de verdade. Sem
+  // isso o corte cai em 1 e as competencias do fixture nao batem com as datas.
+  param_ = function (n) {
+    if (n === 'MES_REFERENCIA') return '2026-11';
+    if (n === 'DIA_FIM_PERIODO') return 25;
+    if (n === 'EMPRESA') return 'Giassi';
+    return '';
+  };
   normalizarMesReferencia_ = function (m) { return String(m); };
   // 18/11/2026, quarta: a semana de 16/11 ainda esta em curso, a de 09/11 ja
   // fechou, e novembro e a competencia ABERTA.
@@ -247,13 +255,17 @@ ctx.__lanc = [
   // OUTUBRO, mês COMPLETO: é contra ele que a variação se mede. Sem um
   // segundo período, "a variação só sai entre completos" não é exercitado.
   lanc(5, 'MCZ2627', 400, 2400, 'Externo', 'Combustivel Terceiros', 9),
+  // Semana de 02/11 a 08/11, COMPLETA: é contra ela que a semana de 09/11
+  // mede a variação. Sem uma semana inteira antes, a única comparação
+  // possível seria contra a semana em que a base COMEÇA — que é parcial.
+  lanc(4, 'MCZ2627', 300, 1800),
 ];
 const rel = ctx.relatorioDieselPeriodo_(null, null, null);
 const sem = rel.consolidado;
 ok('a tabela principal é o MÊS, que é a visão', rel.linhas.length === 2 &&
   /NOVEMBRO\/2026/.test(rel.linhas[0][0]), JSON.stringify(rel.linhas.map(function (l) { return l[0]; })));
 ok('e a semana vem embaixo, que é o detalhe',
-  sem.linhas.length === 3, JSON.stringify(sem.linhas.map(function (l) { return l[0]; })));
+  sem.linhas.length === 4, JSON.stringify(sem.linhas.map(function (l) { return l[0]; })));
 ok('a semana mais recente primeiro', /16\/11/.test(sem.linhas[0][0]), sem.linhas[0][0]);
 ok('a semana em curso é marcada e não tem variação', (function () {
   // Hoje é 18/11 (quarta): a semana de 16/11 ainda não terminou.
@@ -261,14 +273,22 @@ ok('a semana em curso é marcada e não tem variação', (function () {
   return emCurso && / \(em curso\)$/.test(emCurso[0]) && emCurso[4] === null;
 })(), JSON.stringify(sem.linhas.map(function (l) { return [l[0], l[4]]; })));
 ok('e entre as duas semanas COMPLETAS a variação sai', (function () {
-  // 09/11 a 15/11 = 150 L contra 05/10 a 11/10 = 400 L: -62,5%.
-  const fechada = sem.linhas.filter(function (l) { return /09\/11/.test(l[0]); })[0];
-  return fechada && Math.abs(fechada[4] - (150 / 400 - 1) * 100) < 0.0001;
+  // 09/11 a 15/11 = 150 L contra 02/11 a 08/11 = 300 L: -50%.
+  const fechada = sem.linhas.filter(function (l) { return /^09\/11/.test(l[0]); })[0];
+  return fechada && Math.abs(fechada[4] - (150 / 300 - 1) * 100) < 0.0001;
+})(), JSON.stringify(sem.linhas.map(function (l) { return [l[0], l[4]]; })));
+// O caso que o usuario viu: "+14.079,61%". O numero estava certo — o mes
+// anterior tinha 4 abastecimentos e 110 L porque era quando a base COMECOU.
+// A base de comparacao e que nao existia.
+ok('a semana em que a BASE começa é parcial, e ninguém mede contra ela', (function () {
+  const primeira = sem.linhas.filter(function (l) { return /^05\/10/.test(l[0]); })[0];
+  const seguinte = sem.linhas.filter(function (l) { return /^02\/11/.test(l[0]); })[0];
+  return primeira && / \(em curso\)$/.test(primeira[0]) && seguinte && seguinte[4] === null;
 })(), JSON.stringify(sem.linhas.map(function (l) { return [l[0], l[4]]; })));
 ok('o domingo entrou na semana da segunda anterior',
   sem.linhas[1][1] === 150, String(sem.linhas[1][1]));
 ok('o carro a gasolina comprando fora ficou de fora',
-  rel.totais[1] === 860, String(rel.totais[1]) + ' L — com os 40 L comprados fora seriam 900');
+  rel.totais[1] === 1160, String(rel.totais[1]) + ' L — com os 40 L comprados fora seriam 1.200');
 ok('mas o que saiu do TANQUE conta, mesmo com gasolina no cadastro', (function () {
   const so = ctx.relatorioDieselPeriodo_(null, null, 'CAR 0001');
   return so.totais[1] === 30 && so.totais[5] === 30;
@@ -294,19 +314,23 @@ ok('e NÃO ganha variação contra um mês inteiro',
 ok('outubro, que está completo, também não tem contra o que medir',
   rel.linhas[1][4] === null, 'é a linha mais antiga da janela');
 ok('mas entre dois COMPLETOS a variação sai', (function () {
-  // Recorte que exclui novembro: outubro passa a ser o mais recente e ganha
-  // um anterior... não; aqui o que se prova é a conta, com dois meses
-  // completos fabricados.
+  // TRÊS meses: agosto é onde a base começa (parcial), setembro e outubro
+  // são inteiros. Com dois só, a única comparação possível seria contra o
+  // mês em que a base começa — e é justamente essa que não vale.
   const antes = ctx.__lanc;
   ctx.__lanc = [
+    lanc(5, 'MCZ2627', 50, 300, 'Externo', 'Combustivel Terceiros', 7),    // agosto
     lanc(5, 'MCZ2627', 100, 600, 'Externo', 'Combustivel Terceiros', 8),   // setembro
     lanc(5, 'MCZ2627', 150, 900, 'Externo', 'Combustivel Terceiros', 9),   // outubro
   ];
-  ctx.__lanc[0][ctx.L_.PERIODO] = '2026-09';
+  ctx.__lanc[0][ctx.L_.PERIODO] = '2026-08';
+  ctx.__lanc[1][ctx.L_.PERIODO] = '2026-09';
   const r2 = ctx.relatorioDieselPeriodo_(null, null, null);
   ctx.__lanc = antes;
-  // Outubro (150 L) contra setembro (100 L) = +50%.
-  return r2.linhas.length === 2 && Math.abs(r2.linhas[0][4] - 50) < 0.0001;
+  // Outubro (150 L) contra setembro (100 L) = +50%; setembro contra agosto,
+  // que é onde a base começa, NÃO sai.
+  return r2.linhas.length === 3 && Math.abs(r2.linhas[0][4] - 50) < 0.0001 &&
+    r2.linhas[1][4] === null;
 })(), 'variação de litros contra o período anterior');
 // Semana e mes sao DOIS acumuladores, com um `if (interno)` cada. Conferir so
 // litros e valor deixaria o mensal livre para trocar tanque por fora sem que
@@ -321,11 +345,11 @@ ok('o filtro por grupo vale aqui também', (function () {
   return so.linhas.length === 0;
 })(), 'todos os lançamentos do fixture são Truck Normal');
 ok('e o filtro por veículo',
-  ctx.relatorioDieselPeriodo_(null, null, 'MCZ2627').totais[1] === 550,
+  ctx.relatorioDieselPeriodo_(null, null, 'MCZ2627').totais[1] === 850,
   String(ctx.relatorioDieselPeriodo_(null, null, 'MCZ2627').totais[1]));
 ok('a mensagem abre com um resumo que se lê sozinho',
-  /^No período: 860,000 L de diesel, R\$ 5\.225,00, preço médio R\$ 6,076\/L\./.test(rel.mensagem) &&
-  /230,000 L saíram do tanque e 630,000 L foram comprados fora/.test(rel.mensagem),
+  /^No período: 1\.160,000 L de diesel, R\$ 7\.025,00, preço médio R\$ 6,056\/L\./.test(rel.mensagem) &&
+  /230,000 L saíram do tanque e 930,000 L foram comprados fora/.test(rel.mensagem),
   rel.mensagem);
 
 console.log('\n5b. O filtro de período');
@@ -359,6 +383,51 @@ ok('e com escolha o padrão é SUBSTITUÍDO, não cruzado', (function () {
   const com = ctx.intervaloDeDatas_({ de: '2026-01-01', ate: '2026-01-31' }, padrao);
   return com.ativo === true && com.contem(new Date(2026, 0, 15, 8, 0, 0)) === true;
 })(), 'cruzar com o mês aberto devolveria vazio sem explicar por quê');
+
+// As tres formas de um periodo sair pela metade, cada uma provada por si.
+ok('o recorte do usuário corta uma ponta: aquele período é parcial', (function () {
+  // De 04/11: a semana de 02/11 fica cortada ao meio.
+  const r = ctx.relatorioDieselPeriodo_(null, null, null, { de: '2026-11-04', ate: '2026-11-15' });
+  const cortada = r.consolidado.linhas.filter(function (l) { return /^02\/11/.test(l[0]); })[0];
+  const seguinte = r.consolidado.linhas.filter(function (l) { return /^09\/11/.test(l[0]); })[0];
+  return cortada && / \(em curso\)$/.test(cortada[0]) && seguinte && seguinte[4] === null;
+})(), 'meia semana contra uma semana inteira é a mesma mentira do mês em curso');
+ok('e se o recorte corta a ponta FINAL, idem', (function () {
+  // Até 12/11: a semana de 09/11 a 15/11 fica cortada.
+  const r = ctx.relatorioDieselPeriodo_(null, null, null, { de: '2026-11-02', ate: '2026-11-12' });
+  const cortada = r.consolidado.linhas.filter(function (l) { return /^09\/11/.test(l[0]); })[0];
+  return cortada && / \(em curso\)$/.test(cortada[0]) && cortada[4] === null;
+})(), 'a ponta final cortada é tão parcial quanto a inicial');
+ok('mas um recorte que começa na borda NÃO corta nada', (function () {
+  // De 02/11 (segunda) a 15/11 (domingo): as duas semanas estão inteiras
+  // dentro do recorte, e a base começou antes — a variação sai.
+  const r = ctx.relatorioDieselPeriodo_(null, null, null, { de: '2026-11-02', ate: '2026-11-15' });
+  const seguinte = r.consolidado.linhas.filter(function (l) { return /^09\/11/.test(l[0]); })[0];
+  return seguinte && Math.abs(seguinte[4] - (150 / 300 - 1) * 100) < 0.0001;
+})(), 'a primeira data da BASE não muda porque o usuário escolheu um período');
+ok('a competência ABERTA é "em curso" mesmo se já passou do dia 25', (function () {
+  // Competência parada em outubro com hoje em 18/11: o período dela terminou
+  // em 25/10, mas ela ainda recebe lançamento. Comparar com ela seria
+  // comparar com um mês que ainda vai crescer.
+  //
+  // A base começa em SETEMBRO de propósito: se começasse em outubro, outubro
+  // já seria parcial pela regra do início da base e esta prova não estaria
+  // provando nada.
+  const antes = ctx.__lanc;
+  ctx.__lanc = [
+    lanc(5, 'MCZ2627', 100, 600, 'Externo', 'Combustivel Terceiros', 8),
+    lanc(5, 'MCZ2627', 150, 900, 'Externo', 'Combustivel Terceiros', 9),
+  ];
+  ctx.__lanc[0][ctx.L_.PERIODO] = '2026-09';
+  vm.runInContext("param_ = function (n) { return n === 'MES_REFERENCIA' ? '2026-10' : " +
+    "(n === 'DIA_FIM_PERIODO' ? 25 : ''); };", ctx);
+  const r = ctx.relatorioDieselPeriodo_(null, null, null);
+  vm.runInContext("param_ = function (n) { return n === 'MES_REFERENCIA' ? '2026-11' : " +
+    "(n === 'DIA_FIM_PERIODO' ? 25 : (n === 'EMPRESA' ? 'Giassi' : '')); };", ctx);
+  ctx.__lanc = antes;
+  const out = r.linhas.filter(function (l) { return /OUTUBRO/.test(l[0]); })[0];
+  return out && / \(em curso\)$/.test(out[0]) && out[4] === null;
+})(), 'competência parada ainda recebe lançamento: ela não está fechada');
 
 console.log('\n5c. O período só é oferecido onde age');
 // Relatorio que le o Resumo e da competencia ABERTA por construcao: o Resumo e

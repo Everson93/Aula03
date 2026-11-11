@@ -4511,6 +4511,60 @@ meio do mês, cai.
 `Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
 sistema*.
 
+## V4.39.1 — o "+14.079,61%"
+
+O usuário mandou um recorte do relatório de diesel perguntando o que eram as
+colunas, e no meio delas estava **+14.079,61%**.
+
+O número estava **certo**. A base de comparação é que não existia: o mês mais
+antigo da janela tinha **4 abastecimentos e 110 L** porque era quando o
+sistema começou a ser usado. O mês seguinte, com 15.600 L, dividido por
+aqueles 110 L, dá 141 vezes — e vira uma porcentagem que não descreve nada.
+
+A V4.38 já marcava como "em curso" o período que **ainda não terminou**. O
+que faltava eram as outras duas formas de um período sair pela metade:
+
+1. **o recorte de datas cortou uma ponta dele** — pedir "de 04/11" e comparar
+   a meia semana de 02/11 com a semana inteira seguinte é a mesma mentira;
+2. **a base começa no meio dele** — o caso acima.
+
+As três passaram a sair de um lugar só, `periodoEstaInteiro_`. Quem não está
+inteiro é marcado e **não serve de base de comparação**.
+
+Um detalhe que só aparece em uso: a **competência aberta é "em curso" mesmo
+quando o dia 25 já passou**. Competência parada em outubro, com hoje em
+novembro, ainda recebe lançamento — comparar com ela é comparar com um mês que
+ainda vai crescer.
+
+### Dois defeitos meus no caminho, e o que os pegou
+
+- **`instanceof Date`.** Escrevi a guarda nova com `instanceof`, que é
+  exatamente o que o `CLAUDE.md` deste projeto proíbe: uma `Date` de outro
+  realm não passa nele, a guarda é pulada **em silêncio** e o período aparece
+  completo. Quem expôs foi a própria suíte, cujo fixture monta as datas fora
+  do `vm`. Agora é `ehDataReal_`, com `Object.prototype.toString.call`.
+- **Decidir dentro do laço.** Eu calculava `primeiraData` na mesma passada em
+  que marcava os baldes, então os primeiros baldes viam um valor provisório —
+  o da primeira linha **lida**, não a primeira da base. O resultado mudava
+  conforme a ordem das linhas na planilha. A completude passou a ser decidida
+  **depois** do laço, quando `primeiraData` já é a menor de todas.
+
+O segundo é o tipo de defeito que teste nenhum pega por sorte: só apareceu
+porque o fixture tem a linha mais antiga **no fim** da lista.
+
+### Suítes
+
+`conferir_lote_e_diesel.js`: 111 → **116 provas**, com uma prova para cada uma
+das três formas de o período sair pela metade, mais a competência parada.
+**40 suítes, ~1.610 provas.** Por mutação, 13 defeitos reintroduzidos, **13
+pegos** — quatro sobreviveram na primeira rodada, todos por fixture que não
+distinguia as regras entre si (um mês só, uma semana só, a base começando no
+mesmo período que se queria provar completo).
+
+### Instalação
+
+`Codigo.gs`. **Não precisa** rodar *Instalar / atualizar sistema*.
+
 ---
 
 # Pendente
