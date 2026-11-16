@@ -217,7 +217,10 @@
     var corpo = $('ficha-corpo');
     corpo.innerHTML =
       '<div class="ficha__grade">' +
-        capa(f, 'ficha__capa') +
+        '<div class="ficha__fotos">' + capa(f, 'ficha__capa') +
+        ((f.fotos || []).length > 1 ? '<div class="ficha__galeria">' + f.fotos.map(function (src, i) {
+          return '<button type="button" class="ficha__mini" data-foto="' + i + '" aria-label="Foto ' + (i + 1) + '" aria-pressed="' + (i === 0) + '"><img src="' + esc(src) + '" alt=""></button>';
+        }).join('') + '</div>' : '') + '</div>' +
         '<div class="ficha__info">' +
           '<p class="ficha__temas">' + f.temas.map(nomeTema).map(esc).join(' · ') + ' · cód. ' + esc(f.id) + '</p>' +
           '<h2 id="ficha-nome">' + esc(f.nome) + '</h2>' +
@@ -284,7 +287,13 @@
       '<p class="nota-reserva" id="nota-reserva"></p>';
 
     var whatsOk = L.numeroWhatsAppValido(loja.whatsapp);
-    var situacao = {};   // última conta de disponibilidade, usada no clique
+    var situacao = {};
+    corpo.querySelectorAll('.ficha__mini').forEach(function (b) {
+      b.addEventListener('click', function () {
+        corpo.querySelector('.ficha__capa img').src = f.fotos[Number(b.dataset.foto)];
+        corpo.querySelectorAll('.ficha__mini').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
+      });
+    });   // última conta de disponibilidade, usada no clique
 
     function atualizar() {
       var per = periodoDe(f, sel.extras);

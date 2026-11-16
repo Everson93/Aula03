@@ -229,6 +229,9 @@
     else if (a === 'cancelar-orcamento') { LOJA.cancelarOrcamento(id); if (modal.open) modal.close(); }
     else if (a === 'marcar-prova') abrirMarcarProva(b.dataset.hora);
     else if (a === 'prova-status') LOJA.atualizarProva(id, b.dataset.status);
+    else if (a === 'nova-fantasia') abrirCadastroFantasia(null);
+    else if (a === 'editar-fantasia') { e.preventDefault(); abrirCadastroFantasia(id); }
+    else if (a === 'exportar-acervo') abrirExportarAcervo();
     else if (a === 'bloquear') abrirBloqueio(b.dataset.unidade, b.dataset.fantasia, b.dataset.tamanho);
     else if (a === 'liberar') LOJA.liberar(id);
   }
@@ -845,13 +848,13 @@
         '<button type="button" class="sis-link" data-simular="' + f[0] + '">simular</button></div>';
     }).join('') + '</div>';
   }
-  function reduzir(src, cb) {
+  function reduzir(src, cb, lado, qualidade) {
     var img = new Image();
     img.onload = function () {
-      var k = Math.min(1, 320 / Math.max(img.width, img.height));
+      var k = Math.min(1, (lado || 320) / Math.max(img.width, img.height));
       var cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
       cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-      cb(cv.toDataURL('image/jpeg', 0.7));
+      cb(cv.toDataURL('image/jpeg', qualidade || 0.7));
     };
     img.src = src;
   }
@@ -1321,10 +1324,19 @@
           return '<tr><td class="pn-cod">' + u + '</td><td><span class="pn-status pn-status--' + e[1] + '">' + e[0] + '</span></td><td>' + info + '</td><td class="sis-acoes">' + acao + '</td></tr>';
         }).join('');
       }).join('');
-      return '<details class="pn-fant"><summary><span class="pn-cor" style="--cor:' + esc(f.cor) + '"></span><strong>' + esc(f.nome) + '</strong> <span class="pn-cod">' + f.id + '</span>' +
-        '<span class="pn-fant__total">' + livres + ' de ' + total + ' livres hoje</span></summary><table class="sis-tabela sis-tabela--compacta"><tbody>' + lis + '</tbody></table></details>';
+      var mini = f.fotos && f.fotos.length ? '<img class="pn-mini" src="' + esc(f.fotos[0]) + '" alt="">' : '<span class="pn-cor" style="--cor:' + esc(f.cor) + '"></span>';
+      return '<details class="pn-fant"><summary>' + mini + '<strong>' + esc(f.nome) + '</strong> <span class="pn-cod">' + f.id + '</span>' +
+        (f.ativo === false ? ' <span class="pn-status pn-status--neutro">fora da vitrine</span>' : '') +
+        (f.fotos && f.fotos.length ? '' : ' <span class="sis-mudo">sem foto</span>') +
+        '<span class="pn-fant__total">' + livres + ' de ' + total + ' livres hoje</span>' +
+        (pode('acervo') ? botao('editar-fantasia', f.id, 'Editar') : '') + '</summary>' +
+        '<p class="sis-mudo pn-fant__resumo">' + R$(f.preco) + ' / 3 dias · dia extra ' + R$(f.diaExtra) + ' · caução ' + R$(f.caucao) + ' · reposição ' + R$(f.reposicao) + '</p>' +
+        '<table class="sis-tabela sis-tabela--compacta"><tbody>' + lis + '</tbody></table></details>';
     });
-    return '<div class="pn-resumo">' + Object.keys(cont).map(function (k) { return tile(ESTADOS[k][0], cont[k], k === 'atrasada' && cont[k] ? 'erro' : ''); }).join('') + '</div>' +
+    var semFoto = FANTASIAS.filter(function (f) { return !(f.fotos || []).length; }).length;
+    return '<div class="sis-barra">' + (pode('acervo') ? botao('nova-fantasia', '', '+ Cadastrar fantasia', true) + botao('exportar-acervo', '', 'Exportar para o site (dados.js)') : '<span class="sis-mudo">Cadastrar e editar peças: só a dona.</span>') + '</div>' +
+      (semFoto ? '<p class="pn-dica">' + semFoto + ' de ' + FANTASIAS.length + ' fantasias ainda sem foto real: no site aparecem com o cartão "foto ilustrativa". Toque em Editar para pôr as fotos.</p>' : '') +
+      '<div class="pn-resumo">' + Object.keys(cont).map(function (k) { return tile(ESTADOS[k][0], cont[k], k === 'atrasada' && cont[k] ? 'erro' : ''); }).join('') + '</div>' +
       '<p class="pn-dica">Onde está cada peça física em ' + esc(L.dataComDia(d)) + '. Toque numa fantasia para ver as peças.</p>' + blocos.join('');
   }
 
@@ -1639,6 +1651,171 @@
         dia: dia(), hora: hora, fantasias: escolhidas, obs: $('mp-obs').value.trim() });
       if (r.erro) { $('mp-erro').textContent = r.erro; $('mp-erro').hidden = false; return; }
       modal.close();
+    });
+  }
+
+  /* ---------- cadastro de fantasia (com fotos) ---------- */
+  var MEDIDAS_PADRAO = {
+    '2': [52, 50, 54, 92], '4': [56, 53, 58, 104], '6': [60, 55, 63, 116], '8': [66, 58, 68, 128], '10': [70, 61, 73, 140], '12': [76, 64, 80, 152], '14': [82, 67, 86, 164],
+    PP: [80, 62, 88, 155], P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172], GG: [108, 90, 116, 176], XG: [118, 100, 124, 182]
+  };
+  function abrirCadastroFantasia(id) {
+    var orig = id ? LOJA.fantasiaDe(id) : null;
+    // rascunho: cópia editável; só vai para o acervo no Salvar
+    var f = orig ? JSON.parse(JSON.stringify(orig)) : { __nova: true, id: '', nome: '', temas: ['junina'], genero: 'feminino', publico: 'adulto', preco: '', diaExtra: '', caucao: '', reposicao: '',
+      cor: '#c2185b', descricao: '', tamanhos: {}, estoque: {}, inclui: [], kit: [], palavras: [], fotos: [], ativo: true };
+    f.publico = f.publico || 'adulto';
+    if (f.ativo === undefined) f.ativo = true;
+    var linhasTam = L.ordenarTamanhos(Object.keys(f.tamanhos)).map(function (t) { return { t: t, m: f.tamanhos[t].slice(), q: f.estoque[t] }; });
+    var kit = (f.kit || []).map(function (k) { return Object.assign({}, k); });
+    var num = function (v) { var n = lerValor(v); return isNaN(n) ? '' : n; };
+
+    function htmlFotosCad() {
+      return f.fotos.map(function (src, i) {
+        return '<figure class="cad-foto"><img src="' + esc(src) + '" alt="Foto ' + (i + 1) + '">' +
+          '<figcaption>' + (i === 0 ? '<b>Capa</b>' : '<button type="button" class="sis-link" data-capa="' + i + '">Usar como capa</button>') +
+          ' <button type="button" class="sis-link" data-tirar-foto="' + i + '">Tirar</button></figcaption></figure>';
+      }).join('') + (f.fotos.length < 4 ? '<label class="cad-foto cad-foto--nova">+ Adicionar fotos<input type="file" accept="image/*" multiple id="cad-arquivos"></label>' +
+        '<button type="button" class="sis-link cad-simular" id="cad-simular">simular uma foto</button>' : '');
+    }
+    function htmlTams() {
+      var opcoes = (f.publico === 'infantil' ? L.TAMANHOS_INFANTIS : ['PP', 'P', 'M', 'G', 'GG', 'XG']);
+      return '<table class="sis-tabela sis-tabela--compacta cad-tams"><thead><tr><th>Tamanho</th><th>Busto</th><th>Cintura</th><th>Quadril</th><th>Altura até</th><th>Peças</th><th></th></tr></thead><tbody>' +
+        linhasTam.map(function (l, i) {
+          return '<tr><td><select data-tam="t" data-i="' + i + '">' + opcoes.map(function (o) { return '<option' + (o === l.t ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></td>' +
+            [0, 1, 2, 3].map(function (k) { return '<td><input inputmode="numeric" data-tam="m' + k + '" data-i="' + i + '" value="' + (l.m[k] || '') + '"></td>'; }).join('') +
+            '<td><input inputmode="numeric" data-tam="q" data-i="' + i + '" value="' + (l.q || '') + '"></td>' +
+            '<td><button type="button" class="pn-icone" data-tirar-tam="' + i + '" aria-label="Tirar tamanho">×</button></td></tr>';
+        }).join('') + '</tbody></table><button type="button" class="sis-link" id="cad-mais-tam">+ Tamanho</button>';
+    }
+    function htmlKit() {
+      return (kit.length ? '<table class="sis-tabela sis-tabela--compacta cad-kit"><thead><tr><th>Complemento</th><th>Tipo</th><th>Preço (R$)</th><th>Unidades</th><th></th></tr></thead><tbody>' +
+        kit.map(function (k, i) {
+          return '<tr><td><input data-kit="nome" data-i="' + i + '" value="' + esc(k.nome) + '"></td>' +
+            '<td><select data-kit="tipo" data-i="' + i + '"><option value="venda"' + (k.tipo === 'venda' ? ' selected' : '') + '>venda (fica com o cliente)</option><option value="aluguel"' + (k.tipo === 'aluguel' ? ' selected' : '') + '>aluguel (volta)</option></select></td>' +
+            '<td><input inputmode="decimal" data-kit="preco" data-i="' + i + '" value="' + (k.preco ? campoValor(k.preco) : '') + '"></td>' +
+            '<td>' + (k.tipo === 'aluguel' ? '<input inputmode="numeric" data-kit="estoque" data-i="' + i + '" value="' + (k.estoque || '') + '">' : '—') + '</td>' +
+            '<td><button type="button" class="pn-icone" data-tirar-kit="' + i + '" aria-label="Tirar complemento">×</button></td></tr>';
+        }).join('') + '</tbody></table>' : '<p class="pn-dica">Sem complementos.</p>') + '<button type="button" class="sis-link" id="cad-mais-kit">+ Complemento</button>';
+    }
+    abrirModal(orig ? 'Editar ' + esc(orig.nome) + ' · ' + orig.id : 'Cadastrar fantasia',
+      '<h3>Fotos</h3><p class="pn-dica">Até 4 fotos reais, com a peça vestida ou no manequim; a primeira é a capa no site. Elas são reduzidas para carregar rápido no celular.</p>' +
+      '<div class="cad-fotos" id="cad-fotos">' + htmlFotosCad() + '</div>' +
+      '<h3>Dados</h3><div class="pn-campos">' +
+        '<label>Nome (descritivo, sem marca) <input id="cad-nome" value="' + esc(f.nome) + '" placeholder="Ex.: Caipira de Chita Florida"></label>' +
+        '<label>Código <input id="cad-id" value="' + esc(f.id) + '" ' + (orig ? 'disabled' : 'placeholder="automático"') + '></label></div>' +
+      '<div class="pn-campos"><label>Para <select id="cad-genero">' + [['feminino', 'Feminino'], ['masculino', 'Masculino'], ['unissex', 'Unissex']].map(function (g) { return '<option value="' + g[0] + '"' + (g[0] === f.genero ? ' selected' : '') + '>' + g[1] + '</option>'; }).join('') + '</select></label>' +
+        '<label>Idade <select id="cad-publico"' + (orig ? ' disabled' : '') + '><option value="adulto"' + (f.publico !== 'infantil' ? ' selected' : '') + '>Adulto (PP a XG)</option><option value="infantil"' + (f.publico === 'infantil' ? ' selected' : '') + '>Infantil (2 a 14)</option></select></label>' +
+        '<label>Cor do cartão sem foto <input type="color" id="cad-cor" value="' + esc(f.cor || '#c2185b') + '"></label></div>' +
+      '<p class="pn-rotulo">Temas</p><div class="pn-chips" id="cad-temas">' + window.TEMAS.map(function (t) { return '<button type="button" class="pn-chip" aria-pressed="' + (f.temas.indexOf(t.id) !== -1) + '" data-tema="' + t.id + '">' + esc(t.nome) + '</button>'; }).join('') + '</div>' +
+      '<label class="pn-bloco">Descrição <textarea id="cad-desc" rows="2" placeholder="Tecido, modelo, o que chama atenção">' + esc(f.descricao) + '</textarea></label>' +
+      '<div class="pn-campos"><label>Vem com (separe por vírgula) <input id="cad-inclui" value="' + esc(f.inclui.join(', ')) + '" placeholder="Vestido, Chapéu, Fita"></label>' +
+        '<label>Palavras para a busca <input id="cad-palavras" value="' + esc((f.palavras || []).join(', ')) + '" placeholder="quadrilha, são joão, arraiá"></label></div>' +
+      '<h3>Preços</h3><div class="pn-campos">' +
+        '<label>Aluguel 3 dias (R$) <input id="cad-preco" inputmode="decimal" value="' + (f.preco ? campoValor(f.preco) : '') + '"></label>' +
+        '<label>Dia extra (R$) <input id="cad-extra" inputmode="decimal" value="' + (f.diaExtra ? campoValor(f.diaExtra) : '') + '"></label>' +
+        '<label>Caução (R$) <input id="cad-caucao" inputmode="decimal" value="' + (f.caucao !== '' ? campoValor(f.caucao) : '') + '"></label>' +
+        '<label>Reposição (R$) <input id="cad-repos" inputmode="decimal" value="' + (f.reposicao ? campoValor(f.reposicao) : '') + '"></label></div>' +
+      '<h3>Tamanhos, medidas (cm) e estoque</h3><p class="pn-dica">Cada peça física ganha uma etiqueta (ex.: ' + esc((f.id || 'JN07') + '-M-1') + '). Diminuir a quantidade tira as últimas etiquetas.</p><div id="cad-tams">' + htmlTams() + '</div>' +
+      '<h3>Complementos</h3><div id="cad-kit">' + htmlKit() + '</div>' +
+      '<label class="pn-aceite"><input type="checkbox" id="cad-ativo"' + (f.ativo !== false ? ' checked' : '') + '> Aparece no site e no balcão (desmarque para tirar da vitrine sem apagar o histórico)</label>' +
+      '<ul class="pn-erros" id="cad-erros" hidden></ul>',
+      '<button type="button" class="botao botao--leve" id="cad-voltar">Voltar</button><button type="button" class="botao botao--destaque" id="cad-ok">' + (orig ? 'Salvar alterações' : 'Cadastrar') + '</button>');
+    modal.classList.add('pn-modal--contrato');
+
+    function pintarFotos() { $('cad-fotos').innerHTML = htmlFotosCad(); ligarArquivos(); }
+    function ligarArquivos() {
+      var inp = $('cad-arquivos');
+      if (inp) inp.addEventListener('change', function () {
+        Array.prototype.slice.call(inp.files, 0, 4 - f.fotos.length).forEach(function (arq) {
+          var r = new FileReader();
+          r.onload = function () { reduzir(r.result, function (u) { if (f.fotos.length < 4) { f.fotos.push(u); pintarFotos(); } }, 720, 0.78); };
+          r.readAsDataURL(arq);
+        });
+      });
+      var sim = $('cad-simular');
+      if (sim) sim.addEventListener('click', function () {
+        var cv = document.createElement('canvas'); cv.width = 480; cv.height = 600;
+        var g = cv.getContext('2d'); g.fillStyle = $('cad-cor').value; g.fillRect(0, 0, 480, 600);
+        g.fillStyle = 'rgba(255,255,255,.85)'; g.font = 'bold 34px sans-serif'; g.fillText($('cad-nome').value || 'Fantasia', 24, 70);
+        g.font = '22px sans-serif'; g.fillText('foto simulada ' + (f.fotos.length + 1), 24, 570);
+        f.fotos.push(cv.toDataURL('image/jpeg', 0.7)); pintarFotos();
+      });
+    }
+    $('cad-fotos').addEventListener('click', function (e) {
+      var c = e.target.closest('[data-capa]'), t = e.target.closest('[data-tirar-foto]');
+      if (c) { var i = Number(c.dataset.capa); f.fotos.unshift(f.fotos.splice(i, 1)[0]); pintarFotos(); }
+      if (t) { f.fotos.splice(Number(t.dataset.tirarFoto), 1); pintarFotos(); }
+    });
+    ligarArquivos();
+    $('cad-temas').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-tema]'); if (!b) return;
+      var on = b.getAttribute('aria-pressed') !== 'true';
+      b.setAttribute('aria-pressed', on);
+      f.temas = on ? f.temas.concat([b.dataset.tema]) : f.temas.filter(function (t) { return t !== b.dataset.tema; });
+    });
+    $('cad-publico').addEventListener('change', function (e) { f.publico = e.target.value; linhasTam = []; $('cad-tams').innerHTML = htmlTams(); });
+    var area = modal;
+    area.addEventListener('input', function (e) {
+      var d = e.target.dataset;
+      if (d.tam) { var l = linhasTam[Number(d.i)]; if (d.tam === 'q') l.q = Number(e.target.value) || ''; else if (d.tam !== 't') l.m[Number(d.tam.slice(1))] = Number(e.target.value) || ''; }
+      if (d.kit) { var k = kit[Number(d.i)]; if (d.kit === 'nome') k.nome = e.target.value; if (d.kit === 'preco') k.preco = num(e.target.value); if (d.kit === 'estoque') k.estoque = Number(e.target.value) || ''; }
+    });
+    area.addEventListener('change', function (e) {
+      var d = e.target.dataset;
+      if (d.tam === 't') { var l = linhasTam[Number(d.i)]; l.t = e.target.value; if (!l.m.some(Boolean)) l.m = (MEDIDAS_PADRAO[l.t] || []).slice(); $('cad-tams').innerHTML = htmlTams(); }
+      if (d.kit === 'tipo') { kit[Number(d.i)].tipo = e.target.value; $('cad-kit').innerHTML = htmlKit(); }
+    });
+    area.addEventListener('click', function (e) {
+      var t = e.target;
+      if (t.id === 'cad-mais-tam') {
+        var usados = linhasTam.map(function (l) { return l.t; });
+        var livre = (f.publico === 'infantil' ? L.TAMANHOS_INFANTIS : ['PP', 'P', 'M', 'G', 'GG', 'XG']).find(function (o) { return usados.indexOf(o) === -1; });
+        if (livre) { linhasTam.push({ t: livre, m: (MEDIDAS_PADRAO[livre] || []).slice(), q: 1 }); $('cad-tams').innerHTML = htmlTams(); }
+      }
+      if (t.dataset && t.dataset.tirarTam !== undefined) { linhasTam.splice(Number(t.dataset.tirarTam), 1); $('cad-tams').innerHTML = htmlTams(); }
+      if (t.id === 'cad-mais-kit') { kit.push({ id: '', nome: '', tipo: 'venda', preco: '' }); $('cad-kit').innerHTML = htmlKit(); }
+      if (t.dataset && t.dataset.tirarKit !== undefined) { kit.splice(Number(t.dataset.tirarKit), 1); $('cad-kit').innerHTML = htmlKit(); }
+    });
+    $('cad-voltar').addEventListener('click', function () { modal.close(); });
+    $('cad-ok').addEventListener('click', function () {
+      var lista = function (v) { return v.split(',').map(function (x) { return x.trim(); }).filter(Boolean); };
+      f.nome = $('cad-nome').value.trim(); f.genero = $('cad-genero').value; f.cor = $('cad-cor').value;
+      f.descricao = $('cad-desc').value.trim(); f.inclui = lista($('cad-inclui').value); f.palavras = lista($('cad-palavras').value);
+      f.preco = num($('cad-preco').value); f.diaExtra = num($('cad-extra').value); f.caucao = num($('cad-caucao').value); f.reposicao = num($('cad-repos').value);
+      f.ativo = $('cad-ativo').checked;
+      f.tamanhos = {}; f.estoque = {};
+      linhasTam.forEach(function (l) { f.tamanhos[l.t] = l.m.map(Number); f.estoque[l.t] = Number(l.q); });
+      f.kit = kit.map(function (k) {
+        var x = { id: k.id || L.normalizar(k.nome).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item', nome: (k.nome || '').trim(), tipo: k.tipo, preco: Number(k.preco) };
+        if (k.tipo === 'aluguel') x.estoque = Number(k.estoque);
+        return x;
+      });
+      if (!orig) { f.id = $('cad-id').value.trim().toUpperCase() || L.proximoCodigo(FANTASIAS, f); }
+      var r = LOJA.salvarFantasia(f);
+      if (r.erros) {
+        $('cad-erros').innerHTML = r.erros.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+        $('cad-erros').hidden = false; $('cad-erros').scrollIntoView({ block: 'center' }); return;
+      }
+      modal.close();
+    });
+  }
+
+  function abrirExportarAcervo() {
+    var js = L.gerarDadosJs(window.TEMAS, FANTASIAS);
+    var fotos = [];
+    FANTASIAS.forEach(function (f) { (f.fotos || []).forEach(function (src, i) { if (/^data:/.test(src)) fotos.push('fotos/' + f.id + '-' + (i + 1) + '.jpg (' + f.nome + ')'); }); });
+    abrirModal('Exportar para o site',
+      '<p>O site publicado lê o acervo do arquivo <strong>dados.js</strong>. Copie o texto abaixo e cole no lugar do conteúdo de <code>dados.js</code>.</p>' +
+      (fotos.length ? '<p class="pn-msg">Salve estas fotos na pasta <code>fotos/</code> do site, com estes nomes (use os arquivos originais do celular):</p><ul class="sis-lista">' + fotos.map(function (x) { return '<li class="pn-cod">' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+      '<p class="pn-dica">Depois, rode <code>node simulacao/gerar_agenda.js</code> e <code>node conferir_landing.js</code>: a suíte confere o acervo novo.</p>' +
+      '<textarea class="sis-json" id="exp-js" readonly rows="14">' + esc(js) + '</textarea>',
+      '<button type="button" class="botao botao--leve" id="exp-fechar">Fechar</button><button type="button" class="botao botao--destaque" id="exp-copiar">Copiar</button>');
+    $('exp-fechar').addEventListener('click', function () { modal.close(); });
+    $('exp-copiar').addEventListener('click', function () {
+      var ta = $('exp-js'), b = this;
+      try { navigator.clipboard.writeText(ta.value).then(function () { b.textContent = 'Copiado'; }, function () { ta.select(); b.textContent = 'Selecionado: use Ctrl+C'; }); }
+      catch (x) { ta.select(); b.textContent = 'Selecionado: use Ctrl+C'; }
     });
   }
 

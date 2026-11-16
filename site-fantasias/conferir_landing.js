@@ -431,10 +431,41 @@ prova('GA4 só mede depois do aceite', !L.medicaoPermitida('ga4', '') && !L.medi
 prova('sem medição, nada', !L.medicaoPermitida('', 'aceito'));
 prova('o script do GA não está colado no index.html (passaria por cima do aceite)', !/googletagmanager\.com\/gtag/.test(fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8')));
 
+/* ---------- cadastro do acervo ---------- */
+{
+  const temasV = TEMAS.map(t => t.id);
+  const base = { __nova: true, id: 'JN99', nome: 'Caipira de Chita Nova', loja: 'neia', temas: ['junina'], genero: 'feminino', publico: 'adulto',
+    preco: 90, diaExtra: 20, caucao: 60, reposicao: 300, cor: '#d4462f', descricao: 'Vestido de chita.', tamanhos: { M: [92, 74, 100, 166] }, estoque: { M: 2 },
+    inclui: ['Vestido'], kit: [{ id: 'chapeu', nome: 'Chapéu', tipo: 'aluguel', preco: 10, estoque: 3 }], palavras: [], fotos: [] };
+  prova('cadastro: fantasia completa passa', L.validarFantasia(base, FANTASIAS, temasV).length === 0, L.validarFantasia(base, FANTASIAS, temasV));
+  const erros = c => L.validarFantasia(Object.assign({}, base, c), FANTASIAS, temasV).join(' | ');
+  prova('cadastro: código repetido', /Já existe fantasia com o código/.test(erros({ id: 'JN01' })));
+  prova('cadastro: nome de outra fantasia', /Já existe fantasia com esse nome/.test(erros({ nome: FANTASIAS[0].nome })));
+  prova('cadastro: marca registrada barrada', /marca registrada/.test(erros({ nome: 'Vestido da Elsa' })));
+  prova('cadastro: infantil com tamanho adulto', /2 a 14/.test(erros({ publico: 'infantil' })));
+  prova('cadastro: reposição maior que a caução', /reposição/.test(erros({ reposicao: 50 })));
+  prova('cadastro: medidas e quantidade por tamanho', /4 medidas/.test(erros({ tamanhos: { M: [92, 0, 100, 166] } })) && /quantas peças/.test(erros({ estoque: { M: 0 } })));
+  prova('cadastro: acessório de aluguel com estoque', /quantas unidades/.test(erros({ kit: [{ id: 'k', nome: 'K', tipo: 'aluguel', preco: 5 }] })));
+  prova('cadastro: até 4 fotos', /4 fotos/.test(erros({ fotos: ['a', 'b', 'c', 'd', 'e'] })));
+  prova('cadastro: editar sem trocar o nome não acusa nome repetido', L.validarFantasia(Object.assign({}, FANTASIAS[0]), FANTASIAS, temasV).length === 0, L.validarFantasia(Object.assign({}, FANTASIAS[0]), FANTASIAS, temasV));
+  prova('código: próximo junino', L.proximoCodigo(FANTASIAS, { temas: ['junina'] }) === 'JN07', L.proximoCodigo(FANTASIAS, { temas: ['junina'] }));
+  prova('código: infantil usa IN', L.proximoCodigo(FANTASIAS, { publico: 'infantil', temas: ['halloween'] }) === 'IN07');
+  prova('fora da vitrine some do filtro, mas o sistema acha', L.filtrar([Object.assign({}, base, { ativo: false })], {}).length === 0 && L.filtrar([Object.assign({}, base, { ativo: false })], { incluirForaDaVitrine: true }).length === 1);
+  // exportar: o dados.js gerado, rodado de novo, devolve o mesmo acervo (os dois lados do contrato)
+  const comFoto = FANTASIAS.slice(0, 3).concat([Object.assign({}, base, { fotos: ['data:image/jpeg;base64,AAA', 'fotos/ja-existe.jpg'], ativo: false })]);
+  const js = L.gerarDadosJs(TEMAS, comFoto.map(f => { const x = Object.assign({}, f); delete x.__nova; return x; }));
+  const jv = {}; vm.runInContext(js, vm.createContext({ window: jv }));
+  prova('exportar: dados.js gerado roda e devolve o acervo', jv.FANTASIAS.length === 4 && jv.TEMAS.length === TEMAS.length && JSON.stringify(jv.FANTASIAS[0].tamanhos) === JSON.stringify(FANTASIAS[0].tamanhos));
+  prova('exportar: foto do sistema vira arquivo, caminho existente fica', jv.FANTASIAS[3].fotos.join() === 'fotos/JN99-1.jpg,fotos/ja-existe.jpg' && !js.includes('base64'));
+  prova('exportar: fora da vitrine é mantido; campos internos não vazam', jv.FANTASIAS[3].ativo === false && !('__nova' in jv.FANTASIAS[3]) && !('ativo' in jv.FANTASIAS[0]));
+  prova('exportar: o dados.js gerado passa na validação do cadastro', jv.FANTASIAS.every(f => L.validarFantasia(f, jv.FANTASIAS, temasV).length === 0));
+}
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();
-const proibidos = /marvel|disney|batman|superman|homem[- ]aranha|spider|frozen|elsa|mulher[- ]maravilha|harry potter|jack sparrow|piratas do caribe|star wars|pokemon/i;
+// A mesma lista de marcas que o cadastro do sistema usa (logica.js): um lado só, sem cópia.
+const proibidos = { test: t => L.temMarcaRegistrada(t) };
 for (const f of FANTASIAS) {
   const q = 'fantasia ' + f.id;
   prova(q + ': id único', !vistos.has(f.id)); vistos.add(f.id);
@@ -455,6 +486,7 @@ for (const f of FANTASIAS) {
   prova(q + ': nome sem marca registrada', !proibidos.test(f.nome + ' ' + f.descricao + ' ' + (f.palavras || []).join(' ')), f.nome);
   prova(q + ': cor hexadecimal', /^#[0-9a-f]{6}$/i.test(f.cor), f.cor);
   prova(q + ': reposição maior que a caução', f.reposicao > f.caucao, [f.reposicao, f.caucao]);
+  prova(q + ': passa na validação do cadastro do sistema', L.validarFantasia(f, FANTASIAS, TEMAS.map(t => t.id)).length === 0, L.validarFantasia(f, FANTASIAS, TEMAS.map(t => t.id)));
   const est = f.estoque || {};
   prova(q + ': estoque para cada tamanho, e só para eles', Object.keys(est).sort().join() === tams.slice().sort().join(), [tams, est]);
   prova(q + ': estoque inteiro positivo', Object.values(est).every(n => Number.isInteger(n) && n > 0), est);
@@ -721,6 +753,29 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   prova('depois da festa a espera se encerra', S.espera().find(x => x.id === w.id).status === 'passou');
   S.definirDia(diaW);
 
+  // cadastro do acervo pelo sistema
+  const novaF = { __nova: true, id: L.proximoCodigo(jan.FANTASIAS, { temas: ['junina'] }), nome: 'Caipira Florida de Teste', temas: ['junina'], genero: 'feminino', publico: 'adulto',
+    preco: 90, diaExtra: 20, caucao: 60, reposicao: 300, cor: '#d4462f', descricao: 'Teste.', tamanhos: { M: [92, 74, 100, 166] }, estoque: { M: 2 },
+    inclui: ['Vestido'], kit: [], palavras: [], fotos: ['data:image/jpeg;base64,AAAA'] };
+  S.definirOperador('Atendente');
+  let semAcervo = '';
+  try { S.salvarFantasia(novaF); } catch (e) { semAcervo = e.message; }
+  prova('atendente não cadastra peça (padrão)', semAcervo === 'Sem permissão: acervo');
+  S.definirOperador('Néia');
+  const salva = S.salvarFantasia(novaF);
+  prova('peça cadastrada entra no acervo usado por site e balcão', salva.id === novaF.id && jan.FANTASIAS.some(f => f.id === novaF.id && f.fotos.length === 1) && !('__nova' in salva));
+  prova('peça nova já tem disponibilidade', L.disponibilidade(jan.FANTASIAS.find(f => f.id === novaF.id), jan.AGENDA, L.periodoAluguel(L.somarDias(S.dia(), 5), S.dia(), 0, lojaN), 1).M.livres.length === 2);
+  prova('cadastro inválido devolve os erros', (S.salvarFantasia(Object.assign({}, novaF, { __nova: true, id: 'JN01' })).erros || []).length > 0);
+  // reduzir estoque de peça reservada é recusado
+  const perF = L.periodoAluguel(L.somarDias(S.dia(), 6), S.dia(), 0, lojaN);
+  S.criarPedidoBalcao({ clienteId: 'CE006', periodo: perF, itens: [{ fantasia: novaF.id, tamanho: 'M', unidade: novaF.id + '-M-2', preco: 90, diaExtra: 20, caucao: 60 }],
+    complementos: [], desconto: { valor: 0 }, recebe: 'total', linhas: [{ forma: 'pix', valor: 90, confirmado: true }] });
+  const menos = S.salvarFantasia(Object.assign({}, salva, { estoque: { M: 1 } }));
+  prova('não reduz estoque se a peça que sumiria tem reserva', (menos.erros || []).some(x => x.includes(novaF.id + '-M-2')), menos);
+  const preco = S.salvarFantasia(Object.assign({}, salva, { preco: 95 }));
+  prova('editar preço funciona e fica registrado', preco.preco === 95 && jan.FANTASIAS.find(f => f.id === novaF.id).preco === 95 && S.acervoLog().some(l => /Editou/.test(l.acao)));
+  prova('acervo guardado no navegador', guardado['simulacao-cantinho-v3'].includes('Caipira Florida de Teste'));
+
   // LGPD: eliminação respeita a guarda; anonimizar tira os dados e mantém o histórico
   const sit = S.situacaoEliminacao(cli.id);
   prova('cliente com locação recente: guarda até 5 anos depois', !sit.pode && sit.motivo === 'guarda', sit);
@@ -753,6 +808,7 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   S.definirDia(L.somarDias(ex.retirada, 1));
   prova('exemplo no dia seguinte: com o cliente', S.porId(ex.id).status === 'retirada');
   S.zerar();
+  prova('recomeçar volta o acervo ao dados.js', !jan.FANTASIAS.some(f => f.nome === 'Caipira Florida de Teste') && jan.FANTASIAS.length === 34);
   prova('recomeçar apaga pedidos, clientes e caixas criados', !S.porId(b.id) && !S.clientePorId(cli.id) && !S.caixas().length);
 }
 

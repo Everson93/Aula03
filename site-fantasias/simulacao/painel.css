@@ -367,3 +367,17 @@ body.modo-painel { background: var(--fundo-alt); }
 .sis-ranking__valor { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sis-paradas { display: flex; flex-wrap: wrap; gap: 6px 10px; }
 @media (max-width: 860px) { .sis-duas { grid-template-columns: 1fr; } }
+
+/* ---------- cadastro do acervo ---------- */
+.pn-mini { width: 28px; height: 36px; object-fit: cover; border-radius: 6px; flex: none; }
+.pn-fant summary .pn-botao { margin-left: 8px; }
+.pn-fant__resumo { margin: 8px 0 0; }
+.cad-fotos { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+.cad-foto { margin: 0; width: 120px; display: flex; flex-direction: column; gap: 4px; font-size: .78rem; }
+.cad-foto img { width: 120px; height: 150px; object-fit: cover; border-radius: 8px; border: 1px solid var(--borda); }
+.cad-foto--nova { height: 150px; border: 2px dashed var(--borda); border-radius: 8px; display: grid; place-items: center; text-align: center; padding: 8px; cursor: pointer; font-weight: 700; color: var(--marca-clara); }
+.cad-foto--nova input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.cad-foto--nova:focus-within { outline: 2px solid var(--magenta); }
+.cad-simular { align-self: flex-end; font-size: .78rem; }
+.cad-tams input, .cad-tams select, .cad-kit input, .cad-kit select { font: inherit; padding: .35em .5em; border: 1px solid var(--borda); border-radius: 6px; background: var(--superficie); color: var(--texto); width: 100%; min-width: 52px; }
+.pn-modal input[type=color] { padding: 2px; height: 38px; }

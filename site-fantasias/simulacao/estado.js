@@ -43,6 +43,21 @@
     return d.join('');
   }
 
+  /* ---------- acervo cadastrado no sistema ----------
+   * Muda window.FANTASIAS no lugar (mesma lista que o site e o painel usam), para
+   * a peça cadastrada aparecer na vitrine, no balcão e na agenda na hora. */
+  function aplicarAcervo(mapa) {
+    Object.keys(mapa || {}).forEach(function (id) {
+      var f = mapa[id];
+      var i = window.FANTASIAS.findIndex(function (x) { return x.id === id; });
+      if (i === -1) window.FANTASIAS.push(f); else window.FANTASIAS[i] = f;
+    });
+  }
+  var acervoOriginal = JSON.parse(JSON.stringify(window.FANTASIAS)); // o dados.js, para "Recomeçar"
+  (function () {
+    try { aplicarAcervo((JSON.parse(localStorage.getItem('simulacao-cantinho-v3')) || {}).acervo); } catch (e) { /* sem armazenamento */ }
+  })();
+
   /* ---------- clientes e pedidos de exemplo ---------- */
   var clientesExemplo = [];
   var clientePorNome = {};
@@ -83,7 +98,7 @@
   /* ---------- estado guardado ---------- */
   function estadoNovo(dia) {
     return { dia: dia || hojeReal(), operador: ((C.operadores || [])[0] || { nome: 'Atendente' }).nome, seq: { P: 1, C: 1, X: 1, S: 1, M: 1, B: 1, A: 1, O: 1, W: 1 },
-      pedidos: [], alteracoes: {}, clientes: [], clientesAlt: {}, caixas: [], solicitacoes: [], bloqueios: [], provas: [], orcamentos: [], espera: [], lembretes: {} };
+      pedidos: [], alteracoes: {}, clientes: [], clientesAlt: {}, caixas: [], solicitacoes: [], bloqueios: [], provas: [], orcamentos: [], espera: [], lembretes: {}, acervo: {} };
   }
   var estado;
   try {
@@ -96,6 +111,7 @@
     estado.orcamentos = estado.orcamentos || [];
     estado.espera = estado.espera || [];
     estado.lembretes = estado.lembretes || {};
+    estado.acervo = estado.acervo || {};
   } catch (e) { estado = estadoNovo(); }
   var ouvintes = [];
   var avisoArmazenamento = '';
@@ -626,8 +642,41 @@
     },
     marcarLembrete: function (chave) { estado.lembretes[chave] = { hora: agora(), quem: estado.operador }; salvar(); publicar(); },
 
+    /* ---------- cadastro do acervo ---------- */
+    salvarFantasia: function (f) {
+      exigir('acervo');
+      var nova = !!f.__nova;
+      var antiga = nova ? null : fantasiaDe(f.id);
+      var erros = L.validarFantasia(f, window.FANTASIAS, window.TEMAS.map(function (t) { return t.id; }));
+      // Peça que deixaria de existir (tamanho tirado ou quantidade menor) não pode ter reserva em aberto.
+      if (antiga) {
+        var ficam = {};
+        Object.keys(f.tamanhos).forEach(function (t) { L.unidades(f, t).forEach(function (u) { ficam[u] = 1; }); });
+        var somem = [];
+        Object.keys(antiga.tamanhos).forEach(function (t) { L.unidades(antiga, t).forEach(function (u) { if (!ficam[u]) somem.push(u); }); });
+        var presas = linhasPorPeca(todos()).filter(function (r) {
+          return somem.indexOf(r.unidade) !== -1 && ['pendente', 'confirmada', 'retirada'].indexOf(r.status) !== -1;
+        });
+        if (presas.length) erros.push('A peça ' + presas[0].unidade + ' tem reserva em aberto (' + presas.map(function (r) { return r.id; }).join(', ') +
+          '). Mantenha esse tamanho e quantidade até a devolução, ou tire da vitrine.');
+      }
+      if (erros.length) return { erros: erros };
+      var limpa = JSON.parse(JSON.stringify(f));
+      delete limpa.__nova;
+      limpa.loja = limpa.loja || Object.keys(C.lojas)[0];
+      estado.acervo[limpa.id] = limpa;
+      var so = {}; so[limpa.id] = limpa;
+      aplicarAcervo(so);
+      estado.acervoLog = (estado.acervoLog || []).concat([{ quando: estado.dia, quem: estado.operador, acao: (nova ? 'Cadastrou ' : 'Editou ') + limpa.id + ' ' + limpa.nome }]);
+      salvar(); publicar();
+      return limpa;
+    },
+    acervoLog: function () { return (estado.acervoLog || []).slice(); },
+
     zerar: function () {
       estado = estadoNovo(estado.dia);
+      window.FANTASIAS.length = 0;
+      JSON.parse(JSON.stringify(acervoOriginal)).forEach(function (f) { window.FANTASIAS.push(f); });
       salvar(); publicar();
     }
   };

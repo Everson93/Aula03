@@ -124,6 +124,32 @@ const texto = async (p, sel) => ((await p.textContent(sel)) || '').replace(/\s+/
     prova('perfil: atendente não faz sangria', !(await p.isVisible('#cx-san')));
   });
 
+  /* 5. Cadastro de fantasia com foto → aparece no site */
+  await cenario('cadastro do acervo', async () => {
+    const p = await pagina(b, {}, erros);
+    await p.goto(SIM + '#painel');
+    await p.click('[data-pagina="acervo"].sis-nav__item');
+    await p.click('[data-acao="nova-fantasia"]');
+    await p.click('#cad-ok');
+    prova('cadastro: vazio mostra o que falta', (await texto(p, '#cad-erros')).includes('Nome da fantasia'));
+    await p.click('#cad-simular'); await p.click('#cad-simular');
+    await p.fill('#cad-nome', 'Caipira de Chita Azul');
+    await p.fill('#cad-desc', 'Vestido de chita azul com babado.');
+    await p.fill('#cad-inclui', 'Vestido, Fita');
+    await p.fill('#cad-preco', '95,00'); await p.fill('#cad-extra', '25,00'); await p.fill('#cad-caucao', '60,00'); await p.fill('#cad-repos', '320,00');
+    await p.click('#cad-mais-tam'); await p.click('#cad-mais-tam');
+    await p.click('#cad-mais-kit'); await p.fill('[data-kit="nome"][data-i="0"]', 'Chapéu de palha'); await p.selectOption('[data-kit="tipo"][data-i="0"]', 'aluguel');
+    await p.fill('[data-kit="preco"][data-i="0"]', '10,00'); await p.fill('[data-kit="estoque"][data-i="0"]', '2');
+    await p.click('#cad-ok');
+    const nova = await p.evaluate(() => window.FANTASIAS.find(f => f.nome === 'Caipira de Chita Azul'));
+    prova('cadastro: peça salva com código, 2 fotos, 2 tamanhos e complemento', nova && nova.id === 'JN07' && nova.fotos.length === 2 && Object.keys(nova.tamanhos).join() === 'PP,P' && nova.kit[0].estoque === 2, nova && { id: nova.id, f: nova.fotos.length, t: Object.keys(nova.tamanhos) });
+    await p.click('#sim-vista-site');
+    await p.fill('#busca-texto', 'chita azul'); await p.click('#form-busca button');
+    prova('cadastro: aparece no site com a foto', (await p.locator('.cartao[data-id="JN07"] img').count()) === 1);
+    await p.locator('.cartao[data-id="JN07"]').click();
+    prova('cadastro: ficha com galeria de 2 fotos', (await p.locator('.ficha__mini').count()) === 2);
+  });
+
   /* 4. Celular, tema escuro: painel sem rolagem lateral */
   await cenario('celular', async () => {
     const p = await pagina(b, Object.assign({}, devices['iPhone 13'], { colorScheme: 'dark' }), erros);

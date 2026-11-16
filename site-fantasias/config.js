@@ -81,9 +81,11 @@ window.CONFIG = {
     { nome: 'Atendente', papel: 'atendente' }
   ],
   // O que só a dona faz (dinheiro que sai da gaveta, dados pessoais completos,
-  // apagar dados, cancelar com estorno, desconto grande, relatórios).
+  // apagar dados, cancelar com estorno, desconto grande, relatórios, cadastrar e
+  // editar peças do acervo e preços). Para liberar o cadastro a um atendente,
+  // ponha 'acervo' na lista dele.
   permissoes: {
-    dona: ['sangria', 'suprimento', 'verCpf', 'exportarDados', 'anonimizar', 'apagarFotos', 'cancelarPedido', 'descontoAcimaLimite', 'relatorios', 'bloquear'],
+    dona: ['sangria', 'suprimento', 'verCpf', 'exportarDados', 'anonimizar', 'apagarFotos', 'cancelarPedido', 'descontoAcimaLimite', 'relatorios', 'bloquear', 'acervo'],
     atendente: ['bloquear']
   },
   limiteDescontoAtendente: 10,   // % do pedido que o atendente pode dar sem a dona

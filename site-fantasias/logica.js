@@ -630,6 +630,75 @@
     return false;
   }
 
+  /* ---------- cadastro do acervo ----------
+   * As mesmas regras que conferir_landing.js aplica ao dados.js valem para uma
+   * fantasia cadastrada na tela: o que entra pelo sistema não fura a suíte. */
+  var MARCAS = /marvel|disney|batman|superman|homem[- ]aranha|spider|frozen|elsa|mulher[- ]maravilha|harry potter|jack sparrow|piratas do caribe|star wars|pokemon/i;
+  function temMarcaRegistrada(texto) { return MARCAS.test(String(texto || '')); }
+
+  var PREFIXOS = { junina: 'JN', carnaval: 'CV', halloween: 'HW', decadas: 'DC', medieval: 'MD', herois: 'HR', historia: 'HS' };
+  // Código curto: prefixo pelo público/tema + próximo número livre (JN07, IN07...).
+  function proximoCodigo(fantasias, nova) {
+    var pref = nova.publico === 'infantil' ? 'IN' : (PREFIXOS[(nova.temas || [])[0]] || 'FT');
+    var maior = (fantasias || []).reduce(function (m, f) {
+      var r = new RegExp('^' + pref + '(\\d+)$').exec(f.id);
+      return r ? Math.max(m, Number(r[1])) : m;
+    }, 0);
+    return pref + ('0' + (maior + 1)).slice(-2);
+  }
+
+  function validarFantasia(f, existentes, temasValidos) {
+    var e = [];
+    var outros = (existentes || []).filter(function (x) { return x.id !== f.id || f.__nova; });
+    if (!/^[A-Z]{2}\d{2,4}$/.test(f.id || '')) e.push('Código no formato de 2 letras e 2 números (ex.: JN07).');
+    else if (f.__nova && (existentes || []).some(function (x) { return x.id === f.id; })) e.push('Já existe fantasia com o código ' + f.id + '.');
+    if (String(f.nome || '').trim().length < 3) e.push('Nome da fantasia.');
+    else if (outros.some(function (x) { return normalizar(x.nome) === normalizar(f.nome) && x.id !== f.id; })) e.push('Já existe fantasia com esse nome.');
+    if (temMarcaRegistrada([f.nome, f.descricao, (f.palavras || []).join(' ')].join(' '))) e.push('Sem nome de personagem ou marca registrada: use um nome descritivo (veja o README).');
+    if (!(f.temas || []).length || !f.temas.every(function (t) { return (temasValidos || []).indexOf(t) !== -1; })) e.push('Escolha ao menos um tema.');
+    if (['feminino', 'masculino', 'unissex'].indexOf(f.genero) === -1) e.push('Para quem: feminino, masculino ou unissex.');
+    if (!(f.preco > 0)) e.push('Preço do aluguel maior que zero.');
+    if (!(f.diaExtra > 0)) e.push('Valor do dia extra maior que zero.');
+    if (!(f.caucao >= 0)) e.push('Caução (pode ser zero).');
+    if (!(f.reposicao > f.caucao)) e.push('Valor de reposição maior que a caução.');
+    var tams = Object.keys(f.tamanhos || {});
+    if (!tams.length) e.push('Ao menos um tamanho.');
+    if (tams.some(function (t) { return ORDEM_TAMANHOS.indexOf(t) === -1; })) e.push('Tamanho desconhecido.');
+    else if (tams.length && (f.publico === 'infantil') !== ehInfantil(tams)) e.push(f.publico === 'infantil' ? 'Peça infantil usa tamanhos de 2 a 14.' : 'Peça adulta usa tamanhos de PP a XG.');
+    tams.forEach(function (t) {
+      var m = f.tamanhos[t];
+      if (!m || m.length !== 4 || !m.every(function (n) { return n > 0; })) e.push('Tamanho ' + t + ': as 4 medidas (busto, cintura, quadril, altura).');
+      var q = (f.estoque || {})[t];
+      if (!(Number.isInteger(q) && q > 0)) e.push('Tamanho ' + t + ': quantas peças (1 ou mais).');
+    });
+    var kids = (f.kit || []).map(function (k) { return k.id; });
+    if (kids.some(function (id, i) { return kids.indexOf(id) !== i; })) e.push('Complementos com código repetido.');
+    (f.kit || []).forEach(function (k) {
+      if (!String(k.nome || '').trim() || !(k.preco > 0) || ['venda', 'aluguel'].indexOf(k.tipo) === -1) e.push('Complemento: nome, tipo e preço maior que zero.');
+      if (k.tipo === 'aluguel' && !(Number.isInteger(k.estoque) && k.estoque > 0)) e.push('Complemento de aluguel "' + (k.nome || '') + '": quantas unidades.');
+    });
+    if ((f.fotos || []).length > 4) e.push('No máximo 4 fotos.');
+    return e.filter(function (x, i, a) { return a.indexOf(x) === i; });
+  }
+
+  /* dados.js a partir do acervo atual (para levar o cadastro feito no sistema ao
+   * site publicado). Foto vira caminho de arquivo: fotos/<código>-<n>.jpg. */
+  function gerarDadosJs(temas, fantasias) {
+    var limpa = fantasias.map(function (f) {
+      var x = {};
+      ['id', 'nome', 'loja', 'temas', 'genero', 'publico', 'preco', 'diaExtra', 'caucao', 'reposicao', 'cor', 'descricao',
+        'tamanhos', 'estoque', 'inclui', 'kit', 'palavras', 'fotos', 'ativo'].forEach(function (k) { if (f[k] !== undefined) x[k] = f[k]; });
+      if (x.publico === 'adulto') delete x.publico;
+      if (x.ativo !== false) delete x.ativo;
+      x.fotos = (f.fotos || []).map(function (src, i) { return /^data:/.test(src) ? 'fotos/' + f.id + '-' + (i + 1) + '.jpg' : src; });
+      return x;
+    });
+    return '/* ===== Acervo da vitrine =====\n * Gerado pelo sistema do ateliê (Acervo > Exportar para o site).\n' +
+      ' * Fotos: salve cada imagem na pasta fotos/ com o nome indicado em "fotos". */\n' +
+      'window.TEMAS = ' + JSON.stringify(temas, null, 2) + ';\n\n' +
+      'window.FANTASIAS = ' + JSON.stringify(limpa, null, 2) + ';\n';
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -675,6 +744,7 @@
     var f = filtros || {};
     var termo = normalizar(f.texto);
     return fantasias.filter(function (x) {
+      if (x.ativo === false && !f.incluirForaDaVitrine) return false;
       if (f.tema && x.temas.indexOf(f.tema) === -1) return false;
       if (f.genero && x.genero !== f.genero && x.genero !== 'unissex') return false;
       if (f.publico && (x.publico || 'adulto') !== f.publico) return false;
@@ -776,6 +846,10 @@
     validarAgenda: validarAgenda,
     kitLivres: kitLivres,
     textoHorarios: textoHorarios,
+    temMarcaRegistrada: temMarcaRegistrada,
+    proximoCodigo: proximoCodigo,
+    validarFantasia: validarFantasia,
+    gerarDadosJs: gerarDadosJs,
     medicaoPermitida: medicaoPermitida,
     somarMeses: somarMeses,
     relatorioMes: relatorioMes,

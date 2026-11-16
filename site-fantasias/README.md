@@ -158,7 +158,7 @@ dados e as fontes estão em [`PESQUISA_PAINEL.md`](PESQUISA_PAINEL.md).
 | Pedidos | todos, por situação; cancelamento (estorno até 7 dias antes, depois vira crédito na loja) |
 | Contrato | sai preenchido do pedido (cliente, peças com etiqueta e valor de reposição, datas, valores, formas de pagamento, laudo da vistoria), com as mesmas 12 cláusulas do modelo; botão em Pedidos, Recibo e Retirada |
 | Clientes | cadastro mínimo, CPF mascarado, consentimento de marketing à parte, crédito na loja, direitos do titular |
-| Acervo | onde está cada peça física no dia; bloquear uma peça por um período (conserto, ajuste, higienização demorada) e liberar |
+| Acervo | onde está cada peça física no dia; **cadastrar e editar fantasias com fotos** (até 4, a primeira é a capa; reduzidas para o celular), preços, tamanhos com medidas e estoque, complementos e "aparece no site"; bloquear e liberar peça; **Exportar para o site** gera o `dados.js` |
 | Caixa | abertura, sangria, suprimento, fechamento com conferência cega |
 | Privacidade | registro das operações, pedidos dos titulares com prazo, guardas vencidas |
 
@@ -196,6 +196,22 @@ derrubam a suíte com código de saída 1. Dois sobreviveram na primeira rodada 
 as provas foram corrigidas — "Pierrô" decomposto ainda contém "pierro" (a
 prova passou a usar "Múmia"), e `0,1 × 100` dá exato em JavaScript (a prova
 passou a usar 0,14 + 0,01, que sem centavos dá 0,15000000000000002).
+
+## Cadastro de fantasias e fotos
+
+No sistema (Acervo), a dona cadastra e edita as peças: fotos tiradas no
+celular, nome descritivo, temas, preços, tamanhos com medidas e quantidade de
+peças, complementos (venda ou aluguel, com estoque) e se aparece no site. A
+validação é a mesma que a suíte aplica ao `dados.js` (sem marca registrada,
+reposição maior que a caução, infantil só com tamanhos 2 a 14...), e o
+sistema recusa diminuir a quantidade de um tamanho se a peça que sairia tem
+reserva em aberto (para isso existe "tirar da vitrine").
+
+O site publicado é estático e lê o acervo do `dados.js`. Para levar o que foi
+cadastrado no sistema ao site: **Acervo > Exportar para o site** gera o texto
+do `dados.js` e a lista de fotos a salvar em `fotos/` (com os nomes
+`<código>-<n>.jpg`). No MVP com banco de dados, esse passo some: o site lê
+direto do banco.
 
 ## Testes de navegador e CI
 
