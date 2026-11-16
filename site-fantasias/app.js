@@ -307,7 +307,8 @@
     var dlg = $('ficha');
     if (!dlg.open) dlg.showModal();
     dlg.scrollTop = 0;
-    if (location.hash !== '#f/' + f.id) history.replaceState(null, '', '#f/' + f.id);
+    // "#f-HW01": nome simples no hash (sem "/"), que sobrevive a qualquer hospedagem.
+    trocarHash('#f-' + f.id);
     registrar('abrir_ficha', { id: f.id, origem: origem });
   }
 
@@ -318,13 +319,18 @@
     });
     var dlg = $('ficha');
     dlg.addEventListener('close', function () {
-      if (location.hash.indexOf('#f/') === 0) history.replaceState(null, '', location.pathname + location.search);
+      if (/^#f[-\/]/.test(location.hash)) trocarHash('');
     });
     // Clique fora do conteúdo fecha.
     dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
 
-    var m = /^#f\/(\w+)$/.exec(location.hash);
+    var m = /^#f[-\/](\w+)$/.exec(location.hash); // aceita também o formato antigo #f/HW01
     if (m) abrirFicha(m[1], 'link');
+  }
+
+  function trocarHash(h) {
+    if (location.hash === h) return;
+    try { history.replaceState(null, '', h || (location.pathname + location.search)); } catch (e) { /* moldura sem history */ }
   }
 
   /* ---------- botões de contato geral ---------- */

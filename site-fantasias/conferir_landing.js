@@ -146,5 +146,22 @@ for (const s of scripts) prova('script ' + s + ' existe', fs.existsSync(path.joi
 prova('app.js compila', (() => { try { new vm.Script(app); return true; } catch (e) { return false; } })());
 prova('nenhum toFixed em app.js/logica.js', !/toFixed\(/.test(app + fs.readFileSync(path.join(__dirname, 'logica.js'), 'utf8')));
 
+/* ---------- simulação (artefato) ---------- */
+const os = require('os');
+const saidaSim = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sim-')), 'sim.html');
+const montou = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'simulacao', 'montar.js'), saidaSim]);
+prova('simulação monta', montou.status === 0, String(montou.stderr));
+if (montou.status === 0) {
+  const sim = fs.readFileSync(saidaSim, 'utf8');
+  prova('simulação sem <html>/<head>/<body> próprios', !/<(html|head|body)[\s>]/i.test(sim));
+  prova('simulação com <title> no início', /^<title>[^<]{3,60}<\/title>/.test(sim));
+  const blocos = [...sim.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  prova('simulação com 6 scripts inline', blocos.length === 6, blocos.length);
+  blocos.forEach((b, i) => prova('script inline ' + i + ' compila', (() => { try { new vm.Script(b); return true; } catch (e) { return false; } })()));
+  prova('simulação sem script ou CSS externo', !/<script src=|<link /.test(sim));
+  prova('antes.js vem antes do app.js', sim.indexOf('simulacao/antes.js') < sim.indexOf('/* app.js */'));
+  for (const id of ['ficha', 'grade', 'busca-data']) prova('simulação mantém #' + id, sim.includes('id="' + id + '"'));
+}
+
 console.log((falhas ? 'REPROVADO' : 'OK') + ' — ' + ok + ' provas aprovadas, ' + falhas + ' falhas');
 process.exit(falhas ? 1 : 0);

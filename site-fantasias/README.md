@@ -23,11 +23,11 @@ com sinal pago vindas desta página.
 - Botão **Reservar pelo WhatsApp** que abre a conversa com a loja já com a
   mensagem pronta: código da peça, tamanho, data da festa (dd/mm/aaaa), kit,
   total e sinal.
-- Link direto para cada fantasia (`index.html#f/HW01`) — bom para anúncio e
+- Link direto para cada fantasia (`index.html#f-HW01`; o formato antigo `#f/HW01` continua abrindo) — bom para anúncio e
   para mandar no Instagram.
 - Botões para pedido de grupo, para lojas que querem ser parceiras e para
   "não encontrei o que procuro".
-- Responsivo; sem dependências nem etapa de build.
+- Responsivo, com tema claro e escuro (segue o celular); sem dependências nem etapa de build.
 
 ## Antes de publicar — 3 coisas
 
@@ -68,17 +68,31 @@ com sinal pago vindas desta página.
 
 Para testar no computador, basta abrir o `index.html` no navegador.
 
+## Simular antes de subir
+
+```bash
+node simulacao/montar.js simulador.html
+```
+
+Gera um HTML único com o site inteiro mais uma camada de simulação: cada loja
+ganha um número fictício, o botão de reservar mostra a conversa que a loja
+receberia (com opção de mandar para o seu próprio WhatsApp) e um painel
+"Medição" lista os eventos e o funil visitas → fichas → cliques em reservar.
+O montador lê os arquivos reais, então a simulação não diverge do que vai ao
+ar. A pasta `simulacao/` **não** vai para a hospedagem.
+
 ## Provas
 
 ```bash
 node conferir_landing.js
 ```
 
-406 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
+421 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
 sugere menor que o ideal), filtros, orçamento em centavos, mensagem e link do
 WhatsApp, coerência de `dados.js` com `config.js` (loja existe, temas
 existem, medidas completas, sinal entre 30 e 50, nenhum nome de marca
-registrada) e o contrato entre `index.html` e `app.js` (todo id pedido existe).
+registrada), o contrato entre `index.html` e `app.js` (todo id pedido existe)
+e a montagem da simulação (cada script inline compila, ordem dos scripts).
 
 A suíte foi validada por mutação: 13 defeitos reintroduzidos, todos
 derrubam a suíte com código de saída 1. Dois sobreviveram na primeira rodada e
@@ -104,6 +118,7 @@ se aparecer um nome da lista de marcas conhecidas.
 | `logica.js` | regras puras (preço, tamanho, filtro, orçamento, mensagem) — roda no navegador e no Node |
 | `app.js` | interface |
 | `conferir_landing.js` | provas |
+| `simulacao/` | montador da versão de simulação (não publicar) |
 
 ## Próxima etapa (depois do sinal verde)
 

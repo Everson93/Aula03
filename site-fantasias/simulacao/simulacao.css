@@ -1,0 +1,111 @@
+/* ===== Camada de simulação (só existe no artefato) ===== */
+:root {
+  --chat-fundo: #efe7dd;
+  --chat-topo: #1f6f5c;
+  --chat-balao: #d9fdd3;
+  --chat-texto: #1d2b24;
+  --chat-hora: #5f7168;
+  --faixa-fundo: #221a2b;
+  --faixa-texto: #f3ede6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --chat-fundo: #0e1419; --chat-topo: #1d2b33; --chat-balao: #144d3f; --chat-texto: #e9f1ed;
+    --chat-hora: #9fb3aa; --faixa-fundo: #f3ede6; --faixa-texto: #221a2b;
+  }
+}
+:root[data-theme="dark"] {
+  --chat-fundo: #0e1419; --chat-topo: #1d2b33; --chat-balao: #144d3f; --chat-texto: #e9f1ed;
+  --chat-hora: #9fb3aa; --faixa-fundo: #f3ede6; --faixa-texto: #221a2b;
+}
+
+/* cabeçalho fixo respeita a área segura do celular */
+.topo { top: env(safe-area-inset-top, 0px); }
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px);
+  z-index: 11; background: var(--marca);
+}
+
+.sim-faixa { background: var(--faixa-fundo); color: var(--faixa-texto); font-size: .9rem; }
+.sim-faixa__linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 8px; flex-wrap: wrap; }
+.sim-faixa p { margin: 0; min-width: 0; flex: 1 1 260px; }
+.sim-faixa__botao {
+  font: inherit; font-weight: 600; cursor: pointer; border-radius: 999px; padding: .35em 1em;
+  background: transparent; color: var(--faixa-texto); border: 1px solid currentColor;
+  display: inline-flex; gap: .5em; align-items: center;
+}
+.sim-faixa__botao span {
+  background: var(--destaque); color: var(--branco); border-radius: 999px; padding: 0 .55em;
+  font-size: .8rem; font-variant-numeric: tabular-nums;
+}
+.sim-faixa__botao:focus-visible, .sim-whats__fechar:focus-visible { outline: 3px solid var(--destaque); outline-offset: 2px; }
+
+/* ---------- conversa de WhatsApp simulada ---------- */
+.sim-whats, .sim-medicao {
+  padding: 0; border: 0; border-radius: 18px; overflow: hidden;
+  background: var(--superficie); color: var(--texto); box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+}
+.sim-whats { width: min(440px, 100% - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.sim-whats::backdrop, .sim-medicao::backdrop { background: rgba(10, 14, 12, .65); }
+.sim-whats__topo { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--chat-topo); color: var(--branco); }
+.sim-whats__avatar {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: rgba(255, 255, 255, .2); font-weight: 700;
+}
+.sim-whats__topo > div { flex: 1; min-width: 0; }
+.sim-whats__nome { margin: 0; font-weight: 700; }
+.sim-whats__sub { margin: 0; font-size: .78rem; opacity: .8; }
+.sim-whats__fechar {
+  width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer; flex: none;
+  background: rgba(255, 255, 255, .18); color: inherit; font-size: 1.4rem; line-height: 1;
+}
+.sim-medicao .sim-whats__fechar { background: var(--fundo-alt); color: var(--texto); }
+.sim-whats__chat {
+  background: var(--chat-fundo); padding: 20px 14px 24px;
+  background-image: radial-gradient(rgba(127, 127, 127, .12) 1px, transparent 1px); background-size: 14px 14px;
+}
+.sim-balao {
+  margin-left: auto; max-width: 92%; background: var(--chat-balao); color: var(--chat-texto);
+  border-radius: 10px 0 10px 10px; padding: 8px 10px 6px; box-shadow: 0 1px 1px rgba(0, 0, 0, .15);
+}
+.sim-balao p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .92rem; line-height: 1.45; }
+.sim-balao__hora { display: block; text-align: right; font-size: .7rem; color: var(--chat-hora); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.sim-whats__acoes { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+.sim-teste { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; font-weight: 600; color: var(--texto-suave); }
+.sim-teste__linha { display: flex; gap: 8px; }
+.sim-teste input {
+  flex: 1; min-width: 0; font: inherit; font-size: 1rem; padding: .6em .8em; border-radius: 10px;
+  border: 1px solid var(--borda); background: var(--superficie); color: var(--texto);
+}
+.sim-teste .botao { padding: .6em 1em; }
+.sim-teste__resultado { margin: 0; font-weight: 400; display: flex; flex-direction: column; gap: 2px; }
+.sim-teste__resultado a { font-weight: 700; color: var(--marca-clara); }
+.sim-whats__nota { margin: 0; font-size: .8rem; color: var(--texto-suave); }
+
+/* ---------- painel de medição ---------- */
+.sim-medicao { width: min(720px, 100% - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.sim-medicao__topo { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 20px 0; }
+.sim-medicao h2 { margin: 0; font-size: 1.3rem; }
+.sim-medicao h3 { margin: 0; font-size: 1rem; }
+.sim-medicao__intro { margin: 8px 20px 16px; color: var(--texto-suave); font-size: .9rem; max-width: 62ch; }
+.sim-funil { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 0 20px; }
+.sim-funil__etapa { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 12px; background: var(--fundo-alt); min-width: 0; }
+.sim-funil__etapa:nth-child(3) { background: var(--destaque-suave); }
+.sim-funil__rotulo { font-size: .75rem; color: var(--texto-suave); }
+.sim-funil strong { font-size: 1.6rem; color: var(--marca-texto); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.sim-funil__taxa { font-size: .75rem; color: var(--texto-suave); }
+.sim-medicao__barra { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 20px 20px 8px; }
+.sim-medicao__barra .botao { padding: .4em .9em; font-size: .85rem; }
+.sim-eventos { list-style: none; margin: 0; padding: 0 20px 20px; }
+.sim-eventos li {
+  display: grid; grid-template-columns: 76px 1fr; column-gap: 12px; padding: 8px 0;
+  border-bottom: 1px solid var(--borda); font-size: .88rem;
+}
+.sim-eventos__hora { color: var(--texto-suave); font-variant-numeric: tabular-nums; grid-row: span 2; }
+.sim-eventos__nome { font-weight: 600; }
+.sim-eventos__dados { grid-column: 2; color: var(--texto-suave); font-size: .8rem; overflow-wrap: anywhere; }
+.sim-eventos li.sim-eventos__vazio { display: block; color: var(--texto-suave); border: 0; }
+
+@media (max-width: 560px) {
+  .sim-funil { grid-template-columns: 1fr 1fr; }
+}
