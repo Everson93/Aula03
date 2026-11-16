@@ -570,6 +570,58 @@
     return out.sort(function (a, b) { return ordem[a.tipo] - ordem[b.tipo]; });
   }
 
+  /* ---------- relatórios ----------
+   * Um pedido conta no mês em que a peça sai (retirada). Não contam: cancelado,
+   * expirado, aguardando sinal. pedidos: [{ status, retirada, devolucao, devolvidaEm,
+   * valores: { total }, itens: [{ fantasia, unidade }] }] */
+  var CONTA = ['confirmada', 'retirada', 'concluida'];
+  function mesDe(iso) { return String(iso || '').slice(0, 7); }
+  function somarMeses(mes, n) {
+    var a = Number(mes.slice(0, 4)), m = Number(mes.slice(5, 7)) - 1 + n;
+    a += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+    return a + '-' + ('0' + (m + 1)).slice(-2);
+  }
+  function relatorioMes(pedidos, mes) {
+    var doMes = pedidos.filter(function (p) { return CONTA.indexOf(p.status) !== -1 && mesDe(p.retirada) === mes; });
+    var fat = doMes.reduce(function (s, p) { return s + centavos(p.valores.total); }, 0);
+    var porFantasia = {};
+    doMes.forEach(function (p) { (p.itens || []).forEach(function (it) { porFantasia[it.fantasia] = (porFantasia[it.fantasia] || 0) + 1; }); });
+    var pecas = Object.keys(porFantasia).reduce(function (s, k) { return s + porFantasia[k]; }, 0);
+    return {
+      mes: mes, faturamento: fat / 100, pedidos: doMes.length, pecas: pecas,
+      ticket: doMes.length ? Math.round(fat / doMes.length) / 100 : 0,
+      ranking: Object.keys(porFantasia).map(function (k) { return { fantasia: k, n: porFantasia[k] }; })
+        .sort(function (a, b) { return b.n - a.n || (a.fantasia < b.fantasia ? -1 : 1); })
+    };
+  }
+  function faturamentoPorMes(pedidos, ultimoMes, n) {
+    var out = [];
+    for (var i = n - 1; i >= 0; i--) { var m = somarMeses(ultimoMes, -i); out.push({ mes: m, valor: relatorioMes(pedidos, m).faturamento }); }
+    return out;
+  }
+  /* Ocupação do mês: peça-dias com cliente (retirada..devolução dentro do mês) ÷
+   * (peças do acervo × dias do mês). */
+  function ocupacaoMes(pedidos, mes, totalPecas) {
+    var ini = mes + '-01', fim = somarDias(somarMeses(mes, 1) + '-01', -1);
+    var diasMes = diasEntre(ini, fim) + 1, usados = 0;
+    pedidos.filter(function (p) { return CONTA.indexOf(p.status) !== -1; }).forEach(function (p) {
+      var a = p.retirada > ini ? p.retirada : ini, b = p.devolucao < fim ? p.devolucao : fim;
+      if (a <= b) usados += (diasEntre(a, b) + 1) * (p.itens || []).length;
+    });
+    return totalPecas ? Math.round(usados * 1000 / (totalPecas * diasMes)) / 10 : 0;
+  }
+  /* Peças sem nenhuma saída nos últimos "dias" até "hoje" (candidatas a sair do acervo). */
+  function pecasParadas(unidadesTodas, pedidos, hoje, dias) {
+    var desde = somarDias(hoje, -dias), saiu = {};
+    pedidos.filter(function (p) { return CONTA.indexOf(p.status) !== -1 && p.retirada >= desde && p.retirada <= hoje; })
+      .forEach(function (p) { (p.itens || []).forEach(function (it) { saiu[it.unidade] = 1; }); });
+    return unidadesTodas.filter(function (u) { return !saiu[u]; });
+  }
+  function nomeMes(mes) {
+    var m = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][Number(mes.slice(5, 7)) - 1];
+    return m + '/' + mes.slice(2, 4);
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -716,6 +768,12 @@
     validarAgenda: validarAgenda,
     kitLivres: kitLivres,
     textoHorarios: textoHorarios,
+    somarMeses: somarMeses,
+    relatorioMes: relatorioMes,
+    faturamentoPorMes: faturamentoPorMes,
+    ocupacaoMes: ocupacaoMes,
+    pecasParadas: pecasParadas,
+    nomeMes: nomeMes,
     lembretesDoDia: lembretesDoDia,
     papelDe: papelDe,
     pode: pode,

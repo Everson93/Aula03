@@ -404,6 +404,27 @@ prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.enderec
   prova('sem WhatsApp não gera lembrete; concluído e prova cancelada também não', !lem.some(x => ['P4', 'P5', 'A2'].includes(x.ref)));
 }
 
+/* ---------- relatórios ---------- */
+{
+  const ped = [
+    { status: 'concluida', retirada: '2027-02-05', devolucao: '2027-02-08', valores: { total: 100 }, itens: [{ fantasia: 'A', unidade: 'A-M-1' }, { fantasia: 'B', unidade: 'B-M-1' }] },
+    { status: 'retirada', retirada: '2027-02-27', devolucao: '2027-03-02', valores: { total: 50.5 }, itens: [{ fantasia: 'A', unidade: 'A-M-2' }] },
+    { status: 'cancelada', retirada: '2027-02-10', devolucao: '2027-02-12', valores: { total: 999 }, itens: [{ fantasia: 'C', unidade: 'C-M-1' }] },
+    { status: 'pendente', retirada: '2027-02-10', devolucao: '2027-02-12', valores: { total: 999 }, itens: [{ fantasia: 'C', unidade: 'C-M-1' }] },
+    { status: 'confirmada', retirada: '2027-03-10', devolucao: '2027-03-12', valores: { total: 70 }, itens: [{ fantasia: 'B', unidade: 'B-M-1' }] } ];
+  const rel = L.relatorioMes(ped, '2027-02');
+  prova('relatório: faturamento conta pela retirada e ignora cancelado e pendente', rel.faturamento === 150.5 && rel.pedidos === 2 && rel.pecas === 3, rel);
+  prova('relatório: ticket médio em centavos', rel.ticket === 75.25, rel.ticket);
+  prova('relatório: ranking das fantasias', rel.ranking.map(r => r.fantasia + r.n).join() === 'A2,B1', rel.ranking);
+  prova('relatório: somarMeses vira o ano', L.somarMeses('2026-12', 1) === '2027-01' && L.somarMeses('2027-01', -2) === '2026-11');
+  const fm = L.faturamentoPorMes(ped, '2027-03', 3);
+  prova('relatório: faturamento por mês em ordem', fm.map(x => x.mes + ':' + x.valor).join() === '2027-01:0,2027-02:150.5,2027-03:70', fm);
+  // fev/2027 tem 28 dias; 10 peças → 280 peça-dias. Usados: 4 dias × 2 peças + 2 dias (27–28) × 1 = 10 → 3,6%
+  prova('relatório: ocupação recorta no fim do mês', L.ocupacaoMes(ped, '2027-02', 10) === 3.6, L.ocupacaoMes(ped, '2027-02', 10));
+  prova('relatório: peças paradas', L.pecasParadas(['A-M-1', 'A-M-2', 'B-M-1', 'C-M-1'], ped, '2027-03-15', 60).join() === 'C-M-1');
+  prova('relatório: nome do mês', L.nomeMes('2027-02') === 'fev/27');
+}
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();

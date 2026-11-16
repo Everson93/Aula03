@@ -33,6 +33,7 @@
     retirada: 'M6 8h12l1 12H5zM9 8V6a3 3 0 0 1 6 0v2M9.5 13.5l2 2 3.5-3.5',
     orcamentos: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h6M9 17h4',
     lembretes: 'M4 5h16v11H9l-5 4zM8 9h8M8 12h5',
+    relatorios: 'M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3',
     espera: 'M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
     provas: 'M4 17L17 4l3 3L7 20zM8 13l1.5 1.5M11 10l1.5 1.5M14 7l1.5 1.5',
     venda: 'M4 5h2l2.4 10.2a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.8L21 8H7M10 20a1 1 0 1 0 0 .01M18 20a1 1 0 1 0 0 .01',
@@ -43,7 +44,7 @@
     privacidade: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4'
   };
   var PAGINAS = [['inicio', 'Início'], ['lembretes', 'Lembretes'], ['venda', 'Nova venda'], ['orcamentos', 'Orçamentos'], ['retirada', 'Retirada'], ['provas', 'Provas'], ['espera', 'Lista de espera'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
-    ['acervo', 'Acervo'], ['caixa', 'Caixa'], ['privacidade', 'Privacidade']];
+    ['acervo', 'Acervo'], ['caixa', 'Caixa'], ['relatorios', 'Relatórios'], ['privacidade', 'Privacidade']];
 
   function $(id) { return document.getElementById(id); }
   function pode(acao) { return LOJA.pode(acao); }
@@ -147,7 +148,10 @@
     $('sis-operador').value = LOJA.operador();
     $('sis-titulo').textContent = PAGINAS.find(function (p) { return p[0] === pagina; })[1];
     $('sis-sub').textContent = L.dataComDia(dia());
-    raiz.querySelectorAll('.sis-nav__item').forEach(function (b) { b.setAttribute('aria-current', b.dataset.pagina === pagina ? 'page' : 'false'); });
+    raiz.querySelectorAll('.sis-nav__item').forEach(function (b) {
+      b.setAttribute('aria-current', b.dataset.pagina === pagina ? 'page' : 'false');
+      if (b.dataset.pagina === 'relatorios') b.hidden = !pode('relatorios');
+    });
     var cx = LOJA.caixaAberto();
     var bc = $('sis-caixa');
     if (cx && LOJA.caixaDeOutroDia()) {
@@ -184,6 +188,7 @@
     else if (pagina === 'orcamentos') corpo.innerHTML = htmlOrcamentos();
     else if (pagina === 'espera') corpo.innerHTML = htmlEspera();
     else if (pagina === 'lembretes') corpo.innerHTML = htmlLembretes();
+    else if (pagina === 'relatorios') { corpo.innerHTML = pode('relatorios') ? htmlRelatorios() : '<div class="pn-vazio"><p>Relatórios: só a dona.</p></div>'; ligarRelatorios(); }
     else if (pagina === 'pedidos') { corpo.innerHTML = htmlPedidos(); ligarBusca('sis-busca-ped', function (v) { buscaPedidos = v; }); }
     else if (pagina === 'clientes') { corpo.innerHTML = htmlClientes(); ligarBusca('sis-busca-cli', function (v) { buscaClientes = v; }); }
     else if (pagina === 'acervo') corpo.innerHTML = htmlAcervo();
@@ -1390,6 +1395,91 @@
     carrinho.motivoDesconto = (o.desconto && o.desconto.motivo) || '';
     if (modal.open) modal.close();
     irPara('venda');
+  }
+
+  /* =====================================================================
+   * RELATÓRIOS (só a dona)
+   * ===================================================================== */
+  var mesRelatorio = '';
+  function htmlRelatorios() {
+    var mesDia = dia().slice(0, 7);
+    if (!mesRelatorio) mesRelatorio = mesDia;
+    var pedidos = LOJA.todos();
+    var r = L.relatorioMes(pedidos, mesRelatorio);
+    var totalPecas = FANTASIAS.reduce(function (s2, f) { return s2 + Object.keys(f.estoque || {}).reduce(function (a, t) { return a + f.estoque[t]; }, 0); }, 0);
+    var ocup = L.ocupacaoMes(pedidos, mesRelatorio, totalPecas);
+    var serie = L.faturamentoPorMes(pedidos, mesRelatorio, 12);
+    var meses = [];
+    for (var i = -11; i <= 7; i++) meses.push(L.somarMeses(mesDia, i));
+    // recebido no caixa por forma, no mês
+    var porForma = {};
+    LOJA.caixas().forEach(function (cx) { cx.movimentos.forEach(function (m) {
+      if (m.tipo !== 'entrada' || m.forma === 'vale' || m.dia.slice(0, 7) !== mesRelatorio) return;
+      porForma[m.forma] = (porForma[m.forma] || 0) + Math.round(m.valor * 100);
+    }); });
+    var unidades = [];
+    FANTASIAS.forEach(function (f) { Object.keys(f.tamanhos).forEach(function (t) { unidades = unidades.concat(L.unidades(f, t)); }); });
+    var paradas = L.pecasParadas(unidades, pedidos, dia(), 90);
+    var maxRank = r.ranking.length ? r.ranking[0].n : 1;
+    return '<div class="sis-barra"><label class="sis-filtro-mes">Mês <select id="rel-mes">' + meses.map(function (m) {
+        return '<option value="' + m + '"' + (m === mesRelatorio ? ' selected' : '') + '>' + L.nomeMes(m) + '</option>'; }).join('') + '</select></label>' +
+      '<span class="pn-dica">Conta pelo mês em que a peça sai. Cancelados e pedidos sem sinal ficam fora.</span></div>' +
+      '<div class="pn-resumo">' + tile('Faturamento', R$(r.faturamento)) + tile('Pedidos', r.pedidos) + tile('Ticket médio', R$(r.ticket)) +
+        tile('Peças alugadas', r.pecas) + tile('Ocupação do acervo', String(ocup).replace('.', ',') + '%', '', totalPecas + ' peças × dias do mês') + '</div>' +
+      cartao('Faturamento por mês', 'Últimos 12 meses até ' + L.nomeMes(mesRelatorio) + '. O mês escolhido em destaque.', graficoColunas(serie, mesRelatorio) +
+        '<details class="sis-tabela-dados"><summary>Ver como tabela</summary><table class="sis-tabela sis-tabela--compacta"><thead><tr><th>Mês</th><th class="sis-num">Faturamento</th></tr></thead><tbody>' +
+        serie.map(function (x) { return '<tr><td>' + L.nomeMes(x.mes) + '</td><td class="sis-num">' + R$(x.valor) + '</td></tr>'; }).join('') + '</tbody></table></details>') +
+      '<div class="sis-duas">' +
+        cartao('Mais alugadas em ' + L.nomeMes(mesRelatorio), 'Peças que saíram no mês, por fantasia.', r.ranking.length ? '<ul class="sis-ranking">' + r.ranking.slice(0, 8).map(function (x) {
+          var f = LOJA.fantasiaDe(x.fantasia);
+          return '<li><span class="sis-ranking__nome">' + esc(f ? f.nome : x.fantasia) + '</span><span class="sis-ranking__trilho"><span class="sis-ranking__barra" style="width:' + Math.max(4, Math.round(x.n * 100 / maxRank)) + '%"></span></span><span class="sis-ranking__valor">' + x.n + '</span></li>';
+        }).join('') + '</ul>' : '<div class="pn-vazio"><p>Nenhuma peça saiu nesse mês.</p></div>') +
+        cartao('Recebido no caixa em ' + L.nomeMes(mesRelatorio), 'Entradas registradas no sistema, por forma.', Object.keys(porForma).length ?
+          '<table class="sis-tabela sis-tabela--compacta"><tbody>' + Object.keys(porForma).map(function (k) { return '<tr><td>' + FORMAS[k].nome + '</td><td class="sis-num">' + R$(porForma[k] / 100) + '</td></tr>'; }).join('') + '</tbody></table>'
+          : '<div class="pn-vazio"><p>Nenhuma entrada no caixa nesse mês.</p></div>') +
+      '</div>' +
+      cartao('Peças paradas', paradas.length + ' de ' + unidades.length + ' peças não saíram nos últimos 90 dias (até ' + L.dataBR(dia()) + '). Candidatas a promoção, conserto ou sair do acervo.',
+        paradas.length ? '<div class="sis-paradas">' + paradas.slice(0, 40).map(function (u) { return '<span class="pn-cod">' + u + '</span>'; }).join(' ') + (paradas.length > 40 ? ' <span class="sis-mudo">e mais ' + (paradas.length - 40) + '</span>' : '') + '</div>' : '<p>Todas as peças saíram nos últimos 90 dias.</p>');
+  }
+  // Colunas de uma série: o mês escolhido em magenta, os outros em cinza; valor só no destaque (o resto no tooltip e na tabela).
+  function graficoColunas(serie, destaque) {
+    var W = 720, H = 220, esq = 56, dir = 8, top = 24, base = H - 28;
+    var max = Math.max.apply(null, serie.map(function (x) { return x.valor; }).concat([1]));
+    var passo = Math.pow(10, Math.floor(Math.log10(max))), topo = Math.ceil(max / passo) * passo;
+    if (topo / passo < 4) { passo = passo / 2; topo = Math.ceil(max / passo) * passo; }
+    var y = function (v) { return base - (v / topo) * (base - top); };
+    var banda = (W - esq - dir) / serie.length, larg = Math.min(24, banda * 0.6);
+    var ticks = [];
+    for (var t = 0; t <= topo + 0.001; t += passo) ticks.push(t);
+    var compacto = function (v) { return v >= 1000 ? 'R$ ' + (v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : R$(v).replace(',00', ''); };
+    var svg = '<svg class="sis-grafico" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Faturamento por mês">' +
+      ticks.map(function (tk) { return '<line x1="' + esq + '" x2="' + (W - dir) + '" y1="' + y(tk) + '" y2="' + y(tk) + '" class="sis-grafico__grade"/><text x="' + (esq - 8) + '" y="' + (y(tk) + 4) + '" class="sis-grafico__eixo" text-anchor="end">' + compacto(tk) + '</text>'; }).join('') +
+      serie.map(function (x, i) {
+        var cx = esq + banda * i + banda / 2, x0 = cx - larg / 2, y0 = y(x.valor), h = base - y0, r = Math.min(4, h);
+        var dest = x.mes === destaque;
+        var barra = h > 0 ? '<path class="sis-grafico__barra' + (dest ? ' sis-grafico__barra--destaque' : '') + '" d="M' + x0 + ' ' + base + 'V' + (y0 + r) + 'Q' + x0 + ' ' + y0 + ' ' + (x0 + r) + ' ' + y0 + 'H' + (x0 + larg - r) + 'Q' + (x0 + larg) + ' ' + y0 + ' ' + (x0 + larg) + ' ' + (y0 + r) + 'V' + base + 'Z"/>' : '';
+        return barra + (dest && x.valor ? '<text x="' + cx + '" y="' + (y0 - 6) + '" text-anchor="middle" class="sis-grafico__valor">' + compacto(x.valor) + '</text>' : '') +
+          '<text x="' + cx + '" y="' + (H - 8) + '" text-anchor="middle" class="sis-grafico__eixo' + (dest ? ' sis-grafico__eixo--forte' : '') + '">' + L.nomeMes(x.mes) + '</text>' +
+          '<rect class="sis-grafico__alvo" x="' + (esq + banda * i) + '" y="' + top + '" width="' + banda + '" height="' + (base - top) + '" data-dica="' + esc(L.nomeMes(x.mes) + ': ' + R$(x.valor)) + '"/>';
+      }).join('') + '<line x1="' + esq + '" x2="' + (W - dir) + '" y1="' + base + '" y2="' + base + '" class="sis-grafico__base"/></svg>';
+    return '<div class="sis-grafico-caixa">' + svg + '<div class="sis-dica" id="sis-dica" hidden></div></div>';
+  }
+  function ligarRelatorios() {
+    var sel = $('rel-mes');
+    if (sel) sel.addEventListener('change', function (e) { mesRelatorio = e.target.value; render(); });
+    var caixa = raiz.querySelector('.sis-grafico-caixa');
+    if (!caixa) return;
+    var dica = $('sis-dica');
+    caixa.addEventListener('mousemove', function (e) {
+      var alvo = e.target.closest('[data-dica]');
+      if (!alvo) { dica.hidden = true; return; }
+      var r = caixa.getBoundingClientRect();
+      dica.textContent = alvo.getAttribute('data-dica');
+      dica.hidden = false;
+      dica.style.left = Math.min(r.width - 140, Math.max(0, e.clientX - r.left + 12)) + 'px';
+      dica.style.top = Math.max(0, e.clientY - r.top - 36) + 'px';
+    });
+    caixa.addEventListener('mouseleave', function () { dica.hidden = true; });
   }
 
   /* =====================================================================

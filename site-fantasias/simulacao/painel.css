@@ -335,3 +335,35 @@ body.modo-painel { background: var(--fundo-alt); }
 .sis-lembretes li:last-child { border-bottom: 0; }
 .sis-lembrete__texto { margin: 0; font-size: .86rem; color: var(--texto-suave); background: var(--fundo-alt); border-radius: 8px; padding: 6px 10px; }
 @media (max-width: 760px) { .sis-lembretes li { grid-template-columns: 1fr; } .sis-lembretes .sis-acoes { text-align: left; } }
+
+/* ---------- relatórios ----------
+ * Cor do gráfico validada (scripts do guia de visualização): uma série, destaque
+ * em magenta, o resto em cinza; texto nunca na cor do dado. */
+.sis { --grafico: #c2185b; --grafico-resto: #d9c8b4; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sis { --grafico: #e8508e; --grafico-resto: #5a4535; } }
+:root[data-theme="dark"] .sis { --grafico: #e8508e; --grafico-resto: #5a4535; }
+.sis-filtro-mes { display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: .85rem; }
+.sis-filtro-mes select { font: inherit; padding: .4em .6em; border-radius: 8px; border: 1px solid var(--borda); background: var(--superficie); color: var(--texto); }
+.sis-grafico-caixa { position: relative; }
+.sis-grafico { width: 100%; height: auto; display: block; }
+.sis-grafico__grade { stroke: var(--borda); stroke-width: 1; }
+.sis-grafico__base { stroke: var(--texto-suave); stroke-width: 1; }
+.sis-grafico__eixo { fill: var(--texto-suave); font-size: 11px; font-variant-numeric: tabular-nums; }
+.sis-grafico__eixo--forte { fill: var(--texto); font-weight: 700; }
+.sis-grafico__valor { fill: var(--texto); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sis-grafico__barra { fill: var(--grafico-resto); }
+.sis-grafico__barra--destaque { fill: var(--grafico); }
+.sis-grafico__alvo { fill: transparent; cursor: default; }
+.sis-grafico__alvo:hover { fill: rgba(127, 127, 127, .08); }
+.sis-dica { position: absolute; pointer-events: none; background: var(--texto); color: var(--fundo); font-size: .8rem; font-weight: 700; padding: 4px 8px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sis-tabela-dados { box-shadow: none; padding: 0; background: none; margin: 6px 0 0; }
+.sis-tabela-dados summary { font-size: .82rem; color: var(--marca-clara); }
+.sis-duas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.sis-ranking { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.sis-ranking li { display: grid; grid-template-columns: minmax(0, 1.3fr) 1fr 28px; gap: 10px; align-items: center; font-size: .86rem; }
+.sis-ranking__nome { overflow-wrap: anywhere; }
+.sis-ranking__trilho { height: 12px; }
+.sis-ranking__barra { display: block; height: 12px; border-radius: 0 4px 4px 0; background: var(--grafico); }
+.sis-ranking__valor { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sis-paradas { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+@media (max-width: 860px) { .sis-duas { grid-template-columns: 1fr; } }
