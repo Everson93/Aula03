@@ -531,6 +531,35 @@
       if (p) { p.status = status; p.atualizadaEm = estado.dia; salvar(); publicar(); }
     },
 
+    /* ---------- orçamento (não cobra e não segura peça) ---------- */
+    orcamentos: function () {
+      return estado.orcamentos.map(function (o) {
+        var x = Object.assign({}, o);
+        if (x.status === 'aberto' && estado.dia > x.validoAte) x.status = 'vencido';
+        return x;
+      }).sort(function (a, b) { return a.id < b.id ? 1 : -1; });
+    },
+    orcamentoPorId: function (id) { return API.orcamentos().find(function (o) { return o.id === id; }); },
+    criarOrcamento: function (d) {
+      var itens = d.itens || [], comps = d.complementos || [];
+      if (!itens.length && !comps.length) return { erro: 'Orçamento vazio.' };
+      if (itens.length && !d.periodo) return { erro: 'Escolha a data da festa.' };
+      var o = { id: novoId('O'), para: (d.para || '').trim(), clienteId: d.clienteId || null, periodo: d.periodo || null,
+        itens: itens.slice(), complementos: comps.slice(), desconto: d.desconto || { valor: 0, motivo: '' },
+        valores: calcularPedido({ itens: itens, complementos: comps, desconto: d.desconto, diasExtras: d.periodo ? d.periodo.diasExtras : 0 }),
+        validoAte: L.somarDias(estado.dia, C.orcamento.validadeDias), status: 'aberto', por: estado.operador, criadoEm: estado.dia };
+      estado.orcamentos.push(o); salvar(); publicar();
+      return o;
+    },
+    marcarOrcamentoConvertido: function (id, pedidoId) {
+      var o = estado.orcamentos.find(function (x) { return x.id === id; });
+      if (o) { o.status = 'convertido'; o.pedidoId = pedidoId; o.convertidoEm = estado.dia; salvar(); publicar(); }
+    },
+    cancelarOrcamento: function (id) {
+      var o = estado.orcamentos.find(function (x) { return x.id === id; });
+      if (o) { o.status = 'cancelado'; salvar(); publicar(); }
+    },
+
     zerar: function () {
       estado = estadoNovo(estado.dia);
       salvar(); publicar();

@@ -12,7 +12,7 @@ com sinal pago vindas desta página.
 
 ## O que a página faz
 
-- Vitrine com 24 fantasias, busca por texto (sem se importar com acento) e
+- Vitrine com 34 fantasias, 6 delas infantis (tamanhos 2 a 14), busca por texto (sem se importar com acento) e
   temas de festa: Carnaval, Halloween, festa junina, anos 20 a 90, medieval,
   heróis, personagens históricos.
 - Filtros por tema, gênero, tamanho e faixa de preço.
@@ -151,11 +151,13 @@ dados e as fontes estão em [`PESQUISA_PAINEL.md`](PESQUISA_PAINEL.md).
 | --- | --- |
 | Início | sai, volta, atrasados, pedidos do site, alertas |
 | Nova venda | PDV: cliente, datas, várias peças, complementos, desconto com motivo, pagamento dividido (Pix, dinheiro com troco, débito, crédito em até 6x, vale), recibo, entrega |
+| Orçamentos | para escola, quadrilha ou empresa: monte em Nova venda e "Salvar como orçamento" (não cobra nem segura peça; vale `orcamento.validadeDias`); mensagem pronta com as peças agrupadas por tamanho; "Virar pedido" leva de volta ao caixa |
+| Provas | horários do dia a partir do horário de atendimento (`provas.duracaoMinutos`, `provas.provadores`); marcar com nome e WhatsApp; lembrete no WhatsApp; realizada, faltou, cancelada. No site, "Agende uma prova" na ficha |
 | Retirada | cliente reservou (no site ou no balcão) e veio buscar: busca pelo código do pedido, nome, CPF ou WhatsApp; confere o documento ou cadastra quem veio do site; recebe saldo e caução; vistoria; contrato; entrega |
 | Pedidos | todos, por situação; cancelamento (estorno até 7 dias antes, depois vira crédito na loja) |
 | Contrato | sai preenchido do pedido (cliente, peças com etiqueta e valor de reposição, datas, valores, formas de pagamento, laudo da vistoria), com as mesmas 12 cláusulas do modelo; botão em Pedidos, Recibo e Retirada |
 | Clientes | cadastro mínimo, CPF mascarado, consentimento de marketing à parte, crédito na loja, direitos do titular |
-| Acervo | onde está cada peça física no dia |
+| Acervo | onde está cada peça física no dia; bloquear uma peça por um período (conserto, ajuste, higienização demorada) e liberar |
 | Caixa | abertura, sangria, suprimento, fechamento com conferência cega |
 | Privacidade | registro das operações, pedidos dos titulares com prazo, guardas vencidas |
 
@@ -174,7 +176,7 @@ ganhou `reposicao` (valor de reposição, de exemplo).
 node conferir_landing.js
 ```
 
-796 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
+971 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
 sugere menor que o ideal), filtros, orçamento em centavos, mensagem e link do
 WhatsApp, coerência de `dados.js` com `config.js` (loja existe, temas
 existem, medidas completas, sinal entre 30 e 50, nenhum nome de marca

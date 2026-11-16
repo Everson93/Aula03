@@ -488,6 +488,36 @@
     return out;
   }
 
+  /* ---------- orçamento para grupos ----------
+   * d: { nomeSite, id, para, itens: [{ nome, tamanho, preco }], complementos: [{ nome, qtd, preco }],
+   *      periodo, valores: { total, sinal, caucao, desconto, percentualSinal }, validoAte } */
+  function textoOrcamento(d) {
+    var grupos = {}, ordem = [];
+    (d.itens || []).forEach(function (it) {
+      if (!grupos[it.nome]) { grupos[it.nome] = { n: 0, tams: [], valor: 0 }; ordem.push(it.nome); }
+      var g = grupos[it.nome];
+      g.n++; g.valor += centavos(it.preco);
+      if (g.tams.indexOf(it.tamanho) === -1) g.tams.push(it.tamanho);
+    });
+    var v = d.valores;
+    var l = ['Orçamento ' + d.id + ' — ' + d.nomeSite + (d.para ? '\nPara: ' + d.para : ''), ''];
+    if (d.periodo) l.push('Festa: ' + dataComDia(d.periodo.dataFesta) + '\nRetirada: ' + dataComDia(d.periodo.retirada) + ' · Devolução: ' + dataComDia(d.periodo.devolucao), '');
+    ordem.forEach(function (nome) {
+      var g = grupos[nome];
+      l.push('• ' + g.n + '× ' + nome + ' (' + (g.tams.length > 1 ? 'tamanhos ' : 'tamanho ') + ordenarTamanhos(g.tams).join(', ') + '): ' + formatarPreco(g.valor / 100));
+    });
+    (d.complementos || []).forEach(function (k) { l.push('• ' + (k.qtd || 1) + '× ' + k.nome + ': ' + formatarPreco(centavos(k.preco) * (k.qtd || 1) / 100)); });
+    l.push('');
+    if (v.desconto) l.push('Desconto: − ' + formatarPreco(v.desconto));
+    l.push('Total: ' + formatarPreco(v.total));
+    if ((d.itens || []).length) {
+      l.push('Sinal para garantir as peças (' + v.percentualSinal + '%): ' + formatarPreco(v.sinal));
+      l.push('Caução (volta na devolução): ' + formatarPreco(v.caucao));
+    }
+    l.push('', 'Válido até ' + dataBR(d.validoAte) + '. As peças só ficam garantidas depois do sinal.');
+    return l.join('\n');
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -634,6 +664,7 @@
     validarAgenda: validarAgenda,
     kitLivres: kitLivres,
     textoHorarios: textoHorarios,
+    textoOrcamento: textoOrcamento,
     horariosDeProva: horariosDeProva,
     diasSemHorario: diasSemHorario,
     linkMapa: linkMapa,

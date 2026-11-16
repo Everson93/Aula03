@@ -360,6 +360,21 @@ prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.enderec
   prova('config: prova e orçamento', C.provas.duracaoMinutos > 0 && C.provas.provadores >= 1 && C.orcamento.validadeDias > 0);
 }
 
+/* ---------- orçamento para grupos ---------- */
+{
+  const perO = L.periodoAluguel('2027-06-19', '2027-05-01', 0, { diasFechados: [0] });
+  const tx = L.textoOrcamento({ nomeSite: 'Cantinho da Day', id: 'O0003', para: 'Escola Pequeno Príncipe',
+    itens: [{ nome: 'Caipirinha', tamanho: '8', preco: 70 }, { nome: 'Caipirinha', tamanho: '6', preco: 70 }, { nome: 'Caipirinha', tamanho: '8', preco: 70 }, { nome: 'Noivinho', tamanho: '10', preco: 85 }],
+    complementos: [{ nome: 'Chapéu de palha infantil', qtd: 3, preco: 10 }], periodo: perO,
+    valores: { total: 305, sinal: 91.5, caucao: 170, desconto: 20, percentualSinal: 30 }, validoAte: '2027-05-08' }).replace(/\s/g, ' ');
+  prova('orçamento: cabeçalho com número e destinatário', tx.startsWith('Orçamento O0003 — Cantinho da Day') && tx.includes('Para: Escola Pequeno Príncipe'));
+  prova('orçamento: peças agrupadas com tamanhos em ordem', tx.includes('• 3× Caipirinha (tamanhos 6, 8): R$ 210,00') && tx.includes('• 1× Noivinho (tamanho 10): R$ 85,00'), tx);
+  prova('orçamento: complementos com quantidade', tx.includes('• 3× Chapéu de palha infantil: R$ 30,00'));
+  prova('orçamento: datas com dia da semana', tx.includes('Festa: sáb, 19/06/2027') && tx.includes('Retirada: sex, 18/06/2027'));
+  prova('orçamento: desconto, total, sinal, caução e validade', tx.includes('Desconto: − R$ 20,00') && tx.includes('Total: R$ 305,00') && tx.includes('(30%): R$ 91,50') && tx.includes('R$ 170,00') && tx.includes('Válido até 08/05/2027'));
+  prova('orçamento: sem ponto decimal', !/\d\.\d{2}\b/.test(tx));
+}
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();
@@ -605,6 +620,23 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   prova('prova pede WhatsApp', /WhatsApp/.test(S.marcarProva({ nome: 'Outra', whatsapp: '123', dia: diaProva, hora: '11:00' }).erro || ''));
   S.atualizarProva(pv.id, 'cancelada');
   prova('prova cancelada libera o horário', S.horariosDeProva(diaProva).find(x => x.hora === '10:00').livre);
+
+  // orçamento de grupo
+  const perOr = L.periodoAluguel(L.somarDias(S.dia(), 20), S.dia(), 0, lojaN);
+  const fIn = jan.FANTASIAS.find(f => f.id === 'IN01');
+  const livresIn = () => L.disponibilidade(fIn, jan.AGENDA, perOr, 1)['8'].livres.length;
+  const antesIn = livresIn();
+  const itensOr = L.disponibilidade(fIn, jan.AGENDA, perOr, 1)['8'].livres.slice(0, 2).map(u => ({ fantasia: 'IN01', tamanho: '8', unidade: u, preco: 70, diaExtra: 15, caucao: 40 }));
+  const orc = S.criarOrcamento({ para: 'Escola Pequeno Príncipe', periodo: perOr, itens: itensOr, complementos: [], desconto: { valor: 10, motivo: 'turma' } });
+  prova('orçamento criado com validade e valores', orc.id && orc.validoAte === L.somarDias(S.dia(), jan.CONFIG.orcamento.validadeDias) && orc.valores.total === 130, orc);
+  prova('orçamento não segura peça', livresIn() === antesIn);
+  prova('orçamento sem data é recusado quando tem peça', /data da festa/.test(S.criarOrcamento({ itens: itensOr, complementos: [] }).erro || ''));
+  const diaOr = S.dia();
+  S.definirDia(L.somarDias(orc.validoAte, 1));
+  prova('orçamento vence depois da validade', S.orcamentoPorId(orc.id).status === 'vencido');
+  S.definirDia(diaOr);
+  S.marcarOrcamentoConvertido(orc.id, 'P9999');
+  prova('orçamento convertido guarda o pedido', S.orcamentoPorId(orc.id).status === 'convertido' && S.orcamentoPorId(orc.id).pedidoId === 'P9999');
 
   // LGPD: eliminação respeita a guarda; anonimizar tira os dados e mantém o histórico
   const sit = S.situacaoEliminacao(cli.id);

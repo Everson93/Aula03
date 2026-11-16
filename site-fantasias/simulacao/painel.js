@@ -31,6 +31,7 @@
   var ICONES = {
     inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
     retirada: 'M6 8h12l1 12H5zM9 8V6a3 3 0 0 1 6 0v2M9.5 13.5l2 2 3.5-3.5',
+    orcamentos: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h6M9 17h4',
     provas: 'M4 17L17 4l3 3L7 20zM8 13l1.5 1.5M11 10l1.5 1.5M14 7l1.5 1.5',
     venda: 'M4 5h2l2.4 10.2a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.8L21 8H7M10 20a1 1 0 1 0 0 .01M18 20a1 1 0 1 0 0 .01',
     pedidos: 'M8 4h8l1 2h3v15H4V6h3zM8 11h8M8 15h6',
@@ -39,7 +40,7 @@
     caixa: 'M3 7h18v12H3zM3 11h18M7 15h3',
     privacidade: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4'
   };
-  var PAGINAS = [['inicio', 'Início'], ['venda', 'Nova venda'], ['retirada', 'Retirada'], ['provas', 'Provas'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
+  var PAGINAS = [['inicio', 'Início'], ['venda', 'Nova venda'], ['orcamentos', 'Orçamentos'], ['retirada', 'Retirada'], ['provas', 'Provas'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
     ['acervo', 'Acervo'], ['caixa', 'Caixa'], ['privacidade', 'Privacidade']];
 
   function $(id) { return document.getElementById(id); }
@@ -174,6 +175,7 @@
     else if (pagina === 'venda') { corpo.innerHTML = htmlVenda(); ligarVenda(); atualizarVenda(); }
     else if (pagina === 'retirada') { corpo.innerHTML = htmlRetirada(); ligarRetirada(); }
     else if (pagina === 'provas') corpo.innerHTML = htmlProvas();
+    else if (pagina === 'orcamentos') corpo.innerHTML = htmlOrcamentos();
     else if (pagina === 'pedidos') { corpo.innerHTML = htmlPedidos(); ligarBusca('sis-busca-ped', function (v) { buscaPedidos = v; }); }
     else if (pagina === 'clientes') { corpo.innerHTML = htmlClientes(); ligarBusca('sis-busca-cli', function (v) { buscaClientes = v; }); }
     else if (pagina === 'acervo') corpo.innerHTML = htmlAcervo();
@@ -207,6 +209,9 @@
     else if (a === 'filtro') { filtroPedidos = b.dataset.filtro; limite = 40; render(); }
     else if (a === 'mais') { limite += 40; render(); }
     else if (a === 'ir') irPara(b.dataset.pagina);
+    else if (a === 'ver-orcamento') abrirOrcamento(id);
+    else if (a === 'virar-pedido') virarPedido(id);
+    else if (a === 'cancelar-orcamento') { LOJA.cancelarOrcamento(id); if (modal.open) modal.close(); }
     else if (a === 'marcar-prova') abrirMarcarProva(b.dataset.hora);
     else if (a === 'prova-status') LOJA.atualizarProva(id, b.dataset.status);
     else if (a === 'bloquear') abrirBloqueio(b.dataset.unidade, b.dataset.fantasia, b.dataset.tamanho);
@@ -303,7 +308,7 @@
    * ===================================================================== */
   function carrinhoNovo() {
     return { clienteId: '', buscaCliente: '', dataFesta: '', extras: 0, itens: [], complementos: [], desconto: '', motivoDesconto: '',
-      busca: '', fantasia: '', tamanho: '', recebe: 'sinal' };
+      busca: '', fantasia: '', tamanho: '', recebe: 'sinal', deOrcamento: '' };
   }
   var carrinho = carrinhoNovo();
 
@@ -340,13 +345,14 @@
         cartao('Complementos', 'Maquiagem e descartáveis são vendidos; os outros são alugados junto.', '<div id="pdv-complementos"></div>') +
       '</div>' +
       '<aside class="sis-pdv__resumo"><div class="sis-cartao sis-cupom">' +
-        '<h2>Pedido</h2><div id="pdv-itens"></div>' +
+        '<h2>Pedido' + (carrinho.deOrcamento ? ' <small class="sis-mudo">do orçamento ' + esc(carrinho.deOrcamento) + '</small>' : '') + '</h2><div id="pdv-itens"></div>' +
         '<div class="pn-campos pn-campos--desconto"><label>Desconto (R$) <input id="pdv-desconto" inputmode="decimal" placeholder="0,00" value="' + esc(carrinho.desconto) + '"></label>' +
         '<label>Motivo <input id="pdv-motivo" placeholder="Ex.: quadrilha com 6 peças" value="' + esc(carrinho.motivoDesconto) + '"></label></div>' +
         '<div id="pdv-totais"></div>' +
         '<div class="pn-campos" id="pdv-recebe-box"><label>Receber agora <select id="pdv-recebe"><option value="sinal"' + (carrinho.recebe === 'sinal' ? ' selected' : '') + '>Só o sinal (resto na retirada)</option><option value="total"' + (carrinho.recebe === 'total' ? ' selected' : '') + '>O pedido inteiro</option></select></label></div>' +
         '<ul class="pn-erros" id="pdv-erros" hidden></ul>' +
         '<button type="button" class="botao botao--destaque botao--largo" id="pdv-pagar">Ir para o pagamento</button>' +
+        '<button type="button" class="botao botao--leve botao--largo" id="pdv-orcar">Salvar como orçamento</button>' +
         '<button type="button" class="sis-link" id="pdv-limpar">Limpar pedido</button>' +
       '</div></aside></div>';
   }
@@ -361,6 +367,7 @@
     $('pdv-recebe').addEventListener('change', function (e) { carrinho.recebe = e.target.value; atualizarTotais(); });
     $('pdv-limpar').addEventListener('click', function () { carrinho = carrinhoNovo(); render(); });
     $('pdv-pagar').addEventListener('click', irPagamento);
+    $('pdv-orcar').addEventListener('click', salvarOrcamento);
     area.addEventListener('input', function (e) {
       if (e.target.id === 'pdv-busca-cli') { carrinho.buscaCliente = e.target.value; pintarCliente(true); }
     });
@@ -553,8 +560,32 @@
         clienteId: carrinho.clienteId || null, periodo: temAluguel ? per : null, itens: carrinho.itens.slice(), complementos: carrinho.complementos.slice(),
         desconto: { valor: lerValor(carrinho.desconto) || 0, motivo: carrinho.motivoDesconto.trim() }, recebe: carrinho.recebe, linhas: ed.linhas()
       });
+      if (carrinho.deOrcamento) LOJA.marcarOrcamentoConvertido(carrinho.deOrcamento, p.id);
       carrinho = carrinhoNovo();
       abrirRecibo(p.id, r.troco);
+    });
+  }
+
+  /* ---------- orçamento a partir do carrinho ---------- */
+  function salvarOrcamento() {
+    var e = errosCarrinho().filter(function (x) { return !/precisa de cliente/.test(x); });
+    var ul = $('pdv-erros');
+    ul.innerHTML = e.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+    ul.hidden = !e.length;
+    if (e.length) return;
+    var cli = carrinho.clienteId && LOJA.clientePorId(carrinho.clienteId);
+    abrirModal('Salvar orçamento', '<p>O orçamento não cobra nada e não segura as peças: elas só ficam garantidas com o sinal. Vale por ' + C.orcamento.validadeDias + ' dias.</p>' +
+      '<div class="pn-campos"><label>Para quem (escola, quadrilha, empresa, pessoa) <input id="or-para" value="' + esc(cli ? cli.nome : '') + '"></label></div><p class="pn-msg pn-msg--erro" id="or-erro" hidden></p>',
+      '<button type="button" class="botao botao--leve" id="or-voltar">Voltar</button><button type="button" class="botao botao--destaque" id="or-ok">Salvar orçamento</button>');
+    $('or-voltar').addEventListener('click', function () { modal.close(); });
+    $('or-ok').addEventListener('click', function () {
+      var para = $('or-para').value.trim();
+      if (!para) { $('or-erro').textContent = 'Diga para quem é o orçamento.'; $('or-erro').hidden = false; return; }
+      var o = LOJA.criarOrcamento({ para: para, clienteId: carrinho.clienteId || null, periodo: carrinho.itens.length ? periodoCarrinho() : null,
+        itens: carrinho.itens.slice(), complementos: carrinho.complementos.slice(), desconto: { valor: lerValor(carrinho.desconto) || 0, motivo: carrinho.motivoDesconto.trim() } });
+      if (o.erro) { $('or-erro').textContent = o.erro; $('or-erro').hidden = false; return; }
+      carrinho = carrinhoNovo();
+      abrirOrcamento(o.id);
     });
   }
 
@@ -1284,6 +1315,60 @@
       if (r.erro) { $('bl-erro').textContent = r.erro; $('bl-erro').hidden = false; return; }
       modal.close();
     });
+  }
+
+  /* =====================================================================
+   * ORÇAMENTOS
+   * ===================================================================== */
+  var STATUS_ORC = { aberto: ['Aberto', 'info'], vencido: ['Vencido', 'aviso'], convertido: ['Virou pedido', 'ok'], cancelado: ['Cancelado', 'neutro'] };
+  function textoDe(o) {
+    return L.textoOrcamento({ nomeSite: C.nomeSite, id: o.id, para: o.para, periodo: o.periodo, validoAte: o.validoAte, valores: o.valores,
+      itens: o.itens.map(function (it) { return { nome: LOJA.fantasiaDe(it.fantasia).nome, tamanho: it.tamanho, preco: it.preco }; }),
+      complementos: o.complementos });
+  }
+  function htmlOrcamentos() {
+    var lista = LOJA.orcamentos();
+    return '<div class="sis-barra">' + botao('ir', '', '+ Novo orçamento (monte em Nova venda)', true, ' data-pagina="venda"') + '</div>' +
+      '<p class="pn-dica">Para escola, quadrilha ou empresa: monte as peças em Nova venda e use "Salvar como orçamento". Ele não cobra nem segura peça; quando o grupo fechar, "Virar pedido" leva tudo de volta ao caixa.</p>' +
+      (lista.length ? '<div class="sis-tabela-rolagem"><table class="sis-tabela"><thead><tr><th>Orçamento</th><th>Para</th><th>Festa</th><th class="sis-num">Peças</th><th class="sis-num">Total</th><th>Validade</th><th>Situação</th><th></th></tr></thead><tbody>' +
+        lista.map(function (o) {
+          var st = STATUS_ORC[o.status];
+          return '<tr><td><button type="button" class="sis-link sis-forte" data-acao="ver-orcamento" data-id="' + o.id + '">' + o.id + '</button></td><td>' + esc(o.para) + '</td>' +
+            '<td>' + (o.periodo ? esc(curta(o.periodo.dataFesta)) : '—') + '</td><td class="sis-num">' + o.itens.length + '</td><td class="sis-num">' + R$(o.valores.total) + '</td>' +
+            '<td>' + esc(L.dataBR(o.validoAte)) + '</td><td><span class="pn-status pn-status--' + st[1] + '">' + st[0] + '</span>' + (o.pedidoId ? ' <button type="button" class="sis-link" data-acao="detalhe" data-id="' + o.pedidoId + '">' + o.pedidoId + '</button>' : '') + '</td>' +
+            '<td class="sis-acoes">' + (o.status === 'aberto' || o.status === 'vencido' ? botao('virar-pedido', o.id, 'Virar pedido', true) : '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' : '<div class="pn-vazio"><p>Nenhum orçamento ainda.</p></div>');
+  }
+  function abrirOrcamento(id) {
+    var o = LOJA.orcamentoPorId(id);
+    var texto = textoDe(o);
+    var cli = o.clienteId && LOJA.clientePorId(o.clienteId);
+    var aberto = o.status === 'aberto' || o.status === 'vencido';
+    abrirModal('Orçamento ' + o.id,
+      (o.status === 'vencido' ? '<p class="pn-msg pn-msg--erro">Venceu em ' + esc(L.dataBR(o.validoAte)) + '. Ao virar pedido, confira se as peças ainda estão livres.</p>' : '') +
+      '<p class="pn-dica">Mensagem pronta para mandar ao grupo:</p><textarea class="sis-json" id="or-texto" readonly rows="14">' + esc(texto) + '</textarea>',
+      '<button type="button" class="botao botao--leve" id="or-copiar">Copiar</button>' +
+      (cli && L.numeroWhatsAppValido(cli.whatsapp) ? '<a class="botao botao--leve" href="' + esc(L.linkWhatsApp(cli.whatsapp, texto)) + '" target="_blank" rel="noopener">Mandar no WhatsApp</a>' : '') +
+      (aberto ? botao('cancelar-orcamento', o.id, 'Cancelar orçamento') + botao('virar-pedido', o.id, 'Virar pedido', true) : ''));
+    $('or-copiar').addEventListener('click', function () {
+      var ta = $('or-texto'), b = this;
+      try { navigator.clipboard.writeText(ta.value).then(function () { b.textContent = 'Copiado'; }, function () { ta.select(); b.textContent = 'Selecionado: use Ctrl+C'; }); }
+      catch (x) { ta.select(); b.textContent = 'Selecionado: use Ctrl+C'; }
+    });
+  }
+  // Leva o orçamento de volta ao PDV. Peças que alguém pegou nesse meio-tempo aparecem marcadas.
+  function virarPedido(id) {
+    var o = LOJA.orcamentoPorId(id);
+    carrinho = carrinhoNovo();
+    carrinho.deOrcamento = o.id;
+    carrinho.clienteId = o.clienteId || '';
+    if (o.periodo) { carrinho.dataFesta = o.periodo.dataFesta; carrinho.extras = o.periodo.diasExtras || 0; }
+    carrinho.itens = o.itens.map(function (it) { return Object.assign({}, it); });
+    carrinho.complementos = o.complementos.map(function (k) { return Object.assign({}, k); });
+    carrinho.desconto = o.valores.desconto ? campoValor(o.valores.desconto) : '';
+    carrinho.motivoDesconto = (o.desconto && o.desconto.motivo) || '';
+    if (modal.open) modal.close();
+    irPara('venda');
   }
 
   /* =====================================================================
