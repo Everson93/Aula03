@@ -12,6 +12,26 @@ window.CONFIG = {
   // Vazio = o site escreve o nome com a letra cursiva da marca.
   logo: '',
 
+  instagram: '',          // ex.: '@cantinhodaday' (aparece no rodapé)
+
+  // Onde fica o ateliê: aparece no site (seção "Onde estamos"), no Google e no contrato.
+  // Horários: 0 = domingo ... 6 = sábado. Dia sem horário aparece como "fechado" e
+  // precisa bater com diasFechados da loja (a suíte confere).
+  local: {
+    endereco: '',          // ex.: 'Travessa São Pedro, 120, Umarizal'
+    cidade: '',            // ex.: 'Belém'
+    uf: '',                // ex.: 'PA'
+    referencia: '',        // ex.: 'ao lado da padaria Estrela'
+    horarios: [
+      { dias: [1, 2, 3, 4, 5], abre: '09:00', fecha: '18:00' },
+      { dias: [6], abre: '09:00', fecha: '13:00' }
+    ]
+  },
+
+  // Medição do site: 'plausible' (sem cookies, recomendado) ou 'ga4' (usa cookies:
+  // aí a lei pede aviso e escolha do visitante antes de medir). Vazio = sem medição.
+  medicao: 'plausible',
+
   // WhatsApp para pedido de grupo e "não achei o que procuro".
   // Pode ser o mesmo número da loja.
   whatsappCentral: '',

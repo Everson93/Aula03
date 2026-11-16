@@ -6,6 +6,18 @@
   <title>Cantinho da Day — aluguel de trajes juninos e fantasias</title>
   <meta name="description" content="Ateliê Néia Gonçalves: trajes juninos e fantasias para alugar. Veja as medidas, o que está livre na data da festa e reserve pelo WhatsApp.">
   <meta name="theme-color" content="#c2185b">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <!-- Prévia do link no WhatsApp, Instagram e Facebook. Troque og:url pelo endereço do site publicado. -->
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="pt_BR">
+  <meta property="og:site_name" content="Cantinho da Day">
+  <meta property="og:title" content="Cantinho da Day — aluguel de trajes juninos e fantasias">
+  <meta property="og:description" content="Ateliê Néia Gonçalves. Veja o que está livre na data da sua festa e reserve pelo WhatsApp.">
+  <meta property="og:image" content="og-imagem.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:url" content="">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Lobster&family=Nunito:wght@400;600;700;800&display=swap">
@@ -22,6 +34,7 @@
         <a href="#catalogo">Fantasias</a>
         <a href="#como-funciona">Como funciona</a>
         <a href="#grupos">Quadrilhas e grupos</a>
+        <a href="#onde">Onde estamos</a>
         <a href="#duvidas">Dúvidas</a>
       </nav>
     </div>
@@ -135,6 +148,25 @@
       </div>
     </section>
 
+    <section id="onde" class="secao">
+      <div class="largura onde">
+        <div class="onde__texto">
+          <h2>Onde estamos</h2>
+          <p class="onde__endereco" id="onde-endereco"></p>
+          <p class="onde__ref" id="onde-ref"></p>
+          <div class="onde__botoes">
+            <a class="botao botao--destaque" id="onde-mapa" target="_blank" rel="noopener">Abrir no mapa</a>
+            <a class="botao botao--leve" id="onde-whats" target="_blank" rel="noopener">Chamar no WhatsApp</a>
+          </div>
+        </div>
+        <div class="onde__horarios">
+          <h3>Horário de atendimento</h3>
+          <ul id="onde-horarios"></ul>
+          <p class="onde__nota">Retirada e devolução dentro do horário. Se a devolução cair num dia fechado, ela passa para o próximo dia aberto, sem custo.</p>
+        </div>
+      </div>
+    </section>
+
     <section id="duvidas" class="secao secao--alt">
       <div class="largura estreito">
         <h2>Dúvidas</h2>
@@ -165,7 +197,13 @@
   <footer class="rodape">
     <div class="largura">
       <p><strong data-nome-site>Cantinho da Day</strong> · <span data-atelie>Ateliê Néia Gonçalves</span> — aluguel de trajes juninos e fantasias.</p>
-      <p class="rodape__nota">Fotos ilustrativas até entrarem as fotos reais das peças. Nomes das fantasias são descritivos.</p>
+      <p class="rodape__contato" id="rodape-contato"></p>
+      <p class="rodape__nota">Fotos ilustrativas até entrarem as fotos reais das peças. Nomes das fantasias são descritivos. ·
+        <a href="#privacidade" id="link-privacidade">Política de privacidade</a></p>
+      <details class="privacidade" id="privacidade">
+        <summary>Política de privacidade</summary>
+        <div id="privacidade-texto"></div>
+      </details>
     </div>
   </footer>
 

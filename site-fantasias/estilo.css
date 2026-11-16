@@ -57,6 +57,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* "hidden" sempre esconde, mesmo em .botao (inline-flex) */
 html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--fundo); color: var(--texto); line-height: 1.5; }
 img { max-width: 100%; display: block; }
@@ -202,6 +203,18 @@ a { color: var(--marca-clara); }
 .bloco--escuro { background: var(--marca); color: var(--branco); }
 .bloco--escuro p { color: var(--sobre-marca); }
 
+/* ---------- onde estamos ---------- */
+.onde { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: start; }
+.onde__endereco { font-size: 1.15rem; font-weight: 700; margin: 0 0 4px; }
+.onde__ref { color: var(--texto-suave); margin: 0 0 16px; }
+.onde__botoes { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.onde__horarios { background: var(--superficie); border: 1px solid var(--borda); border-radius: var(--raio); padding: 20px; box-shadow: var(--sombra); }
+.onde__horarios h3 { margin: 0 0 10px; font-size: 1.05rem; }
+.onde__horarios ul { list-style: none; margin: 0; padding: 0; }
+.onde__horarios li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--borda); font-variant-numeric: tabular-nums; }
+.onde__horarios li:last-child { border-bottom: 0; }
+.onde__nota { font-size: .85rem; color: var(--texto-suave); margin: 12px 0 0; }
+
 /* ---------- dúvidas ---------- */
 details { background: var(--superficie); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; box-shadow: var(--sombra); }
 summary { cursor: pointer; font-weight: 600; }
@@ -209,7 +222,13 @@ details p { color: var(--texto-suave); margin: 10px 0 0; }
 
 .rodape { background: var(--marca); color: var(--sobre-marca); padding: 32px 0; font-size: .9rem; }
 .rodape strong { color: var(--branco); }
-.rodape__nota { opacity: .7; font-size: .8rem; }
+.rodape__nota { opacity: .8; font-size: .8rem; }
+.rodape a { color: var(--sobre-marca); }
+.rodape__contato { font-size: .9rem; }
+.privacidade { background: rgba(255, 255, 255, .06); color: var(--sobre-marca); box-shadow: none; margin-top: 16px; }
+.privacidade summary { color: var(--branco); }
+.privacidade p { color: var(--sobre-marca); font-size: .88rem; }
+.privacidade__versao { opacity: .7; }
 
 /* ---------- ficha (dialog) ---------- */
 .ficha {
@@ -327,7 +346,7 @@ legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
   .marca__nome { font-size: 1.45rem; }
   .marca__sub { font-size: .9rem; }
   .busca { grid-template-columns: 1fr; }
-  .faixa-confianca__grade, .passos, .dois-blocos { grid-template-columns: 1fr; }
+  .faixa-confianca__grade, .passos, .dois-blocos, .onde { grid-template-columns: 1fr; }
   .grade { grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .cartao__info { padding: 10px 12px 12px; }
   .cartao__nome { font-size: .95rem; }

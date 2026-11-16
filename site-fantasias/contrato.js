@@ -41,7 +41,8 @@
     var loja = cfg.lojas[Object.keys(cfg.lojas)[0]];
     var pend = [];
     if (!ct.documento) pend.push('CNPJ/CPF do ateliê');
-    if (!ct.endereco) pend.push('endereço do ateliê');
+    var endAtelie = ct.endereco || [cfg.local && cfg.local.endereco, cfg.local && cfg.local.cidade].filter(Boolean).join(', ');
+    if (!endAtelie) pend.push('endereço do ateliê');
     if (!c.nome) pend.push('dados do cliente');
     var e = c.endereco || {};
     var itens = p.itens || [];
@@ -66,7 +67,7 @@
     // 1. Partes
     h.push('<h2>1. Partes</h2>' +
       '<p><strong>LOCADORA:</strong> ' + esc(cfg.atelie) + ' (nome fantasia ' + esc(cfg.nomeSite) + '), CNPJ/CPF ' + ou(ct.documento) +
-      ', com endereço em ' + ou(ct.endereco) + ', WhatsApp ' + (loja.whatsapp ? esc(fone(loja.whatsapp)) : BRANCO) + '.</p>' +
+      ', com endereço em ' + ou(endAtelie) + ', WhatsApp ' + (loja.whatsapp ? esc(fone(loja.whatsapp)) : BRANCO) + '.</p>' +
       '<p><strong>LOCATÁRIO(A):</strong></p><table class="ct-tab"><tbody>' +
       '<tr><th>Nome completo</th><td>' + ou(c.nome) + '</td></tr>' +
       '<tr><th>CPF</th><td>' + ou(cpf(c.cpf)) + '</td></tr>' +
@@ -175,7 +176,7 @@
     }
 
     // Assinaturas
-    var cidade = (ct.endereco && ct.endereco.split(',').pop().trim()) || (cfg.cidade !== 'sua cidade' ? cfg.cidade : '') || e.cidade || '';
+    var cidade = (cfg.local && cfg.local.cidade) || (ct.endereco && ct.endereco.split(',').pop().trim()) || (cfg.cidade !== 'sua cidade' ? cfg.cidade : '') || e.cidade || '';
     h.push('<h2>Assinaturas</h2><p>O LOCATÁRIO declara que leu este contrato, conferiu as peças, as fotos e o laudo da retirada, e recebeu sua via.</p>' +
       '<p>' + ou(cidade) + ', ' + esc(dataExtenso(d.hoje)) + '.</p>' +
       '<div class="ct-assinaturas"><div><span class="ct-linha"></span><p>LOCADORA · ' + esc(cfg.atelie) + '</p></div>' +

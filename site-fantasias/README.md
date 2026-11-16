@@ -88,6 +88,26 @@ com sinal pago vindas desta página.
    recebido pelo WhatsApp (o código da peça vem na mensagem) para fechar a
    conta visitas → cliques em reservar → sinais pagos.
 
+## Onde estamos, privacidade e Google
+
+- **`config.js` → `local`**: endereço, cidade, UF, ponto de referência e
+  horários. Viram a seção "Onde estamos" (com "Abrir no mapa"), o rodapé, os
+  dados estruturados que o Google lê (endereço, horário, telefone) e o
+  endereço do contrato. Os dias sem horário precisam bater com `diasFechados`
+  da loja; a suíte confere.
+- **`instagram`**: aparece no rodapé e no Google.
+- **`medicao`**: `plausible` (sem cookies, recomendado) ou `ga4`. Com GA4, a
+  lei pede aviso e escolha do visitante antes de medir; esse aviso ainda não
+  está pronto no site, então prefira o Plausible.
+- **Política de privacidade**: no rodapé (link `#privacidade`), montada a
+  partir do `config.js` (prazos de guarda e de resposta, versão).
+- **Prévia do link**: `og-imagem.png` (1200×630) e `favicon.svg`. Depois de
+  publicar, ponha o endereço do site em `og:url` no `index.html`. Quando o
+  logo chegar, dá para refazer a imagem com ele.
+- **Fora do site, de graça**: crie o Perfil da Empresa no Google (aparece no
+  Maps; ponha o link `wa.me` no campo de agendamento) e o catálogo do
+  WhatsApp Business com as peças.
+
 ## Publicar
 
 É um site estático. Qualquer um destes serve, de graça:
@@ -154,7 +174,7 @@ ganhou `reposicao` (valor de reposição, de exemplo).
 node conferir_landing.js
 ```
 
-732 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
+796 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
 sugere menor que o ideal), filtros, orçamento em centavos, mensagem e link do
 WhatsApp, coerência de `dados.js` com `config.js` (loja existe, temas
 existem, medidas completas, sinal entre 30 e 50, nenhum nome de marca

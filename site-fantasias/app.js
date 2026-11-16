@@ -38,6 +38,7 @@
   function avisarConfiguracao() {
     var faltando = [];
     if (!L.numeroWhatsAppValido(C.whatsappCentral)) faltando.push('WhatsApp central');
+    if (!C.local || !C.local.endereco) faltando.push('endereço do ateliê (local.endereco)');
     Object.keys(C.lojas).forEach(function (k) {
       if (!L.numeroWhatsAppValido(C.lojas[k].whatsapp)) faltando.push('WhatsApp de ' + C.lojas[k].nome);
     });
@@ -539,8 +540,60 @@
     $('hero-assinatura').innerHTML = '<img class="hero__logo" src="' + esc(C.logo) + '" alt="' + esc(alt) + '">';
   }
 
+  /* ---------- onde estamos, rodapé, privacidade, Google ---------- */
+  function foneBR(w) { var d = String(w || '').replace(/\D/g, '').replace(/^55/, ''); return d.length === 11 ? '(' + d.slice(0, 2) + ') ' + d.slice(2, 7) + '-' + d.slice(7) : d; }
+  function montarLocal() {
+    var local = C.local || {};
+    var loja = C.lojas[Object.keys(C.lojas)[0]];
+    var end = [local.endereco, [local.cidade, local.uf].filter(Boolean).join('/')].filter(Boolean).join(' · ');
+    $('onde-endereco').textContent = end || 'Endereço em breve. Pergunte pelo WhatsApp.';
+    $('onde-ref').textContent = local.referencia || '';
+    $('onde-ref').hidden = !local.referencia;
+    var mapa = $('onde-mapa');
+    var link = L.linkMapa([local.endereco, local.cidade, local.uf].filter(Boolean).join(', '));
+    if (local.endereco && link) mapa.href = link; else mapa.hidden = true;
+    var w = $('onde-whats');
+    if (L.numeroWhatsAppValido(loja.whatsapp)) {
+      w.href = L.linkWhatsApp(loja.whatsapp, 'Olá! Vi o site do ' + C.nomeSite + ' e queria saber como chegar.');
+    } else { w.removeAttribute('href'); w.setAttribute('aria-disabled', 'true'); }
+    $('onde-horarios').innerHTML = L.textoHorarios(local.horarios).map(function (t) {
+      var i = t.indexOf(':');
+      return '<li><span>' + esc(t.slice(0, i)) + '</span><span>' + esc(t.slice(i + 1).trim()) + '</span></li>';
+    }).join('');
+
+    var contato = [];
+    if (end) contato.push(esc(end));
+    if (L.numeroWhatsAppValido(loja.whatsapp)) contato.push('WhatsApp ' + esc(foneBR(loja.whatsapp)));
+    if (C.instagram) contato.push('<a href="https://www.instagram.com/' + esc(C.instagram.replace(/^@/, '')) + '" target="_blank" rel="noopener">' + esc(C.instagram) + '</a>');
+    $('rodape-contato').innerHTML = contato.join(' · ');
+    $('rodape-contato').hidden = !contato.length;
+
+    var med = C.medicao === 'plausible' ? 'Contamos visitas e cliques de forma agregada, sem cookies e sem identificar você (Plausible).'
+      : C.medicao === 'ga4' ? 'Usamos o Google Analytics, que grava cookies, só depois que você aceita.' : 'O site não mede visitas.';
+    $('privacidade-texto').innerHTML =
+      '<p><strong>Quem cuida dos seus dados:</strong> ' + esc(C.atelie) + ' (' + esc(C.nomeSite) + ')' + (end ? ', ' + esc(end) : '') + '.</p>' +
+      '<p><strong>No site:</strong> não pedimos cadastro. A data da festa e as escolhas ficam só no seu navegador. Ao tocar em reservar, você mesmo envia a mensagem pelo WhatsApp, que segue as regras do próprio WhatsApp. ' + med + '</p>' +
+      '<p><strong>Na locação:</strong> pedimos nome, CPF, WhatsApp e endereço para fazer e cumprir o contrato de aluguel: identificar quem leva a peça, avisar da retirada e da devolução e cobrar se ela não voltar (LGPD, art. 7º, V). ' +
+      'E-mail, RG e medidas são opcionais. Fotografamos a peça na retirada e na devolução para provar o estado dela.</p>' +
+      '<p><strong>Com quem compartilhamos:</strong> só o necessário com o contador (nota fiscal) e com a maquininha ou o banco (pagamento). Não vendemos dados.</p>' +
+      '<p><strong>Por quanto tempo:</strong> o cadastro, por ' + C.lgpd.retencaoCadastroAnos + ' anos depois da última locação; as fotos da vistoria, por ' + C.lgpd.retencaoFotosMeses + ' meses depois da devolução. Depois, apagamos.</p>' +
+      '<p><strong>Novidades e promoções:</strong> só mandamos se você aceitar, e você pode desistir quando quiser.</p>' +
+      '<p><strong>Seus direitos:</strong> pedir para ver, corrigir, apagar ou saber com quem compartilhamos seus dados, e retirar um consentimento. Peça pelo WhatsApp do ateliê; respondemos em até ' + C.lgpd.prazoRespostaDias + ' dias.</p>' +
+      '<p class="privacidade__versao">Versão ' + esc(C.lgpd.versaoAviso) + '.</p>';
+    function abrirPrivacidade() { if (location.hash === '#privacidade') { $('privacidade').open = true; $('privacidade').scrollIntoView(); } }
+    window.addEventListener('hashchange', abrirPrivacidade);
+    abrirPrivacidade();
+
+    // Dados estruturados para o Google (endereço, horário, telefone)
+    var ld = document.createElement('script');
+    ld.type = 'application/ld+json';
+    ld.textContent = JSON.stringify(L.dadosEstruturados(C, location.protocol.indexOf('http') === 0 ? location.origin + location.pathname : ''));
+    document.head.appendChild(ld);
+  }
+
   /* ---------- início ---------- */
   aplicarMarca();
+  montarLocal();
   document.title = C.nomeSite + ' — aluguel de trajes juninos e fantasias';
   avisarConfiguracao();
   montarFiltros();

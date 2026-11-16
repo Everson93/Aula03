@@ -323,6 +323,22 @@ prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.enderec
   prova('acessório: sem período, estoque inteiro', L.kitLivres(2, [{ retirada: '2027-02-05', devolucao: '2027-02-08', qtd: 2 }], null, 1) === 2);
 }
 
+/* ---------- site: onde estamos, Google ---------- */
+{
+  const hs = [{ dias: [1, 2, 3, 4, 5], abre: '09:00', fecha: '18:00' }, { dias: [6], abre: '09:00', fecha: '13:30' }];
+  prova('horários em texto', L.textoHorarios(hs).join(' | ') === 'Segunda a sexta: 9h às 18h | Sábado: 9h às 13h30 | Domingo: fechado', L.textoHorarios(hs));
+  prova('horários salteados', L.textoHorarios([{ dias: [2, 4], abre: '14:00', fecha: '18:00' }])[0] === 'Terça e quinta: 14h às 18h', L.textoHorarios([{ dias: [2, 4], abre: '14:00', fecha: '18:00' }]));
+  prova('dias sem horário', L.diasSemHorario(hs).join() === '0');
+  prova('link do mapa codificado', L.linkMapa('Rua A, 10 & B') === 'https://www.google.com/maps/search/?api=1&query=Rua%20A%2C%2010%20%26%20B' && L.linkMapa('') === '');
+  const jl = L.dadosEstruturados(Object.assign({}, C, { instagram: '@cantinho', local: { endereco: 'Rua A, 10', cidade: 'Belém', uf: 'PA', horarios: hs } }), 'https://exemplo.com');
+  prova('dados para o Google: nome, endereço, horários, Instagram', jl['@type'] === 'ClothingStore' && jl.address.addressLocality === 'Belém' && jl.openingHoursSpecification.length === 2 &&
+    jl.openingHoursSpecification[0].dayOfWeek[0] === 'https://schema.org/Monday' && jl.sameAs[0] === 'https://www.instagram.com/cantinho');
+  prova('dados para o Google sem endereço não inventam endereço', !L.dadosEstruturados(C).address);
+  prova('config: dias fechados batem com os horários do site', L.diasSemHorario(C.local.horarios).join() === C.lojas[Object.keys(C.lojas)[0]].diasFechados.slice().sort().join(),
+    [L.diasSemHorario(C.local.horarios), C.lojas[Object.keys(C.lojas)[0]].diasFechados]);
+  prova('config: medição conhecida', ['', 'plausible', 'ga4'].includes(C.medicao));
+}
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();
@@ -583,6 +599,10 @@ for (const id of pedidos) prova('app.js pede #' + id + ' e ele existe', idsHtml.
 const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
 prova('ordem dos scripts: config, dados, agenda, lógica, app', scripts.join(',') === 'config.js,dados.js,agenda.js,logica.js,app.js', scripts);
 for (const s of scripts) prova('script ' + s + ' existe', fs.existsSync(path.join(__dirname, s)));
+for (const m of html.matchAll(/(?:href|content)="([\w-]+\.(?:svg|png))"/g)) prova('arquivo ' + m[1] + ' referenciado no <head> existe', fs.existsSync(path.join(__dirname, m[1])));
+prova('prévia de link: og:title, og:description e og:image', ['og:title', 'og:description', 'og:image'].every(k => html.includes('property="' + k + '"')));
+prova('estilo: [hidden] vence display de componentes', /\[hidden\]\s*\{\s*display:\s*none\s*!important/.test(fs.readFileSync(path.join(__dirname, 'estilo.css'), 'utf8')));
+prova('ícone da aba declarado', /<link rel="icon" href="favicon.svg"/.test(html));
 prova('app.js compila', (() => { try { new vm.Script(app); return true; } catch (e) { return false; } })());
 prova('nenhum toFixed em app.js/logica.js', !/toFixed\(/.test(app + fs.readFileSync(path.join(__dirname, 'logica.js'), 'utf8')));
 

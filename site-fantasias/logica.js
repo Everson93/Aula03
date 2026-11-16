@@ -412,6 +412,53 @@
     };
   }
 
+  /* ---------- site: onde estamos ----------
+   * horarios: [{ dias: [1,2,3,4,5], abre: '09:00', fecha: '18:00' }] — 0 = domingo. */
+  var NOMES_DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  var SCHEMA_DIAS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  function horaCurta(h) { var m = /^(\d{1,2}):(\d{2})$/.exec(h || ''); return m ? Number(m[1]) + 'h' + (m[2] === '00' ? '' : m[2]) : ''; }
+  function faixaDias(d) {
+    var l = d.slice().sort(function (a, b) { return a - b; });
+    var seguidos = l.every(function (x, i) { return i === 0 || x === l[i - 1] + 1; });
+    if (l.length === 1) return NOMES_DIAS[l[0]];
+    if (seguidos && l.length > 2) return NOMES_DIAS[l[0]] + ' a ' + NOMES_DIAS[l[l.length - 1]].toLowerCase();
+    return l.map(function (x, i) { return i ? NOMES_DIAS[x].toLowerCase() : NOMES_DIAS[x]; }).join(', ').replace(/, ([^,]*)$/, ' e $1');
+  }
+  // ["Segunda a sexta: 9h às 18h", "Sábado: 9h às 13h", "Domingo: fechado"]
+  function textoHorarios(horarios) {
+    var abertos = {};
+    var linhas = (horarios || []).map(function (h) {
+      h.dias.forEach(function (d) { abertos[d] = 1; });
+      return faixaDias(h.dias) + ': ' + horaCurta(h.abre) + ' às ' + horaCurta(h.fecha);
+    });
+    var fechados = [0, 1, 2, 3, 4, 5, 6].filter(function (d) { return !abertos[d]; });
+    if (fechados.length) linhas.push(faixaDias(fechados) + ': fechado');
+    return linhas;
+  }
+  function diasSemHorario(horarios) {
+    var abertos = {};
+    (horarios || []).forEach(function (h) { h.dias.forEach(function (d) { abertos[d] = 1; }); });
+    return [0, 1, 2, 3, 4, 5, 6].filter(function (d) { return !abertos[d]; });
+  }
+  function linkMapa(endereco) {
+    return endereco ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(endereco) : '';
+  }
+  // Dados estruturados (schema.org) para o Google mostrar endereço, horário e telefone.
+  function dadosEstruturados(cfg, url) {
+    var local = cfg.local || {};
+    var loja = cfg.lojas[Object.keys(cfg.lojas)[0]];
+    var d = { '@context': 'https://schema.org', '@type': 'ClothingStore', name: cfg.nomeSite,
+      alternateName: cfg.atelie, description: 'Aluguel de trajes juninos e fantasias.' };
+    if (url) d.url = url;
+    if (loja.whatsapp) d.telephone = '+' + loja.whatsapp;
+    if (local.endereco) d.address = { '@type': 'PostalAddress', streetAddress: local.endereco, addressLocality: local.cidade || '', addressRegion: local.uf || '', addressCountry: 'BR' };
+    if ((local.horarios || []).length) d.openingHoursSpecification = local.horarios.map(function (h) {
+      return { '@type': 'OpeningHoursSpecification', dayOfWeek: h.dias.map(function (x) { return 'https://schema.org/' + ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][x]; }), opens: h.abre, closes: h.fecha };
+    });
+    if (cfg.instagram) d.sameAs = ['https://www.instagram.com/' + cfg.instagram.replace(/^@/, '')];
+    return d;
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -552,6 +599,10 @@
     proximaDataLivre: proximaDataLivre,
     validarAgenda: validarAgenda,
     kitLivres: kitLivres,
+    textoHorarios: textoHorarios,
+    diasSemHorario: diasSemHorario,
+    linkMapa: linkMapa,
+    dadosEstruturados: dadosEstruturados,
     cpfValido: cpfValido,
     FORMAS_PAGAMENTO: FORMAS_PAGAMENTO,
     dividirParcelas: dividirParcelas,
