@@ -175,6 +175,73 @@
     return erros;
   }
 
+  /* ---------- balcão e painel do ateliê ---------- */
+
+  // CPF pelos dois dígitos verificadores. Rejeita sequências repetidas (111.111.111-11).
+  function cpfValido(cpf) {
+    var d = String(cpf || '').replace(/\D/g, '');
+    if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+    for (var t = 9; t < 11; t++) {
+      var soma = 0;
+      for (var i = 0; i < t; i++) soma += Number(d[i]) * (t + 1 - i);
+      if ((soma * 10) % 11 % 10 !== Number(d[t])) return false;
+    }
+    return true;
+  }
+
+  /* Acerto na devolução. A caução cobre multa de atraso e danos NOVOS
+   * (os que não estão no laudo da retirada), cada um com valor próprio.
+   * O que passar da caução é cobrado à parte; o que sobrar volta ao cliente.
+   * { caucao, danos: [{ descricao, valor }], diasAtraso, valorDiaAtraso } */
+  function acertoDevolucao(d) {
+    var caucao = centavos(d.caucao || 0);
+    var atraso = Math.max(0, Math.floor(Number(d.diasAtraso) || 0));
+    var multa = atraso * centavos(d.valorDiaAtraso || 0);
+    var danos = (d.danos || []).reduce(function (s, x) { return s + Math.max(0, centavos(x.valor || 0)); }, 0);
+    var descontos = multa + danos;
+    var retido = Math.min(caucao, descontos);
+    return {
+      caucao: caucao / 100,
+      diasAtraso: atraso,
+      multa: multa / 100,
+      danos: danos / 100,
+      retido: retido / 100,
+      devolver: (caucao - retido) / 100,
+      cobrar: (descontos - retido) / 100
+    };
+  }
+
+  /* Cancelamento: até 7 dias antes da retirada, o sinal volta inteiro (CDC e regra
+   * do site). Depois disso vale a política da loja, que o painel mostra. */
+  function reembolsoCancelamento(sinalPago, retirada, hoje) {
+    var dias = diasEntre(hoje, retirada);
+    var integral = dias !== null && dias >= 7;
+    return { integral: integral, diasAntes: dias, valor: integral ? centavos(sinalPago || 0) / 100 : 0 };
+  }
+
+  /* Onde está cada peça física num dia. reservas: [{ unidade, status, retirada,
+   * devolucao, devolvidaEm }] com status já resolvido ('pendente', 'confirmada',
+   * 'retirada', 'concluida', 'cancelada'). Prioridade: atrasada > com o cliente >
+   * higienização > sai hoje > livre. */
+  function situacaoUnidade(unidade, reservas, dia, margem) {
+    var minhas = reservas.filter(function (r) { return r.unidade === unidade && r.status !== 'cancelada'; });
+    var achar = function (cond) { for (var i = 0; i < minhas.length; i++) if (cond(minhas[i])) return minhas[i]; return null; };
+    var r;
+    if ((r = achar(function (x) { return x.status === 'retirada' && dia > x.devolucao; }))) {
+      return { estado: 'atrasada', reserva: r, diasAtraso: diasEntre(r.devolucao, dia) };
+    }
+    if ((r = achar(function (x) { return x.status === 'retirada'; }))) return { estado: 'com-cliente', reserva: r };
+    if ((r = achar(function (x) {
+      return x.status === 'concluida' && x.devolvidaEm && dia >= x.devolvidaEm && dia <= somarDias(x.devolvidaEm, margem);
+    }))) return { estado: 'higienizacao', reserva: r, ate: somarDias(r.devolvidaEm, margem) };
+    if ((r = achar(function (x) { return (x.status === 'confirmada' || x.status === 'pendente') && x.retirada === dia; }))) {
+      return { estado: 'sai-hoje', reserva: r };
+    }
+    var futuras = minhas.filter(function (x) { return (x.status === 'confirmada' || x.status === 'pendente') && x.retirada > dia; })
+      .sort(function (a, b) { return a.retirada < b.retirada ? -1 : 1; });
+    return { estado: 'livre', proxima: futuras[0] || null };
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -314,6 +381,10 @@
     tamanhosLivres: tamanhosLivres,
     proximaDataLivre: proximaDataLivre,
     validarAgenda: validarAgenda,
+    cpfValido: cpfValido,
+    acertoDevolucao: acertoDevolucao,
+    reembolsoCancelamento: reembolsoCancelamento,
+    situacaoUnidade: situacaoUnidade,
     mensagemReserva: mensagemReserva,
     numeroWhatsAppValido: numeroWhatsAppValido,
     linkWhatsApp: linkWhatsApp

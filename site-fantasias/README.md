@@ -119,13 +119,46 @@ Gera um HTML único com o site inteiro mais uma camada de simulação:
 O montador lê os arquivos reais, então a simulação não diverge do que vai ao
 ar. A pasta `simulacao/` **não** vai para a hospedagem.
 
+## Painel do ateliê (simulado)
+
+Na simulação, a faixa do topo troca entre **Site do cliente** e **Painel do
+ateliê**. O painel é a tela de quem atende: no sistema de verdade (o MVP, com
+banco e login) ela fica atrás de senha; aqui ela roda no navegador
+(`simulacao/estado.js` faz o papel do banco) para validar o desenho antes.
+
+- **Hoje**: o que sai, o que volta, o que está atrasado (com lembrete pronto
+  no WhatsApp), peças em higienização e pedidos do site esperando sinal. O
+  "dia de trabalho" é escolhido no topo; a agenda de exemplo tem movimento a
+  partir de 27/11.
+- **Novo aluguel no balcão** (cliente na loja): fantasia → data da festa e
+  dias extras (mostra quando retira e até quando devolve) → tamanho com as
+  peças livres de verdade e a etiqueta da peça → cliente com nome, WhatsApp e
+  CPF validado → complementos → pagamento (aluguel inteiro ou só o sinal, e a
+  forma). Se a retirada é hoje, **Alugar e entregar agora** já abre a entrega.
+- **Entrega**: recebe o saldo e a caução e faz a vistoria: as 4 fotos
+  (frente, costas, barra, detalhes) são obrigatórias, mais os defeitos que a
+  peça já tem e o aceite do cliente.
+- **Devolução**: mostra o laudo da entrega ao lado, pede as 4 fotos de novo,
+  registra só danos **novos**, cada um com seu valor, e calcula o acerto:
+  caução − atraso (dia extra por dia) − danos = devolver; o que passar da
+  caução é cobrado à parte.
+- **Reservas**: todas, por situação, com busca; cancelamento segue a regra
+  (7 dias antes: sinal de volta; depois, a política do ateliê).
+- **Acervo**: onde está cada peça física no dia (livre, sai hoje, com o
+  cliente, atrasada, higienização).
+- **Caixa**: entradas e saídas do dia por forma de pagamento e as cauções em
+  mãos (dinheiro do cliente, que volta na devolução).
+
+O estoque é um só: o que o balcão aluga some da vitrine do site nessa data, e
+o pedido feito no site segura a peça por 30 minutos até o sinal.
+
 ## Provas
 
 ```bash
 node conferir_landing.js
 ```
 
-585 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
+625 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
 sugere menor que o ideal), filtros, orçamento em centavos, mensagem e link do
 WhatsApp, coerência de `dados.js` com `config.js` (loja existe, temas
 existem, medidas completas, sinal entre 30 e 50, nenhum nome de marca
@@ -133,7 +166,9 @@ registrada), o contrato entre `index.html` e `app.js` (todo id pedido existe)
 a montagem da simulação (cada script inline compila, ordem dos scripts), as
 regras de período e estoque por peça (margem de higienização dos dois lados,
 duas reservas em sequência na mesma peça, dia fechado), as duas agendas sem
-conflito e a marca (nome, fontes, logo).
+conflito a marca (nome, fontes, logo), as regras do balcão (CPF, acerto da caução,
+cancelamento, situação de cada peça) e o "banco" da simulação rodando no
+Node: pedido do site, balcão, entrega, devolução atrasada com dano, recomeçar.
 
 A suíte foi validada por mutação: 13 defeitos reintroduzidos, todos
 derrubam a suíte com código de saída 1. Dois sobreviveram na primeira rodada e

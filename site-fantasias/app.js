@@ -197,6 +197,7 @@
 
   /* ---------- ficha da fantasia ---------- */
   var escolhas = {};   // escolhas por fantasia: voltam iguais se a ficha reabrir
+  var ultimoPedido = null;   // último clique em reservar com peça livre (lido pela simulação)
   var fichaAtual = '';
 
   function abrirFicha(id, origem) {
@@ -288,7 +289,7 @@
       var o = L.calcularOrcamento(f, sel.kit, loja.sinal, per ? sel.extras : 0);
       var livreSel = sel.tamanho && disp[sel.tamanho] ? disp[sel.tamanho].livres : null;
       var indisponivel = !!(per && sel.tamanho && livreSel && !livreSel.length);
-      situacao = { periodo: per, unidade: livreSel && livreSel.length ? livreSel[0] : '', indisponivel: indisponivel };
+      situacao = { periodo: per, unidade: livreSel && livreSel.length ? livreSel[0] : '', indisponivel: indisponivel, orcamento: o };
 
       // período: quando retirar e quando devolver
       var caixa = $('ficha-periodo');
@@ -433,6 +434,11 @@
     $('botao-reservar').addEventListener('click', function (e) {
       if (!whatsOk) { e.preventDefault(); return; }
       var per = situacao.periodo;
+      ultimoPedido = situacao.indisponivel || !per || !situacao.unidade ? null : {
+        fantasia: f.id, tamanho: sel.tamanho, unidade: situacao.unidade, retirada: per.retirada, devolucao: per.devolucao,
+        dataFesta: per.dataFesta, diasExtras: per.diasExtras, kit: sel.kit.slice(),
+        total: situacao.orcamento.total, sinal: situacao.orcamento.sinal, caucao: situacao.orcamento.caucao
+      };
       registrar(situacao.indisponivel ? 'clique_pedir_outra_data' : 'clique_reservar', {
         id: f.id, loja: f.loja, tamanho: sel.tamanho || '', temData: !!per, itensKit: sel.kit.length,
         diasExtras: per ? per.diasExtras : 0,
@@ -500,6 +506,7 @@
       renderizarGrade();
       if ($('ficha').open && fichaAtual) abrirFicha(fichaAtual, 'atualizacao');
     },
+    ultimoPedido: function () { return ultimoPedido; },
     definirData: function (iso) {
       estado.dataFesta = iso;
       $('busca-data').value = iso;

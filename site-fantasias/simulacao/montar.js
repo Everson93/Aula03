@@ -17,7 +17,8 @@ const html = ler('index.html');
 const corpo = /<body>([\s\S]*)<\/body>/.exec(html)[1]
   .replace(/<script src="[^"]+"><\/script>\s*/g, '');
 
-const scripts = ['config.js', 'simulacao/antes.js', 'dados.js', 'simulacao/agenda_exemplo.js', 'logica.js', 'app.js', 'simulacao/depois.js'];
+const scripts = ['config.js', 'simulacao/antes.js', 'dados.js', 'simulacao/agenda_exemplo.js', 'logica.js',
+  'simulacao/estado.js', 'app.js', 'simulacao/depois.js', 'simulacao/painel.js'];
 for (const s of scripts) {
   if (/<\/script/i.test(ler(s))) throw new Error(s + ' contém </script> e quebraria o HTML inline');
 }
@@ -29,7 +30,7 @@ const pagina = [
   '<title>Simulador Cantinho da Day</title>',
   '<meta name="description" content="Simulação do site de aluguel de trajes juninos e fantasias antes de publicar.">',
   ...fontes,
-  '<style>', ler('estilo.css'), ler('simulacao/simulacao.css'), '</style>',
+  '<style>', ler('estilo.css'), ler('simulacao/simulacao.css'), ler('simulacao/painel.css'), '</style>',
   corpo.trim(),
   ...scripts.map(s => '<script>/* ' + s + ' */\n' + ler(s) + '\n</script>')
 ].join('\n');

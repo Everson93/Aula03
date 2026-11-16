@@ -169,6 +169,42 @@ prova('mensagem traz devolução e dia extra', msgPer.includes('Devolução: seg
 const msgEsg = L.mensagemReserva({ nomeSite: 'S', tamanho: 'M', dataFesta: '2027-02-06', periodo: perMsg, fantasia: fx, orcamento: L.calcularOrcamento(fx, [], 30), indisponivel: true });
 prova('mensagem de esgotada não pede reserva', msgEsg.includes('esgotada') && !msgEsg.includes('quero reservar'), msgEsg);
 
+/* ---------- balcão: CPF, acerto, cancelamento, situação da peça ---------- */
+prova('CPF válido', L.cpfValido('529.982.247-25') && L.cpfValido('52998224725'));
+prova('CPF com dígito errado', !L.cpfValido('529.982.247-24'));
+prova('CPF com segundo dígito errado', !L.cpfValido('529.982.247-15'));
+prova('CPF repetido', !L.cpfValido('111.111.111-11'));
+prova('CPF curto', !L.cpfValido('5299822472'));
+prova('CPF com resto 10 vira 0', L.cpfValido('123.456.789-09'));
+let ac = L.acertoDevolucao({ caucao: 100, danos: [], diasAtraso: 0, valorDiaAtraso: 35 });
+prova('devolução sem problema devolve a caução toda', ac.devolver === 100 && ac.retido === 0 && ac.cobrar === 0, ac);
+ac = L.acertoDevolucao({ caucao: 100, danos: [{ descricao: 'barra descosturada', valor: 25.5 }], diasAtraso: 1, valorDiaAtraso: 35 });
+prova('dano + 1 dia de atraso saem da caução', ac.multa === 35 && ac.danos === 25.5 && ac.retido === 60.5 && ac.devolver === 39.5 && ac.cobrar === 0, ac);
+ac = L.acertoDevolucao({ caucao: 60, danos: [{ valor: 40 }], diasAtraso: 2, valorDiaAtraso: 25 });
+prova('o que passa da caução é cobrado à parte', ac.retido === 60 && ac.devolver === 0 && ac.cobrar === 30, ac);
+prova('atraso negativo não vira crédito', L.acertoDevolucao({ caucao: 50, diasAtraso: -3, valorDiaAtraso: 20 }).devolver === 50);
+prova('dano negativo ignorado', L.acertoDevolucao({ caucao: 50, danos: [{ valor: -10 }] }).devolver === 50);
+prova('acerto em centavos', L.acertoDevolucao({ caucao: 0.15, danos: [{ valor: 0.14 }] }).devolver === 0.01);
+let rb = L.reembolsoCancelamento(42, '2027-02-05', '2027-01-29');
+prova('cancelar 7 dias antes devolve o sinal todo', rb.integral && rb.valor === 42, rb);
+rb = L.reembolsoCancelamento(42, '2027-02-05', '2027-01-30');
+prova('cancelar 6 dias antes segue a política da loja', !rb.integral && rb.valor === 0 && rb.diasAntes === 6, rb);
+const rs = [
+  { unidade: 'A-M-1', status: 'retirada', retirada: '2027-02-05', devolucao: '2027-02-08' },
+  { unidade: 'A-M-2', status: 'concluida', retirada: '2027-02-01', devolucao: '2027-02-04', devolvidaEm: '2027-02-04' },
+  { unidade: 'A-M-3', status: 'confirmada', retirada: '2027-02-05', devolucao: '2027-02-08' },
+  { unidade: 'A-M-4', status: 'cancelada', retirada: '2027-02-05', devolucao: '2027-02-08' },
+  { unidade: 'A-M-4', status: 'confirmada', retirada: '2027-02-12', devolucao: '2027-02-15' }
+];
+const sit = (u, dia) => L.situacaoUnidade(u, rs, dia, 1);
+prova('peça com o cliente', sit('A-M-1', '2027-02-06').estado === 'com-cliente');
+prova('peça atrasada', sit('A-M-1', '2027-02-10').estado === 'atrasada' && sit('A-M-1', '2027-02-10').diasAtraso === 2);
+prova('no dia da devolução ainda não é atraso', sit('A-M-1', '2027-02-08').estado === 'com-cliente');
+prova('higienização no dia seguinte à devolução', sit('A-M-2', '2027-02-05').estado === 'higienizacao' && sit('A-M-2', '2027-02-05').ate === '2027-02-05');
+prova('livre depois da higienização', sit('A-M-2', '2027-02-06').estado === 'livre');
+prova('sai hoje', sit('A-M-3', '2027-02-05').estado === 'sai-hoje');
+prova('cancelada não ocupa e a próxima aparece', sit('A-M-4', '2027-02-05').estado === 'livre' && sit('A-M-4', '2027-02-05').proxima.retirada === '2027-02-12');
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();
@@ -244,6 +280,56 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   if (antes !== depois) fs.writeFileSync(path.join(__dirname, 'simulacao', 'agenda_exemplo.js'), antes);
 }
 
+/* ---------- estado da loja na simulação (painel do ateliê) ---------- */
+{
+  const guardado = {};
+  const jan = { Logica: L, localStorage: { getItem: k => (k in guardado ? guardado[k] : null), setItem: (k, v) => { guardado[k] = String(v); } } };
+  const ctxE = vm.createContext({ window: jan, localStorage: jan.localStorage, setInterval: () => 0, Date, JSON, Math });
+  for (const f of ['config.js', 'dados.js', 'simulacao/agenda_exemplo.js', 'simulacao/estado.js']) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, f), 'utf8'), ctxE, { filename: f });
+  }
+  const S = jan.SIM_LOJA;
+  const lojaN = jan.CONFIG.lojas.neia;
+  S.definirDia('2027-03-10'); // dia sem movimento na agenda de exemplo
+  const fJ = jan.FANTASIAS.find(f => f.id === 'JN05');
+  const livresM = festa => L.disponibilidade(fJ, jan.AGENDA, L.periodoAluguel(festa, S.dia(), 0, lojaN), 1).M.livres.length;
+  const antes = livresM('2027-03-11');
+  prova('estado: exemplo carregado', S.todas().length > 300);
+  const per = L.periodoAluguel('2027-03-11', S.dia(), 0, lojaN);
+  const ped = S.criarPedidoSite({ fantasia: 'JN05', tamanho: 'M', unidade: 'JN05-M-1', retirada: per.retirada, devolucao: per.devolucao, total: 95, sinal: 28.5, caucao: 60 });
+  prova('pedido do site nasce aguardando sinal e segura a peça', S.porId(ped.id).status === 'pendente' && livresM('2027-03-11') === antes - 1);
+  S.cancelar(ped.id, { motivo: 'teste' });
+  prova('pedido recusado libera a peça', livresM('2027-03-11') === antes);
+  const b = S.criarBalcao({ cliente: { nome: 'Maria Teste', whatsapp: '5591988887777', cpf: '52998224725' }, fantasia: 'JN05', tamanho: 'M', unidade: 'JN05-M-2',
+    retirada: per.retirada, devolucao: per.devolucao, dataFesta: '2027-03-11', total: 95, sinal: 28.5, caucao: 60, recebido: { tipo: 'sinal', forma: 'Pix' } });
+  prova('balcão: reserva confirmada, sinal lançado, saldo certo', S.porId(b.id).status === 'confirmada' && S.saldo(S.porId(b.id)) === 66.5);
+  prova('balcão baixa o estoque que o site vê', livresM('2027-03-11') === antes - 1);
+  S.registrarRetirada(b.id, { saldo: { valor: 66.5, forma: 'Dinheiro' }, caucao: { valor: 60, forma: 'Pix' }, vistoria: { dia: S.dia(), fotos: {}, defeitos: [], obs: '' } });
+  let r = S.porId(b.id);
+  prova('entrega: com o cliente, nada a receber, caução recebida', r.status === 'retirada' && S.saldo(r) === 0 && S.caucaoRecebida(r));
+  S.definirDia(L.somarDias(per.devolucao, 2)); // voltou 2 dias atrasada
+  const ag = jan.AGENDA.find(x => x.unidade === 'JN05-M-2' && x.retirada === per.retirada);
+  prova('peça atrasada continua bloqueada até hoje', ag.devolucao === S.dia(), ag);
+  prova('situação: atrasada', L.situacaoUnidade('JN05-M-2', S.todas(), S.dia(), 1).estado === 'atrasada');
+  const acerto = L.acertoDevolucao({ caucao: 60, danos: [{ descricao: 'botão', valor: 5 }], diasAtraso: 2, valorDiaAtraso: fJ.diaExtra });
+  S.registrarDevolucao(b.id, { acerto, danos: [], forma: 'Pix', vistoria: { dia: S.dia(), fotos: {}, defeitos: [], obs: '' } });
+  r = S.porId(b.id);
+  prova('devolução: concluída com acerto (atraso 2 × 25 + dano 5 = 55, devolve 5)', r.status === 'concluida' && r.acerto.devolver === 5 && r.pagamentos.some(p => p.tipo === 'caucao_devolvida' && p.valor === 5), r.acerto);
+  prova('situação: higienização no dia da devolução', L.situacaoUnidade('JN05-M-2', S.todas(), S.dia(), 1).estado === 'higienizacao');
+  prova('estado guardado no navegador', typeof guardado['simulacao-cantinho-v2'] === 'string' && guardado['simulacao-cantinho-v2'].includes(b.id));
+  const ex = S.todas().find(x => x.origem === 'exemplo');
+  S.definirDia(L.somarDias(ex.retirada, -1));
+  prova('exemplo antes da retirada: confirmada', S.porId(ex.id).status === 'confirmada');
+  const exR = S.porId(ex.id);
+  prova('exemplo: sinal conta como pago, falta só o saldo', S.saldo(exR) === Math.round((exR.valores.total - exR.valores.sinal) * 100) / 100 && S.saldo(exR) < exR.valores.total, [S.saldo(exR), exR.valores]);
+  S.definirDia(ex.retirada);
+  prova('exemplo no dia da retirada: esperando o cliente (sai hoje)', S.porId(ex.id).status === 'confirmada');
+  S.definirDia(L.somarDias(ex.retirada, 1));
+  prova('exemplo no dia seguinte: com o cliente', S.porId(ex.id).status === 'retirada');
+  S.zerar();
+  prova('recomeçar apaga o que foi criado', !S.porId(b.id) && S.todas().every(x => x.origem === 'exemplo'));
+}
+
 /* ---------- contrato HTML <-> app.js ---------- */
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 const app = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
@@ -268,7 +354,8 @@ if (montou.status === 0) {
   prova('simulação sem <html>/<head>/<body> próprios', !/<(html|head|body)[\s>]/i.test(sim));
   prova('simulação com <title> no início', /^<title>[^<]{3,60}<\/title>/.test(sim));
   const blocos = [...sim.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-  prova('simulação com 7 scripts inline', blocos.length === 7, blocos.length);
+  prova('simulação com 9 scripts inline', blocos.length === 9, blocos.length);
+  prova('estado da loja carrega antes do app (a vitrine nasce com a agenda certa)', sim.indexOf('/* simulacao/estado.js */') < sim.indexOf('/* app.js */') && sim.indexOf('/* logica.js */') < sim.indexOf('/* simulacao/estado.js */'));
   prova('simulação usa a agenda de exemplo, não a real', sim.includes('/* simulacao/agenda_exemplo.js */') && !sim.includes('/* agenda.js */'));
   blocos.forEach((b, i) => prova('script inline ' + i + ' compila', (() => { try { new vm.Script(b); return true; } catch (e) { return false; } })()));
   prova('simulação sem script externo', !/<script src=/.test(sim));

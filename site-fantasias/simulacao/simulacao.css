@@ -28,7 +28,7 @@ body::before {
 
 .sim-faixa { background: var(--faixa-fundo); color: var(--faixa-texto); font-size: .9rem; }
 .sim-faixa__linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 8px; flex-wrap: wrap; }
-.sim-faixa p { margin: 0; min-width: 0; flex: 1 1 260px; }
+
 .sim-faixa__botao {
   font: inherit; font-weight: 600; cursor: pointer; border-radius: 999px; padding: .35em 1em;
   background: transparent; color: var(--faixa-texto); border: 1px solid currentColor;
@@ -113,7 +113,15 @@ body::before {
 /* ---------- faixa: datas rápidas ---------- */
 .sim-faixa__datas { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: .82rem; }
 .sim-faixa__datas span { opacity: .75; }
-.sim-faixa__acoes { display: flex; gap: 8px; }
+/* troca de tela: site do cliente / painel do ateliê */
+.sim-vistas { display: flex; gap: 4px; background: rgba(127, 127, 127, .18); border-radius: 999px; padding: 3px; }
+.sim-vista {
+  color: var(--faixa-texto); text-decoration: none; font-weight: 700; font-size: .85rem;
+  padding: .3em .9em; border-radius: 999px; display: inline-flex; gap: .4em; align-items: center;
+}
+.sim-vista[aria-current="page"] { background: var(--faixa-texto); color: var(--faixa-fundo); }
+.sim-vista:focus-visible { outline: 2px solid var(--destaque); outline-offset: 2px; }
+.sim-vista__conta { background: var(--destaque); color: var(--branco); border-radius: 999px; padding: 0 .5em; font-size: .75rem; }
 .sim-data {
   font: inherit; font-size: .8rem; cursor: pointer; border-radius: 999px; padding: .25em .8em;
   background: transparent; color: var(--faixa-texto); border: 1px dashed currentColor;
@@ -123,39 +131,4 @@ body::before {
 /* ---------- confirmação simulada da loja ---------- */
 .sim-confirmar { border: 1px solid var(--ok); background: var(--ok-fundo); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .sim-confirmar p { margin: 0; font-size: .88rem; color: var(--texto); }
-.sim-confirmar .botao { background: var(--ok); color: var(--superficie); }
-
-/* ---------- painel de estoque ---------- */
-.sim-estoque { width: min(820px, 100% - 24px); }
-.sim-estoque__barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 0 20px; }
-.sim-estoque__barra label { font-weight: 600; font-size: .9rem; }
-.sim-estoque__barra input {
-  font: inherit; padding: .45em .7em; border-radius: 10px; border: 1px solid var(--borda);
-  background: var(--superficie); color: var(--texto);
-}
-.sim-estoque__barra .botao { padding: .45em .9em; font-size: .85rem; }
-.sim-estoque__resumo { margin: 12px 20px; font-size: .9rem; color: var(--texto-suave); }
-.sim-estoque__resumo strong { color: var(--texto); }
-#sim-estoque-lista { padding: 0 20px 20px; display: flex; flex-direction: column; gap: 6px; }
-.sim-fant { box-shadow: none; border: 1px solid var(--borda); border-left-width: 4px; border-radius: 10px; padding: 10px 12px; margin: 0; }
-.sim-fant--livre { border-left-color: var(--ok); }
-.sim-fant--parcial { border-left-color: var(--aviso); }
-.sim-fant--esgotada { border-left-color: var(--erro); }
-.sim-fant summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 400; }
-.sim-fant__nome { font-weight: 600; min-width: 0; }
-.sim-fant__nome small { font-weight: 400; color: var(--texto-suave); }
-.sim-fant__chips { display: flex; gap: 4px; flex-wrap: wrap; }
-.sim-chip { font-size: .75rem; padding: .15em .5em; border-radius: 6px; background: var(--fundo-alt); color: var(--texto-suave); font-variant-numeric: tabular-nums; }
-.sim-chip b { font-weight: 700; }
-.sim-chip--ok { background: var(--ok-fundo); color: var(--ok); }
-.sim-chip--parcial { background: var(--aviso-fundo); color: var(--aviso); }
-.sim-chip--zero { background: var(--erro-fundo); color: var(--erro); }
-.sim-fant__per { margin: 10px 0 4px; font-size: .82rem; color: var(--texto-suave); }
-.sim-un { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.sim-un li { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: baseline; font-size: .8rem; padding: 4px 6px; border-radius: 6px; }
-.sim-un li.sim-un--ocupada { background: var(--erro-fundo); }
-.sim-un__id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--texto-suave); }
-.sim-un__res { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
-.sim-res { font-variant-numeric: tabular-nums; background: var(--fundo-alt); border-radius: 4px; padding: 0 .4em; }
-.sim-res--sim { background: var(--destaque-suave); color: var(--destaque-escuro); font-weight: 600; }
-.sim-un__vazia { color: var(--texto-suave); font-style: italic; }
+.sim-confirmar .botao { align-self: flex-start; text-decoration: none; }
