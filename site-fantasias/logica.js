@@ -518,6 +518,21 @@
     return l.join('\n');
   }
 
+  /* ---------- perfis de acesso ----------
+   * operadores: [{ nome, papel }]; permissoes: { papel: [ações] }. */
+  function papelDe(nome, operadores) {
+    var o = (operadores || []).find(function (x) { return (x.nome || x) === nome; });
+    return o ? (o.papel || 'atendente') : 'atendente';
+  }
+  function pode(nome, acao, operadores, permissoes) {
+    return ((permissoes || {})[papelDe(nome, operadores)] || []).indexOf(acao) !== -1;
+  }
+  // Desconto em % do valor bruto (aluguel + extras + complementos).
+  function percentualDesconto(desconto, bruto) {
+    var b = centavos(bruto);
+    return b > 0 ? Math.round(centavos(desconto) * 10000 / b) / 100 : 0;
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -664,6 +679,9 @@
     validarAgenda: validarAgenda,
     kitLivres: kitLivres,
     textoHorarios: textoHorarios,
+    papelDe: papelDe,
+    pode: pode,
+    percentualDesconto: percentualDesconto,
     textoOrcamento: textoOrcamento,
     horariosDeProva: horariosDeProva,
     diasSemHorario: diasSemHorario,

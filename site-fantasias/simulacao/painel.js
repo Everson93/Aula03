@@ -44,6 +44,8 @@
     ['acervo', 'Acervo'], ['caixa', 'Caixa'], ['privacidade', 'Privacidade']];
 
   function $(id) { return document.getElementById(id); }
+  function pode(acao) { return LOJA.pode(acao); }
+  var SO_DONA = '<span class="sis-mudo" title="Peça para a dona">só a dona</span>';
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -86,7 +88,7 @@
       }).join('') + '</nav>' +
       '<div class="sis-menu__pe">' +
         '<label for="sis-operador">Atendente</label>' +
-        '<select id="sis-operador">' + (C.operadores || ['Atendente']).map(function (o) { return '<option>' + esc(o) + '</option>'; }).join('') + '</select>' +
+        '<select id="sis-operador">' + (C.operadores || []).map(function (o) { return '<option value="' + esc(o.nome) + '">' + esc(o.nome) + ' (' + (o.papel === 'dona' ? 'dona' : 'atendente') + ')</option>'; }).join('') + '</select>' +
         '<button type="button" class="sis-link" id="sis-zerar">Recomeçar a simulação</button>' +
       '</div>' +
     '</aside>' +
@@ -533,6 +535,10 @@
     var d = lerValor(carrinho.desconto);
     if (carrinho.desconto && !(d >= 0)) e.push('Desconto em reais, por exemplo 10,00.');
     if (d > 0 && !carrinho.motivoDesconto.trim()) e.push('Diga o motivo do desconto (fica no pedido).');
+    if (d > 0 && !pode('descontoAcimaLimite')) {
+      var vb = valoresCarrinho(), bruto = vb.aluguel + vb.extras + vb.complementos;
+      if (L.percentualDesconto(d, bruto) > C.limiteDescontoAtendente) e.push('Desconto acima de ' + C.limiteDescontoAtendente + '% precisa da dona (troque o atendente no menu).');
+    }
     return e;
   }
 
@@ -749,7 +755,7 @@
     var st = visivel(p);
     var acoes = '';
     if (st === 'pendente') acoes = botao('confirmar', p.id, 'Sinal recebido', true) + botao('recusar', p.id, 'Recusar');
-    if (st === 'confirmada' && (p.itens || []).length) acoes = (dia() >= p.retirada ? botao('retirar', p.id, 'Entregar', true) : '') + '<button type="button" class="botao botao--leve pn-botao" id="pd-cancelar">Cancelar pedido</button>';
+    if (st === 'confirmada' && (p.itens || []).length) acoes = (dia() >= p.retirada ? botao('retirar', p.id, 'Entregar', true) : '') + (pode('cancelarPedido') ? '<button type="button" class="botao botao--leve pn-botao" id="pd-cancelar">Cancelar pedido</button>' : SO_DONA);
     if (st === 'retirada' || st === 'atrasada') acoes = lembrete(p) + botao('devolver', p.id, 'Receber de volta', true);
     if ((p.itens || []).length && st !== 'cancelada' && st !== 'expirada') acoes = botao('contrato', p.id, 'Contrato') + acoes;
     abrirModal('Pedido ' + p.id, cabeca(p) +
@@ -1217,7 +1223,7 @@
     abrirModal(esc(c.nome),
       (c.anonimizado ? '<p class="pn-msg pn-msg--ok">Cadastro anonimizado em ' + esc(L.dataBR(c.anonimizadoEm)) + '. O histórico de locações ficou, sem dados que identifiquem a pessoa.</p>' :
       '<dl class="pn-conta-tab sis-ficha">' +
-        '<div><dt>CPF</dt><dd><span id="cl-cpf">' + L.mascararCpf(c.cpf) + '</span> <button type="button" class="sis-link" id="cl-ver-cpf">mostrar</button></dd></div>' +
+        '<div><dt>CPF</dt><dd><span id="cl-cpf">' + L.mascararCpf(c.cpf) + '</span> ' + (pode('verCpf') ? '<button type="button" class="sis-link" id="cl-ver-cpf">mostrar</button>' : SO_DONA) + '</dd></div>' +
         '<div><dt>WhatsApp</dt><dd>' + esc(formatarFone(c.whatsapp)) + '</dd></div>' +
         '<div><dt>Endereço</dt><dd>' + esc([e.rua, e.numero, e.complemento, e.bairro, e.cidade, e.uf].filter(Boolean).join(', ')) + ' · CEP ' + esc(e.cep) + '</dd></div>' +
         (c.email ? '<div><dt>E-mail</dt><dd>' + esc(c.email) + '</dd></div>' : '') +
@@ -1230,23 +1236,24 @@
       '</dl>') +
       '<h3>Locações</h3>' + tabelaPedidos(pedidos.slice(0, 8).map(function (p) { return linha(p, R$(p.valores.total), ''); }), 'Nenhuma locação.') +
       (c.anonimizado ? '' : '<h3>Direitos do titular (LGPD)</h3><div class="sis-direitos">' +
-        '<button type="button" class="botao botao--leve pn-botao" id="cl-exportar">Ver e copiar todos os dados</button>' +
+        (pode('exportarDados') ? '<button type="button" class="botao botao--leve pn-botao" id="cl-exportar">Ver e copiar todos os dados</button>' : '') +
         '<button type="button" class="botao botao--leve pn-botao" id="cl-corrigir">Corrigir dados</button>' +
         '<button type="button" class="botao botao--leve pn-botao" id="cl-pedido">Registrar pedido do cliente</button>' +
-        '<button type="button" class="botao botao--leve pn-botao" id="cl-apagar"' + (sit.pode ? '' : ' disabled') + '>Anonimizar cadastro</button></div>' +
+        (pode('anonimizar') ? '<button type="button" class="botao botao--leve pn-botao" id="cl-apagar"' + (sit.pode ? '' : ' disabled') + '>Anonimizar cadastro</button>' : '') + '</div>' +
+        (pode('exportarDados') ? '' : '<p class="pn-dica">Ver todos os dados e anonimizar: só a dona. Registre o pedido do cliente e avise-a.</p>') +
         (sit.pode ? '' : '<p class="pn-dica">Ainda não dá para apagar: ' + (sit.motivo === 'locacao' ? 'tem locação em andamento.' : 'a guarda vai até ' + esc(L.dataBR(sit.ate)) + ' (' + C.lgpd.retencaoCadastroAnos + ' anos depois da última locação, para defesa em eventual reclamação). Os dados ficam só para isso e para nada mais.') + '</p>') +
         '<div id="cl-extra"></div>') +
       '<h3>Histórico de acesso e alterações</h3><ul class="sis-log">' + (c.log || []).slice().reverse().map(function (l) {
         return '<li><span>' + esc(L.dataBR(l.quando)) + (l.hora ? ' ' + hora(l.hora) : '') + '</span><span>' + esc(l.quem || '') + '</span><span>' + esc(l.acao) + '</span></li>';
       }).join('') + '</ul>');
     if (c.anonimizado) return;
-    $('cl-ver-cpf').addEventListener('click', function () {
+    if ($('cl-ver-cpf')) $('cl-ver-cpf').addEventListener('click', function () {
       $('cl-cpf').textContent = formatarCpf(c.cpf); this.remove();
       LOJA.registrarAcesso(id, 'Viu o CPF completo');
     });
     $('cl-mkt').addEventListener('click', function () { LOJA.definirMarketing(id, !mk.consentido); abrirCliente(id); });
     $('cl-corrigir').addEventListener('click', function () { abrirCadastro(id); });
-    $('cl-exportar').addEventListener('click', function () {
+    if ($('cl-exportar')) $('cl-exportar').addEventListener('click', function () {
       var dados = { cliente: LOJA.clientePorId(id), locacoes: LOJA.pedidosDoCliente(id).map(function (p) { return { pedido: p.id, pecas: pecasTxt(p), retirada: p.retirada, devolucao: p.devolucao, status: p.status, total: p.valores.total }; }) };
       dados.cliente = Object.assign({}, dados.cliente, { log: undefined });
       LOJA.registrarAcesso(id, 'Exportou os dados a pedido do titular');
@@ -1264,7 +1271,7 @@
         '<button type="button" class="botao botao--destaque pn-botao" id="cl-reg">Registrar (prazo de ' + C.lgpd.prazoRespostaDias + ' dias)</button>';
       $('cl-reg').addEventListener('click', function () { LOJA.abrirSolicitacao(id, $('cl-tipo').value, $('cl-canal').value); abrirCliente(id); });
     });
-    $('cl-apagar').addEventListener('click', function () {
+    if ($('cl-apagar')) $('cl-apagar').addEventListener('click', function () {
       $('cl-extra').innerHTML = '<div class="pn-cancelar"><p>Anonimizar tira nome, CPF, WhatsApp, endereço, e-mail, RG e medidas. As locações ficam no histórico, sem identificar a pessoa. Não tem volta.</p>' +
         '<button type="button" class="botao botao--destaque pn-botao" id="cl-apagar-ok">Anonimizar agora</button></div>';
       $('cl-apagar-ok').addEventListener('click', function () { LOJA.anonimizar(id); abrirCliente(id); });
@@ -1287,7 +1294,7 @@
           var s = bl ? { estado: 'bloqueada' } : L.situacaoUnidade(u, linhas, d, m);
           cont[s.estado]++; total++; if (s.estado === 'livre') livres++;
           var e = ESTADOS[s.estado];
-          var acao = bl ? botao('liberar', bl.id, 'Liberar') : s.estado === 'livre' ? '<button type="button" class="botao botao--leve pn-botao" data-acao="bloquear" data-unidade="' + u + '" data-fantasia="' + f.id + '" data-tamanho="' + t + '">Bloquear</button>' : '';
+          var acao = bl ? botao('liberar', bl.id, 'Liberar') : s.estado === 'livre' && pode('bloquear') ? '<button type="button" class="botao botao--leve pn-botao" data-acao="bloquear" data-unidade="' + u + '" data-fantasia="' + f.id + '" data-tamanho="' + t + '">Bloquear</button>' : '';
           var info = bl ? esc(bl.motivo) + ' até ' + curta(bl.ate) + (bl.obs ? ' · ' + esc(bl.obs) : '') : s.estado === 'livre' ? (s.proxima ? 'próxima saída ' + curta(s.proxima.retirada) + ' · ' + esc(nome(s.proxima.pedido)) : 'sem reservas futuras')
             : s.estado === 'higienizacao' ? 'livre a partir de ' + curta(L.somarDias(s.ate, 1))
             : s.estado === 'atrasada' ? esc(nome(s.reserva.pedido)) + ' · ' + s.diasAtraso + ' dia(s) de atraso'
@@ -1483,7 +1490,7 @@
         Object.keys(FORMAS).map(function (f) {
           return '<tr><td>' + FORMAS[f].nome + (f === 'vale' ? ' <small class="sis-mudo">(não é dinheiro)</small>' : '') + '</td><td class="sis-num">' + R$(ent[f] / 100) + '</td><td class="sis-num">' + R$(sai[f] / 100) + '</td><td class="sis-num"><strong>' + R$(e[f]) + '</strong></td></tr>';
         }).join('') + '</tbody></table></div>',
-        '<div class="sis-botoes">' + (LOJA.caixaDeOutroDia() ? '<span class="pn-msg pn-msg--erro">Caixa de outro dia: só falta fechar.</span>' : '<button type="button" class="botao botao--leve pn-botao" id="cx-sup">Suprimento</button><button type="button" class="botao botao--leve pn-botao" id="cx-san">Sangria</button>') +
+        '<div class="sis-botoes">' + (LOJA.caixaDeOutroDia() ? '<span class="pn-msg pn-msg--erro">Caixa de outro dia: só falta fechar.</span>' : pode('sangria') ? '<button type="button" class="botao botao--leve pn-botao" id="cx-sup">Suprimento</button><button type="button" class="botao botao--leve pn-botao" id="cx-san">Sangria</button>' : '<span class="sis-mudo">Sangria e suprimento: só a dona</span>') +
         '<button type="button" class="botao botao--destaque pn-botao" id="cx-fechar">Fechar caixa</button></div>') +
       cartao('Lançamentos', '', cx.movimentos.length ? '<div class="sis-tabela-rolagem"><table class="sis-tabela"><thead><tr><th>Hora</th><th>O quê</th><th>Forma</th><th>Atendente</th><th class="sis-num">Valor</th></tr></thead><tbody>' +
         cx.movimentos.slice().reverse().map(function (m) {
@@ -1570,7 +1577,7 @@
         }).join('') + '</tbody></table></div>' : '<div class="pn-vazio"><p>Nenhum pedido registrado.</p></div>') +
       cartao('Prazos de guarda vencidos', 'Depois do prazo, o dado não tem mais motivo para ficar.',
         '<p>Fotos de vistoria com mais de ' + C.lgpd.retencaoFotosMeses + ' meses: <strong>' + fotos.length + '</strong> pedido(s). ' +
-          (fotos.length ? '<button type="button" class="botao botao--leve pn-botao" id="pv-fotos">Apagar essas fotos</button>' : '') + '</p>' +
+          (fotos.length ? (pode('apagarFotos') ? '<button type="button" class="botao botao--leve pn-botao" id="pv-fotos">Apagar essas fotos</button>' : SO_DONA) : '') + '</p>' +
         '<p>Clientes sem locação há mais de ' + C.lgpd.retencaoCadastroAnos + ' anos: <strong>' + vencidos.length + '</strong>. ' +
           (vencidos.length ? vencidos.slice(0, 5).map(function (c) { return '<button type="button" class="sis-link" data-acao="cliente" data-id="' + c.id + '">' + esc(c.nome) + '</button>'; }).join(', ') : '') + '</p>' +
         '<p class="pn-dica">Dica para testar: avance o dia de trabalho para depois de 2032 e os clientes de exemplo aparecem aqui.</p>') +

@@ -82,7 +82,7 @@
 
   /* ---------- estado guardado ---------- */
   function estadoNovo(dia) {
-    return { dia: dia || hojeReal(), operador: (C.operadores || ['Atendente'])[0], seq: { P: 1, C: 1, X: 1, S: 1, M: 1, B: 1, A: 1, O: 1 },
+    return { dia: dia || hojeReal(), operador: ((C.operadores || [])[0] || { nome: 'Atendente' }).nome, seq: { P: 1, C: 1, X: 1, S: 1, M: 1, B: 1, A: 1, O: 1 },
       pedidos: [], alteracoes: {}, clientes: [], clientesAlt: {}, caixas: [], solicitacoes: [], bloqueios: [], provas: [], orcamentos: [] };
   }
   var estado;
@@ -211,6 +211,11 @@
   }
 
   /* ---------- caixa ---------- */
+  // Regra de acesso conferida também aqui, não só na tela: botão escondido não é segurança.
+  function exigir(acao) {
+    if (!L.pode(estado.operador, acao, C.operadores, C.permissoes)) throw new Error('Sem permissão: ' + acao);
+  }
+
   function caixaAberto() { return estado.caixas.find(function (c) { return !c.fechadoEm; }) || null; }
   function movimento(tipo, forma, valor, motivo, ref, parcelas) {
     var cx = caixaAberto();
@@ -279,6 +284,8 @@
     dia: function () { return estado.dia; },
     definirDia: function (iso) { if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) { estado.dia = iso; salvar(); publicar(); } },
     operador: function () { return estado.operador; },
+    papel: function () { return L.papelDe(estado.operador, C.operadores); },
+    pode: function (acao) { return L.pode(estado.operador, acao, C.operadores, C.permissoes); },
     definirOperador: function (nome) { estado.operador = nome; salvar(); publicar(); },
     aviso: function () { return avisoArmazenamento; },
     aoMudar: function (fn) { ouvintes.push(fn); },
@@ -364,6 +371,7 @@
     /* Cancelamento: até 7 dias antes, estorno do sinal; depois, o sinal vira crédito na loja (política). */
     cancelar: function (id, d) {
       var p = porId(id);
+      if (p.status !== 'pendente') exigir('cancelarPedido'); // recusar pedido do site sem sinal é livre
       var pags = (p.pagamentos || []).slice();
       var pago = pagoAluguel(p) / 100;
       var rb = L.reembolsoCancelamento(pago, p.retirada, estado.dia);
@@ -413,6 +421,7 @@
       return L.situacaoEliminacao(API.pedidosDoCliente(id), estado.dia, C.lgpd.retencaoCadastroAnos);
     },
     anonimizar: function (id) {
+      exigir('anonimizar');
       var c = clientePorId(id);
       var novo = L.anonimizarCliente(c, estado.dia);
       var criado = estado.clientes.find(function (x) { return x.id === id; });
@@ -444,8 +453,8 @@
       estado.caixas.push(cx); salvar(); publicar();
       return cx;
     },
-    suprimento: function (valor, motivo) { movimento('suprimento', 'dinheiro', valor, motivo); salvar(); publicar(); },
-    sangria: function (valor, motivo) { movimento('sangria', 'dinheiro', valor, motivo); salvar(); publicar(); },
+    suprimento: function (valor, motivo) { exigir('suprimento'); movimento('suprimento', 'dinheiro', valor, motivo); salvar(); publicar(); },
+    sangria: function (valor, motivo) { exigir('sangria'); movimento('sangria', 'dinheiro', valor, motivo); salvar(); publicar(); },
     fecharCaixa: function (contado) {
       var cx = caixaAberto();
       var esp = L.esperadoCaixa(cx);
@@ -466,6 +475,7 @@
       });
     },
     apagarFotosVencidas: function () {
+      exigir('apagarFotos');
       var lista = API.fotosVencidas();
       lista.forEach(function (p) {
         var v = JSON.parse(JSON.stringify(p.vistorias || {}));

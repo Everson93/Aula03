@@ -375,6 +375,18 @@ prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.enderec
   prova('orçamento: sem ponto decimal', !/\d\.\d{2}\b/.test(tx));
 }
 
+/* ---------- perfis de acesso ---------- */
+{
+  const ops = [{ nome: 'Néia', papel: 'dona' }, { nome: 'Ju', papel: 'atendente' }];
+  const perm = { dona: ['sangria', 'verCpf'], atendente: [] };
+  prova('papel da dona', L.papelDe('Néia', ops) === 'dona' && L.papelDe('Ju', ops) === 'atendente');
+  prova('quem não está na lista é atendente', L.papelDe('Fulano', ops) === 'atendente');
+  prova('dona pode sangria; atendente não', L.pode('Néia', 'sangria', ops, perm) && !L.pode('Ju', 'sangria', ops, perm));
+  prova('percentual de desconto', L.percentualDesconto(25, 200) === 12.5 && L.percentualDesconto(5, 0) === 0);
+  prova('config: dona pode tudo que o atendente pode', C.permissoes.atendente.every(a => C.permissoes.dona.includes(a)));
+  prova('config: há uma dona', C.operadores.some(o => o.papel === 'dona'));
+}
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();
@@ -637,6 +649,16 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   S.definirDia(diaOr);
   S.marcarOrcamentoConvertido(orc.id, 'P9999');
   prova('orçamento convertido guarda o pedido', S.orcamentoPorId(orc.id).status === 'convertido' && S.orcamentoPorId(orc.id).pedidoId === 'P9999');
+
+  // permissões conferidas no "banco", não só na tela
+  S.definirOperador('Atendente');
+  let semPerm = '';
+  try { S.sangria(10, 'x'); } catch (e) { semPerm = e.message; }
+  prova('atendente não faz sangria', semPerm === 'Sem permissão: sangria');
+  let semPerm2 = '';
+  try { S.apagarFotosVencidas(); } catch (e) { semPerm2 = e.message; }
+  prova('atendente não apaga fotos (LGPD é com a dona)', semPerm2 === 'Sem permissão: apagarFotos');
+  S.definirOperador('Néia');
 
   // LGPD: eliminação respeita a guarda; anonimizar tira os dados e mantém o histórico
   const sit = S.situacaoEliminacao(cli.id);

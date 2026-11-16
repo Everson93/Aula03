@@ -72,7 +72,19 @@ window.CONFIG = {
     versaoAviso: '2026-11'    // muda quando o texto do aviso de privacidade mudar
   },
 
-  operadores: ['Néia', 'Atendente'],
+  // Quem atende e o que cada papel pode fazer. No sistema de verdade, cada um entra
+  // com login e senha; aqui, a troca de atendente no menu simula o login.
+  operadores: [
+    { nome: 'Néia', papel: 'dona' },
+    { nome: 'Atendente', papel: 'atendente' }
+  ],
+  // O que só a dona faz (dinheiro que sai da gaveta, dados pessoais completos,
+  // apagar dados, cancelar com estorno, desconto grande, relatórios).
+  permissoes: {
+    dona: ['sangria', 'suprimento', 'verCpf', 'exportarDados', 'anonimizar', 'apagarFotos', 'cancelarPedido', 'descontoAcimaLimite', 'relatorios', 'bloquear'],
+    atendente: ['bloquear']
+  },
+  limiteDescontoAtendente: 10,   // % do pedido que o atendente pode dar sem a dona
 
   // Agenda de prova: duração de cada prova e quantas pessoas provam ao mesmo tempo.
   provas: { duracaoMinutos: 30, provadores: 1 },
