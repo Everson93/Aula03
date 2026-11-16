@@ -74,6 +74,12 @@ window.CONFIG = {
 
   operadores: ['Néia', 'Atendente'],
 
+  // Agenda de prova: duração de cada prova e quantas pessoas provam ao mesmo tempo.
+  provas: { duracaoMinutos: 30, provadores: 1 },
+
+  // Orçamento para grupos (escolas, quadrilhas, empresas): validade em dias.
+  orcamento: { validadeDias: 7 },
+
   // Dados do ateliê que vão no contrato. Vazio = sai uma linha para preencher à mão.
   contrato: {
     documento: '',               // CNPJ ou CPF do ateliê

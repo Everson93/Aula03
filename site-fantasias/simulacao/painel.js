@@ -31,6 +31,7 @@
   var ICONES = {
     inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
     retirada: 'M6 8h12l1 12H5zM9 8V6a3 3 0 0 1 6 0v2M9.5 13.5l2 2 3.5-3.5',
+    provas: 'M4 17L17 4l3 3L7 20zM8 13l1.5 1.5M11 10l1.5 1.5M14 7l1.5 1.5',
     venda: 'M4 5h2l2.4 10.2a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.8L21 8H7M10 20a1 1 0 1 0 0 .01M18 20a1 1 0 1 0 0 .01',
     pedidos: 'M8 4h8l1 2h3v15H4V6h3zM8 11h8M8 15h6',
     clientes: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 12 0v1M16 3.5a4 4 0 0 1 0 7.5M22 21v-1a6 6 0 0 0-4-5.7',
@@ -38,7 +39,7 @@
     caixa: 'M3 7h18v12H3zM3 11h18M7 15h3',
     privacidade: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4'
   };
-  var PAGINAS = [['inicio', 'Início'], ['venda', 'Nova venda'], ['retirada', 'Retirada'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
+  var PAGINAS = [['inicio', 'Início'], ['venda', 'Nova venda'], ['retirada', 'Retirada'], ['provas', 'Provas'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
     ['acervo', 'Acervo'], ['caixa', 'Caixa'], ['privacidade', 'Privacidade']];
 
   function $(id) { return document.getElementById(id); }
@@ -158,6 +159,7 @@
     var rs = LOJA.todos();
     contar('inicio', rs.filter(function (p) { return p.status === 'pendente'; }).length + rs.filter(function (p) { return visivel(p) === 'atrasada'; }).length);
     contar('retirada', rs.filter(function (p) { return (p.status === 'confirmada' || p.status === 'pendente') && (p.itens || []).length && p.retirada <= dia(); }).length);
+    contar('provas', LOJA.provas(dia()).filter(function (x) { return x.status === 'marcada'; }).length);
     contar('privacidade', LOJA.solicitacoes().filter(function (s) { return s.status === 'aberta'; }).length);
     var av = LOJA.aviso();
     $('sis-aviso').textContent = av;
@@ -171,6 +173,7 @@
     if (pagina === 'inicio') corpo.innerHTML = htmlInicio();
     else if (pagina === 'venda') { corpo.innerHTML = htmlVenda(); ligarVenda(); atualizarVenda(); }
     else if (pagina === 'retirada') { corpo.innerHTML = htmlRetirada(); ligarRetirada(); }
+    else if (pagina === 'provas') corpo.innerHTML = htmlProvas();
     else if (pagina === 'pedidos') { corpo.innerHTML = htmlPedidos(); ligarBusca('sis-busca-ped', function (v) { buscaPedidos = v; }); }
     else if (pagina === 'clientes') { corpo.innerHTML = htmlClientes(); ligarBusca('sis-busca-cli', function (v) { buscaClientes = v; }); }
     else if (pagina === 'acervo') corpo.innerHTML = htmlAcervo();
@@ -204,6 +207,10 @@
     else if (a === 'filtro') { filtroPedidos = b.dataset.filtro; limite = 40; render(); }
     else if (a === 'mais') { limite += 40; render(); }
     else if (a === 'ir') irPara(b.dataset.pagina);
+    else if (a === 'marcar-prova') abrirMarcarProva(b.dataset.hora);
+    else if (a === 'prova-status') LOJA.atualizarProva(id, b.dataset.status);
+    else if (a === 'bloquear') abrirBloqueio(b.dataset.unidade, b.dataset.fantasia, b.dataset.tamanho);
+    else if (a === 'liberar') LOJA.liberar(id);
   }
   raiz.addEventListener('click', acionar);
   modal.addEventListener('click', acionar);
@@ -264,6 +271,8 @@
     else if (!cx) html += '<div class="sis-alerta"><span>O caixa está fechado: sem ele não dá para receber sinal, saldo nem caução.</span>' + botao('ir', '', 'Abrir o caixa', true, ' data-pagina="caixa"') + '</div>';
     if (sols.length) html += '<div class="sis-alerta sis-alerta--aviso"><span>' + sols.length + ' pedido(s) de cliente sobre os dados dele, com prazo de resposta.</span>' + botao('ir', '', 'Ver em Privacidade', false, ' data-pagina="privacidade"') + '</div>';
 
+    var provasHoje = LOJA.provas(d).filter(function (x) { return x.status === 'marcada'; });
+    if (provasHoje.length) html += cartao('Provas de hoje', '', '<ul class="sis-provas">' + provasHoje.map(linhaProva).join('') + '</ul>', botao('ir', '', 'Agenda de provas', false, ' data-pagina="provas"'));
     if (pend.length) html += cartao('Pedidos do site aguardando sinal', 'O cliente reservou pelo site e combina o Pix no WhatsApp. A peça fica segura por ' + LOJA.MINUTOS_PENDENTE + ' minutos.',
       tabelaPedidos(pend.map(function (p) {
         var min = Math.max(0, Math.ceil((p.expiraEm - Date.now()) / 60000));
@@ -1234,23 +1243,25 @@
   /* =====================================================================
    * ACERVO
    * ===================================================================== */
-  var ESTADOS = { livre: ['Livre', 'ok'], 'sai-hoje': ['Sai hoje', 'info'], 'com-cliente': ['Com o cliente', 'magenta'], atrasada: ['Atrasada', 'erro'], higienizacao: ['Higienização', 'aviso'] };
+  var ESTADOS = { bloqueada: ['Bloqueada', 'neutro'], livre: ['Livre', 'ok'], 'sai-hoje': ['Sai hoje', 'info'], 'com-cliente': ['Com o cliente', 'magenta'], atrasada: ['Atrasada', 'erro'], higienizacao: ['Higienização', 'aviso'] };
   function htmlAcervo() {
     var d = dia();
     var linhas = LOJA.linhasPorPeca();
-    var cont = { livre: 0, 'sai-hoje': 0, 'com-cliente': 0, atrasada: 0, higienizacao: 0 };
+    var cont = { livre: 0, 'sai-hoje': 0, 'com-cliente': 0, atrasada: 0, higienizacao: 0, bloqueada: 0 };
     var blocos = FANTASIAS.map(function (f) {
       var m = LOJA.margemDe(f), livres = 0, total = 0;
       var lis = L.ordenarTamanhos(Object.keys(f.tamanhos)).map(function (t) {
         return L.unidades(f, t).map(function (u) {
-          var s = L.situacaoUnidade(u, linhas, d, m);
+          var bl = LOJA.bloqueioNoDia(u, d);
+          var s = bl ? { estado: 'bloqueada' } : L.situacaoUnidade(u, linhas, d, m);
           cont[s.estado]++; total++; if (s.estado === 'livre') livres++;
           var e = ESTADOS[s.estado];
-          var info = s.estado === 'livre' ? (s.proxima ? 'próxima saída ' + curta(s.proxima.retirada) + ' · ' + esc(nome(s.proxima.pedido)) : 'sem reservas futuras')
+          var acao = bl ? botao('liberar', bl.id, 'Liberar') : s.estado === 'livre' ? '<button type="button" class="botao botao--leve pn-botao" data-acao="bloquear" data-unidade="' + u + '" data-fantasia="' + f.id + '" data-tamanho="' + t + '">Bloquear</button>' : '';
+          var info = bl ? esc(bl.motivo) + ' até ' + curta(bl.ate) + (bl.obs ? ' · ' + esc(bl.obs) : '') : s.estado === 'livre' ? (s.proxima ? 'próxima saída ' + curta(s.proxima.retirada) + ' · ' + esc(nome(s.proxima.pedido)) : 'sem reservas futuras')
             : s.estado === 'higienizacao' ? 'livre a partir de ' + curta(L.somarDias(s.ate, 1))
             : s.estado === 'atrasada' ? esc(nome(s.reserva.pedido)) + ' · ' + s.diasAtraso + ' dia(s) de atraso'
             : s.estado === 'com-cliente' ? esc(nome(s.reserva.pedido)) + ' · devolve ' + curta(s.reserva.devolucao) : esc(nome(s.reserva.pedido));
-          return '<tr><td class="pn-cod">' + u + '</td><td><span class="pn-status pn-status--' + e[1] + '">' + e[0] + '</span></td><td>' + info + '</td></tr>';
+          return '<tr><td class="pn-cod">' + u + '</td><td><span class="pn-status pn-status--' + e[1] + '">' + e[0] + '</span></td><td>' + info + '</td><td class="sis-acoes">' + acao + '</td></tr>';
         }).join('');
       }).join('');
       return '<details class="pn-fant"><summary><span class="pn-cor" style="--cor:' + esc(f.cor) + '"></span><strong>' + esc(f.nome) + '</strong> <span class="pn-cod">' + f.id + '</span>' +
@@ -1258,6 +1269,97 @@
     });
     return '<div class="pn-resumo">' + Object.keys(cont).map(function (k) { return tile(ESTADOS[k][0], cont[k], k === 'atrasada' && cont[k] ? 'erro' : ''); }).join('') + '</div>' +
       '<p class="pn-dica">Onde está cada peça física em ' + esc(L.dataComDia(d)) + '. Toque numa fantasia para ver as peças.</p>' + blocos.join('');
+  }
+
+  function abrirBloqueio(unidade, fantasia, tamanho) {
+    var f = LOJA.fantasiaDe(fantasia);
+    abrirModal('Bloquear peça ' + esc(unidade), '<p>' + esc(f.nome) + ' ' + esc(tamanho) + '. Enquanto bloqueada, a peça não aparece livre no site nem no balcão.</p>' +
+      '<div class="pn-campos"><label>Motivo <select id="bl-motivo"><option>Conserto</option><option>Ajuste</option><option>Higienização demorada</option><option>Fotos novas</option><option>Outro</option></select></label>' +
+      '<label>De <input type="date" id="bl-de" value="' + dia() + '"></label><label>Até <input type="date" id="bl-ate" value="' + L.somarDias(dia(), 3) + '"></label></div>' +
+      '<div class="pn-campos"><label>Observação <input id="bl-obs" placeholder="Ex.: zíper trocado na costureira"></label></div><p class="pn-msg pn-msg--erro" id="bl-erro" hidden></p>',
+      '<button type="button" class="botao botao--leve" id="bl-voltar">Voltar</button><button type="button" class="botao botao--destaque" id="bl-ok">Bloquear</button>');
+    $('bl-voltar').addEventListener('click', function () { modal.close(); });
+    $('bl-ok').addEventListener('click', function () {
+      var r = LOJA.bloquear({ unidade: unidade, fantasia: fantasia, tamanho: tamanho, de: $('bl-de').value, ate: $('bl-ate').value, motivo: $('bl-motivo').value, obs: $('bl-obs').value.trim() });
+      if (r.erro) { $('bl-erro').textContent = r.erro; $('bl-erro').hidden = false; return; }
+      modal.close();
+    });
+  }
+
+  /* =====================================================================
+   * PROVAS
+   * ===================================================================== */
+  var STATUS_PROVA = { marcada: ['Marcada', 'info'], realizada: ['Realizada', 'ok'], faltou: ['Faltou', 'erro'], cancelada: ['Cancelada', 'neutro'] };
+  function nomesFantasias(ids) { return ids.map(function (i) { var f = LOJA.fantasiaDe(i); return f ? f.nome : i; }).join(', '); }
+  function linhaProva(x) {
+    var st = STATUS_PROVA[x.status];
+    var local = C.local || {};
+    var lembrete = 'Olá, ' + x.nome.split(' ')[0] + '! Lembrando da sua prova no ' + C.nomeSite + ' em ' + L.dataComDia(x.dia) + ' às ' + x.hora.replace(':00', 'h').replace(':', 'h') +
+      (x.fantasias.length ? '. Separamos: ' + nomesFantasias(x.fantasias) : '') + (local.endereco ? '. Endereço: ' + local.endereco : '') + '. Até lá!';
+    return '<li class="sis-prova sis-prova--' + x.status + '"><span class="sis-prova__hora">' + x.hora + '</span>' +
+      '<div class="sis-prova__info"><strong>' + esc(x.nome) + '</strong> <span class="pn-status pn-status--' + st[1] + '">' + st[0] + '</span>' +
+        '<div class="sis-mudo">' + esc(formatarFone(x.whatsapp)) + (x.fantasias.length ? ' · ' + esc(nomesFantasias(x.fantasias)) : '') + (x.obs ? ' · ' + esc(x.obs) : '') + '</div></div>' +
+      '<div class="sis-acoes">' + (x.status === 'marcada' ?
+        '<a class="botao botao--leve pn-botao" href="' + esc(L.linkWhatsApp(x.whatsapp, lembrete)) + '" target="_blank" rel="noopener">Lembrar</a>' +
+        '<button type="button" class="botao botao--destaque pn-botao" data-acao="prova-status" data-status="realizada" data-id="' + x.id + '">Realizada</button>' +
+        '<button type="button" class="botao botao--leve pn-botao" data-acao="prova-status" data-status="faltou" data-id="' + x.id + '">Faltou</button>' +
+        '<button type="button" class="botao botao--leve pn-botao" data-acao="prova-status" data-status="cancelada" data-id="' + x.id + '">Cancelar</button>' : '') + '</div></li>';
+  }
+  function htmlProvas() {
+    var d = dia();
+    var slots = LOJA.horariosDeProva(d);
+    var doDia = LOJA.provas(d);
+    var html = '<p class="pn-dica">Prova antes de alugar evita o "não serviu" na retirada. Cada prova dura ' + C.provas.duracaoMinutos + ' minutos; ' +
+      C.provas.provadores + (C.provas.provadores === 1 ? ' pessoa prova' : ' pessoas provam') + ' por vez. Mude o dia no topo.</p>';
+    if (!slots.length) html += '<div class="pn-vazio"><p>O ateliê não atende em ' + esc(L.dataComDia(d)) + '.</p></div>';
+    else html += cartao('Horários de ' + esc(L.dataComDia(d)), '', '<ul class="sis-provas">' + slots.map(function (sl) {
+      var aqui = doDia.filter(function (x) { return x.hora === sl.hora && x.status !== 'cancelada'; });
+      return aqui.map(linhaProva).join('') + (sl.livre && d >= LOJA.dia() ? '<li class="sis-prova sis-prova--livre"><span class="sis-prova__hora">' + sl.hora + '</span><div class="sis-prova__info sis-mudo">livre</div>' +
+        '<div class="sis-acoes"><button type="button" class="botao botao--leve pn-botao" data-acao="marcar-prova" data-hora="' + sl.hora + '">Marcar</button></div></li>' : '');
+    }).join('') + '</ul>');
+    var prox = LOJA.provas().filter(function (x) { return x.dia > d && x.dia <= L.somarDias(d, 7) && x.status === 'marcada'; });
+    if (prox.length) html += cartao('Próximos 7 dias', '', '<ul class="sis-provas">' + prox.map(function (x) {
+      return '<li class="sis-prova"><span class="sis-prova__hora">' + esc(curta(x.dia)) + '<br>' + x.hora + '</span><div class="sis-prova__info"><strong>' + esc(x.nome) + '</strong><div class="sis-mudo">' + esc(nomesFantasias(x.fantasias)) + '</div></div>' +
+        '<div class="sis-acoes">' + botao('ir-dia', '', 'Ver o dia', false, ' data-dia="' + x.dia + '"') + '</div></li>';
+    }).join('') + '</ul>');
+    return html;
+  }
+  function abrirMarcarProva(hora) {
+    var escolhidas = [], clienteId = '';
+    abrirModal('Marcar prova · ' + esc(L.dataComDia(dia())) + ' às ' + hora,
+      '<p class="pn-dica">Para a prova basta nome e WhatsApp. O cadastro completo (CPF e endereço) fica para o dia do aluguel.</p>' +
+      '<div class="sis-linha-busca"><input type="search" id="mp-busca" class="pn-busca" placeholder="Já é cliente? Busque pelo nome ou WhatsApp"></div><div id="mp-res"></div>' +
+      '<div class="pn-campos"><label>Nome <input id="mp-nome"></label><label>WhatsApp com DDD <input id="mp-whats" inputmode="tel" placeholder="(91) 98888-7777"></label></div>' +
+      '<p class="pn-rotulo">O que vai provar</p><input type="search" id="mp-fant" class="pn-busca" placeholder="Fantasia (ex.: caipirinha, noiva, IN01)"><div id="mp-fres" class="pn-chips"></div><div id="mp-sel" class="pn-chips"></div>' +
+      '<div class="pn-campos"><label>Observação <input id="mp-obs" placeholder="Ex.: 3 crianças da mesma turma, tamanhos 6 a 10"></label></div><p class="pn-msg pn-msg--erro" id="mp-erro" hidden></p>',
+      '<button type="button" class="botao botao--leve" id="mp-voltar">Voltar</button><button type="button" class="botao botao--destaque" id="mp-ok">Marcar prova</button>');
+    function pintarSel() {
+      $('mp-sel').innerHTML = escolhidas.map(function (i) { return '<button type="button" class="pn-chip" aria-pressed="true" data-tirar="' + i + '">' + esc(LOJA.fantasiaDe(i).nome) + ' ×</button>'; }).join('');
+    }
+    $('mp-busca').addEventListener('input', function (e) {
+      var t = L.normalizar(e.target.value), dg = e.target.value.replace(/\D/g, '');
+      var r = t.length < 2 ? [] : LOJA.clientes().filter(function (x) { return !x.anonimizado && (L.normalizar(x.nome).indexOf(t) !== -1 || (dg.length >= 3 && x.whatsapp.indexOf(dg) !== -1)); }).slice(0, 5);
+      $('mp-res').innerHTML = r.map(function (x) { return '<label class="sis-opcao"><input type="radio" name="mp-cli" value="' + x.id + '"> ' + esc(x.nome) + ' <small class="sis-mudo">' + esc(formatarFone(x.whatsapp)) + '</small></label>'; }).join('');
+    });
+    $('mp-res').addEventListener('change', function (e) {
+      clienteId = e.target.value;
+      var c = LOJA.clientePorId(clienteId);
+      $('mp-nome').value = c.nome; $('mp-whats').value = formatarFone(c.whatsapp);
+    });
+    $('mp-fant').addEventListener('input', function (e) {
+      var lista = e.target.value.trim() ? L.filtrar(FANTASIAS, { texto: e.target.value }).slice(0, 8) : [];
+      $('mp-fres').innerHTML = lista.map(function (f) { return '<button type="button" class="pn-chip" data-pegar="' + f.id + '">+ ' + esc(f.nome) + '</button>'; }).join('');
+    });
+    $('mp-fres').addEventListener('click', function (e) { var b = e.target.closest('[data-pegar]'); if (b && escolhidas.indexOf(b.dataset.pegar) === -1) { escolhidas.push(b.dataset.pegar); pintarSel(); } });
+    $('mp-sel').addEventListener('click', function (e) { var b = e.target.closest('[data-tirar]'); if (b) { escolhidas = escolhidas.filter(function (i) { return i !== b.dataset.tirar; }); pintarSel(); } });
+    $('mp-voltar').addEventListener('click', function () { modal.close(); });
+    $('mp-ok').addEventListener('click', function () {
+      var c = clienteId && LOJA.clientePorId(clienteId);
+      var r = LOJA.marcarProva({ clienteId: c && c.nome === $('mp-nome').value.trim() ? clienteId : null, nome: $('mp-nome').value, whatsapp: $('mp-whats').value,
+        dia: dia(), hora: hora, fantasias: escolhidas, obs: $('mp-obs').value.trim() });
+      if (r.erro) { $('mp-erro').textContent = r.erro; $('mp-erro').hidden = false; return; }
+      modal.close();
+    });
   }
 
   /* =====================================================================

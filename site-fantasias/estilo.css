@@ -294,6 +294,8 @@ legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
 .resumo__total { border-top: 1px solid var(--borda); margin-top: 4px; padding-top: 8px !important; font-weight: 700; }
 .resumo__sinal { color: var(--destaque-escuro); font-weight: 700; }
 .politica { font-size: .85rem; color: var(--texto-suave); }
+.prova-convite { text-align: center; margin: 10px 0 0; font-size: .92rem; }
+.prova-convite a { font-weight: 700; }
 .nota-reserva { font-size: .85rem; color: var(--texto-suave); text-align: center; margin: 8px 0 0; }
 
 /* ---------- disponibilidade e período ---------- */

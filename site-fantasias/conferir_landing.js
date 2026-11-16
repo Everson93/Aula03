@@ -347,6 +347,19 @@ prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.enderec
   prova('config: medição conhecida', ['', 'plausible', 'ga4'].includes(C.medicao));
 }
 
+/* ---------- agenda de prova ---------- */
+{
+  const hs = [{ dias: [1, 2, 3, 4, 5], abre: '09:00', fecha: '11:00' }, { dias: [6], abre: '09:00', fecha: '10:00' }];
+  const seg = L.horariosDeProva('2027-02-01', hs, 30, [], 1); // segunda
+  prova('provas de 30 min das 9h às 11h: 4 horários', seg.map(x => x.hora).join() === '09:00,09:30,10:00,10:30', seg);
+  prova('domingo sem prova', L.horariosDeProva('2027-01-31', hs, 30, [], 1).length === 0);
+  prova('sábado com o horário do sábado', L.horariosDeProva('2027-02-06', hs, 30, [], 1).length === 2);
+  prova('horário ocupado não fica livre', !L.horariosDeProva('2027-02-01', hs, 30, ['09:30'], 1).find(x => x.hora === '09:30').livre);
+  prova('dois provadores: um ocupado ainda deixa livre', L.horariosDeProva('2027-02-01', hs, 30, ['09:30'], 2).find(x => x.hora === '09:30').livre);
+  prova('prova longa não passa do fechamento', L.horariosDeProva('2027-02-01', hs, 45, [], 1).map(x => x.hora).join() === '09:00,09:45', L.horariosDeProva('2027-02-01', hs, 45, [], 1));
+  prova('config: prova e orçamento', C.provas.duracaoMinutos > 0 && C.provas.provadores >= 1 && C.orcamento.validadeDias > 0);
+}
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();
@@ -563,6 +576,35 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   prova('caixa de ontem não recebe hoje', S.caixaDeOutroDia() && erroDia === 'Caixa de outro dia');
   S.definirDia(diaCx);
   prova('no próprio dia o caixa recebe', !S.caixaDeOutroDia());
+
+  // bloqueio de peça para conserto
+  const fB = jan.FANTASIAS.find(f => f.id === 'JN03');
+  const perB = L.periodoAluguel(L.somarDias(S.dia(), 10), S.dia(), 0, lojaN);
+  const livresB = () => L.disponibilidade(fB, jan.AGENDA, perB, 1).M.livres;
+  const unB = livresB()[0];
+  const bl = S.bloquear({ unidade: unB, fantasia: 'JN03', tamanho: 'M', de: perB.retirada, ate: perB.devolucao, motivo: 'Conserto' });
+  prova('bloqueio tira a peça da data', bl.id && livresB().indexOf(unB) === -1);
+  prova('bloqueio aparece no dia', S.bloqueioNoDia(unB, perB.retirada).id === bl.id && !S.bloqueioNoDia(unB, L.somarDias(perB.devolucao, 1)));
+  prova('bloqueio termina no "até": o dia seguinte já fica livre', L.disponibilidade(fB, jan.AGENDA, L.periodoAluguel(L.somarDias(perB.devolucao, 2), S.dia(), 0, lojaN), 1).M.livres.indexOf(unB) !== -1);
+  S.liberar(bl.id);
+  prova('liberar devolve a peça', livresB().indexOf(unB) !== -1);
+  const resB = S.criarPedidoBalcao({ clienteId: 'CE004', periodo: perB, itens: [{ fantasia: 'JN03', tamanho: 'M', unidade: unB, preco: 160, diaExtra: 40, caucao: 120 }],
+    complementos: [], desconto: { valor: 0 }, recebe: 'total', linhas: [{ forma: 'pix', valor: 160, confirmado: true }] });
+  const blC = S.bloquear({ unidade: unB, fantasia: 'JN03', tamanho: 'M', de: perB.retirada, ate: perB.retirada, motivo: 'Conserto' });
+  prova('não bloqueia peça reservada (avisa o pedido)', blC.erro && blC.erro.includes(resB.id), blC);
+  prova('datas do bloqueio em ordem', S.bloquear({ unidade: unB, fantasia: 'JN03', tamanho: 'M', de: '2027-01-10', ate: '2027-01-09', motivo: 'x' }).erro);
+
+  // agenda de prova (seg a sex 9h-18h, sáb 9h-13h no config de exemplo)
+  const diaProva = (() => { let d = L.somarDias(S.dia(), 1); while (L.diaSemana(d) !== 2) d = L.somarDias(d, 1); return d; })(); // próxima terça
+  const pv = S.marcarProva({ nome: 'Dona Rosa (escola)', whatsapp: '91 96666-5555', dia: diaProva, hora: '10:00', fantasias: ['IN01', 'IN02'] });
+  prova('prova marcada com o mínimo (nome e WhatsApp)', pv.id && pv.whatsapp === '5591966665555' && S.provas(diaProva).length === 1);
+  prova('horário da prova fica ocupado', !S.horariosDeProva(diaProva).find(x => x.hora === '10:00').livre);
+  prova('não marca duas provas no mesmo horário', /ocupado/.test(S.marcarProva({ nome: 'Outra', whatsapp: '91 95555-1111', dia: diaProva, hora: '10:00' }).erro || ''));
+  prova('não marca fora do horário', /não atende/.test(S.marcarProva({ nome: 'Outra', whatsapp: '91 95555-1111', dia: diaProva, hora: '19:00' }).erro || ''));
+  prova('não marca no domingo', /não atende/.test(S.marcarProva({ nome: 'Outra', whatsapp: '91 95555-1111', dia: L.somarDias(diaProva, 5), hora: '10:00' }).erro || ''));
+  prova('prova pede WhatsApp', /WhatsApp/.test(S.marcarProva({ nome: 'Outra', whatsapp: '123', dia: diaProva, hora: '11:00' }).erro || ''));
+  S.atualizarProva(pv.id, 'cancelada');
+  prova('prova cancelada libera o horário', S.horariosDeProva(diaProva).find(x => x.hora === '10:00').livre);
 
   // LGPD: eliminação respeita a guarda; anonimizar tira os dados e mantém o histórico
   const sit = S.situacaoEliminacao(cli.id);

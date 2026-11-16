@@ -279,6 +279,7 @@
         ' <strong>Caução:</strong> devolvida na entrega; só é retida se a vistoria de devolução mostrar dano que não está nas fotos da retirada.' +
         ' <strong>Atraso:</strong> cada dia além da devolução é cobrado como dia extra.</p>' +
       '<a class="botao botao--destaque botao--largo" id="botao-reservar" target="_blank" rel="noopener">Reservar pelo WhatsApp</a>' +
+      '<p class="prova-convite"><a id="botao-prova" target="_blank" rel="noopener">Quer provar antes? Agende uma prova no ateliê</a></p>' +
       '<p class="nota-reserva" id="nota-reserva"></p>';
 
     var whatsOk = L.numeroWhatsAppValido(loja.whatsapp);
@@ -444,6 +445,13 @@
     }
     $('sug-altura').addEventListener('change', sugerir);
     $('sug-peso').addEventListener('change', sugerir);
+
+    var bp = $('botao-prova');
+    if (whatsOk) {
+      bp.href = L.linkWhatsApp(loja.whatsapp, 'Olá! Quero agendar uma prova da fantasia ' + f.nome + ' (cód. ' + f.id + ')' +
+        (sel.tamanho ? ', tamanho ' + sel.tamanho : '') + '. Melhor dia e horário para mim: ___');
+      bp.addEventListener('click', function () { registrar('clique_prova', { id: f.id }); });
+    } else bp.closest('p').hidden = true;
 
     $('botao-reservar').addEventListener('click', function (e) {
       if (!whatsOk) { e.preventDefault(); return; }

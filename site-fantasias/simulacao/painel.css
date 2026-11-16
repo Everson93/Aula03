@@ -318,3 +318,12 @@ body.modo-painel { background: var(--fundo-alt); }
   .ct-tab tr, .ct-assinaturas { break-inside: avoid; }
   @page { size: A4; margin: 16mm; }
 }
+
+/* ---------- provas ---------- */
+.sis-provas { list-style: none; margin: 0; padding: 0; border: 1px solid var(--borda); border-radius: 10px; }
+.sis-prova { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--borda); }
+.sis-prova:last-child { border-bottom: 0; }
+.sis-prova__hora { font-weight: 800; font-variant-numeric: tabular-nums; }
+.sis-prova--livre .sis-prova__hora { color: var(--texto-suave); font-weight: 600; }
+.sis-prova--realizada, .sis-prova--faltou { opacity: .7; }
+@media (max-width: 640px) { .sis-prova { grid-template-columns: 52px 1fr; } .sis-prova .sis-acoes { grid-column: 1 / -1; text-align: left; } }

@@ -468,6 +468,26 @@
     return d;
   }
 
+  /* ---------- agenda de prova ----------
+   * Horários de prova de um dia: de "abre" até "fecha − duração", de duração em
+   * duração. Cada horário comporta "provadores" provas ao mesmo tempo.
+   * ocupados: ['09:30', '09:30', '14:00'] (uma entrada por prova marcada). */
+  function minutos(h) { var m = /^(\d{1,2}):(\d{2})$/.exec(h || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; }
+  function hhmm(min) { return ('0' + Math.floor(min / 60)).slice(-2) + ':' + ('0' + (min % 60)).slice(-2); }
+  function horariosDeProva(dataIso, horarios, duracaoMin, ocupados, provadores) {
+    var dsem = diaSemana(dataIso);
+    var dur = Math.max(5, Number(duracaoMin) || 30), cap = Math.max(1, Number(provadores) || 1);
+    var out = [];
+    (horarios || []).filter(function (h) { return h.dias.indexOf(dsem) !== -1; }).forEach(function (h) {
+      for (var t = minutos(h.abre); t + dur <= minutos(h.fecha); t += dur) {
+        var hora = hhmm(t);
+        var usados = (ocupados || []).filter(function (o) { return o === hora; }).length;
+        out.push({ hora: hora, usados: usados, livre: usados < cap });
+      }
+    });
+    return out;
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -614,6 +634,7 @@
     validarAgenda: validarAgenda,
     kitLivres: kitLivres,
     textoHorarios: textoHorarios,
+    horariosDeProva: horariosDeProva,
     diasSemHorario: diasSemHorario,
     linkMapa: linkMapa,
     dadosEstruturados: dadosEstruturados,

@@ -82,14 +82,18 @@
 
   /* ---------- estado guardado ---------- */
   function estadoNovo(dia) {
-    return { dia: dia || hojeReal(), operador: (C.operadores || ['Atendente'])[0], seq: { P: 1, C: 1, X: 1, S: 1, M: 1 },
-      pedidos: [], alteracoes: {}, clientes: [], clientesAlt: {}, caixas: [], solicitacoes: [] };
+    return { dia: dia || hojeReal(), operador: (C.operadores || ['Atendente'])[0], seq: { P: 1, C: 1, X: 1, S: 1, M: 1, B: 1, A: 1, O: 1 },
+      pedidos: [], alteracoes: {}, clientes: [], clientesAlt: {}, caixas: [], solicitacoes: [], bloqueios: [], provas: [], orcamentos: [] };
   }
   var estado;
   try {
     var salvo = JSON.parse(localStorage.getItem(CHAVE)) || {};
     estado = Object.assign(estadoNovo(), salvo);
     estado.seq = Object.assign(estadoNovo().seq, salvo.seq || {});
+    ['B', 'A', 'O'].forEach(function (k) { if (!estado.seq[k]) estado.seq[k] = 1; });
+    estado.bloqueios = estado.bloqueios || [];
+    estado.provas = estado.provas || [];
+    estado.orcamentos = estado.orcamentos || [];
   } catch (e) { estado = estadoNovo(); }
   var ouvintes = [];
   var avisoArmazenamento = '';
@@ -138,14 +142,20 @@
     });
     return out;
   }
+  // Bloqueio manual (conserto, ajuste...): ocupa de "de" até "ate", sem margem extra depois.
+  function bloqueiosAtivos() { return estado.bloqueios.filter(function (b) { return !b.liberadoEm; }); }
   function agendaBloqueios() {
     var dia = estado.dia;
-    return linhasPorPeca(todos(dia)).filter(function (r) {
+    var reservas = linhasPorPeca(todos(dia)).filter(function (r) {
       return r.status === 'pendente' || r.status === 'confirmada' || r.status === 'retirada' || r.status === 'concluida';
     }).map(function (r) {
       var fim = r.status === 'retirada' && dia > r.devolucao ? dia : r.devolucao;
       return { fantasia: r.fantasia, tamanho: r.tamanho, unidade: r.unidade, retirada: r.retirada, devolucao: fim };
     });
+    return reservas.concat(bloqueiosAtivos().map(function (b) {
+      var f = fantasiaDe(b.fantasia);
+      return { fantasia: b.fantasia, tamanho: b.tamanho, unidade: b.unidade, retirada: b.de, devolucao: L.somarDias(b.ate, -margemDe(f)), bloqueio: b.id };
+    }));
   }
 
   // Acessórios alugados em cada pedido ativo ou já devolvido (para o pico de uso por dia).
@@ -463,6 +473,62 @@
         mudar(p.id, { vistorias: v });
       });
       return lista.length;
+    },
+
+    /* ---------- bloqueio de peça ---------- */
+    bloqueios: function () { return estado.bloqueios.slice(); },
+    bloqueioNoDia: function (unidade, dia) {
+      var d = dia || estado.dia;
+      return bloqueiosAtivos().find(function (b) { return b.unidade === unidade && b.de <= d && d <= b.ate; }) || null;
+    },
+    bloquear: function (d) {
+      if (!d.de || !d.ate || d.ate < d.de) return { erro: 'A data final precisa ser igual ou depois da inicial.' };
+      var f = fantasiaDe(d.fantasia), m = margemDe(f);
+      // Não bloqueia em cima de reserva: a peça prometida a um cliente não pode sumir.
+      var conflito = linhasPorPeca(todos()).filter(function (r) {
+        return r.unidade === d.unidade && ['pendente', 'confirmada', 'retirada'].indexOf(r.status) !== -1 &&
+          d.de <= L.somarDias(r.devolucao, m) && r.retirada <= d.ate;
+      });
+      if (conflito.length) return { erro: 'A peça está reservada nesse período (' + conflito.map(function (r) { return r.id; }).join(', ') + '). Troque a data ou a peça do pedido antes.' };
+      var b = { id: novoId('B'), unidade: d.unidade, fantasia: d.fantasia, tamanho: d.tamanho, de: d.de, ate: d.ate, motivo: d.motivo, obs: d.obs || '',
+        por: estado.operador, criadoEm: estado.dia };
+      estado.bloqueios.push(b); salvar(); publicar();
+      return b;
+    },
+    liberar: function (id) {
+      var b = estado.bloqueios.find(function (x) { return x.id === id; });
+      if (b) { b.liberadoEm = estado.dia; b.liberadoPor = estado.operador; salvar(); publicar(); }
+    },
+
+    /* ---------- agenda de prova ---------- */
+    provas: function (dia) {
+      return estado.provas.filter(function (x) { return !dia || x.dia === dia; })
+        .sort(function (a, b) { return (a.dia + a.hora) < (b.dia + b.hora) ? -1 : 1; });
+    },
+    horariosDeProva: function (dia) {
+      var ocupados = estado.provas.filter(function (x) { return x.dia === dia && x.status === 'marcada'; }).map(function (x) { return x.hora; });
+      return L.horariosDeProva(dia, (C.local || {}).horarios, C.provas.duracaoMinutos, ocupados, C.provas.provadores);
+    },
+    /* d: { clienteId?, nome, whatsapp, dia, hora, fantasias: [ids], obs } — para a prova
+     * basta nome e WhatsApp (dado mínimo); o cadastro completo fica para o contrato. */
+    marcarProva: function (d) {
+      var cli = d.clienteId && clientePorId(d.clienteId);
+      var nome = cli ? cli.nome : String(d.nome || '').trim();
+      var whats = cli ? cli.whatsapp : L.normalizarWhatsApp(d.whatsapp);
+      if (!nome) return { erro: 'Diga o nome de quem vem provar.' };
+      if (!L.numeroWhatsAppValido(whats)) return { erro: 'WhatsApp com DDD, para lembrar da prova.' };
+      if (d.dia < estado.dia) return { erro: 'Esse dia já passou.' };
+      var h = API.horariosDeProva(d.dia).find(function (x) { return x.hora === d.hora; });
+      if (!h) return { erro: 'O ateliê não atende nesse dia e horário.' };
+      if (!h.livre) return { erro: 'Esse horário já está ocupado.' };
+      var p = { id: novoId('A'), clienteId: cli ? cli.id : null, nome: nome, whatsapp: whats, dia: d.dia, hora: d.hora,
+        fantasias: d.fantasias || [], obs: d.obs || '', status: 'marcada', por: estado.operador, criadoEm: estado.dia };
+      estado.provas.push(p); salvar(); publicar();
+      return p;
+    },
+    atualizarProva: function (id, status) {
+      var p = estado.provas.find(function (x) { return x.id === id; });
+      if (p) { p.status = status; p.atualizadaEm = estado.dia; salvar(); publicar(); }
     },
 
     zerar: function () {
