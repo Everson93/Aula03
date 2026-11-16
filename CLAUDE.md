@@ -80,3 +80,30 @@ O usuário instala colando os arquivos no editor do Apps Script. Diga sempre
 sistema"** — só precisa quando a mudança é estrutural (aba, coluna, gatilho,
 parâmetro novo). Parâmetro novo deve ser lido por `paramOuPadrao_`, para não
 derrubar nada em planilha que ainda não rodou o Instalar.
+
+## Site de fantasias (`site-fantasias/`) — Cantinho da Day
+
+Projeto à parte do sistema de frota, no mesmo repositório (pode ser separado:
+ver o README da pasta). Site estático de aluguel de trajes juninos e
+fantasias + simulação do sistema do ateliê. Detalhes em
+`site-fantasias/README.md`; pesquisa e modelo do sistema em
+`site-fantasias/PESQUISA_PAINEL.md`.
+
+- `index.html`, `app.js`, `estilo.css`, `config.js`, `dados.js`, `agenda.js` — o site que vai ao ar
+- `logica.js`, `contrato.js` — regras puras (rodam no navegador e no Node), reaproveitáveis no MVP
+- `simulacao/` — sistema do ateliê simulado no navegador; **não vai para a hospedagem**
+- `simulacao/montar.js <saida.html>` — junta tudo num HTML único (o artefato de simulação)
+
+```bash
+cd site-fantasias
+node conferir_landing.js                  # regras, dados, contrato, estado da simulação
+node testes_navegador/navegador.js        # fluxos no Chromium (precisa do playwright)
+node simulacao/gerar_agenda.js            # depois de mudar dados.js (a suíte confere que está em dia)
+```
+
+Regras do site, além das gerais acima (pt-BR, mutação, todos os lados do contrato):
+- Dinheiro em centavos inteiros e exibido com `formatarPreco`; data por `dataBR`/`dataComDia`, nunca por `Date` local.
+- Regra de negócio nova vai em `logica.js` com prova; a tela só chama.
+- Permissão conferida no estado (`exigir`), não só escondendo botão.
+- Parâmetro novo em `config.js` com comentário; a suíte confere a coerência (dias fechados × horários, sinal 30–50...).
+- O CI (`.github/workflows/site-fantasias.yml`) roda as duas suítes a cada envio que mexe na pasta.

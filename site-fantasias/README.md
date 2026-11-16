@@ -197,6 +197,42 @@ as provas foram corrigidas — "Pierrô" decomposto ainda contém "pierro" (a
 prova passou a usar "Múmia"), e `0,1 × 100` dá exato em JavaScript (a prova
 passou a usar 0,14 + 0,01, que sem centavos dá 0,15000000000000002).
 
+## Testes de navegador e CI
+
+```bash
+node testes_navegador/navegador.js
+```
+
+Monta a simulação e percorre os fluxos no Chromium: site publicado (vitrine,
+filtro infantil, sugestão de tamanho, botão desativado sem configuração),
+reserva no site → retirada na loja com cadastro, contrato e entrega, venda no
+balcão com Pix + dinheiro e troco, perfil de atendente, e o painel no celular
+em tema escuro sem rolagem lateral. Erro de JavaScript em qualquer página
+reprova. Precisa do pacote `playwright` (`npm install playwright`).
+
+O GitHub Actions (`.github/workflows/site-fantasias.yml`, na raiz do
+repositório) roda `conferir_landing.js` e depois os testes de navegador a
+cada envio ou pull request que mexe em `site-fantasias/`.
+
+## Separar em repositório próprio
+
+O site mora dentro do repositório do sistema de frota. Para levá-lo a um
+repositório só dele, com o histórico:
+
+1. Crie um repositório vazio no GitHub (por exemplo `cantinho-da-day`).
+2. Neste repositório, rode:
+
+```bash
+git subtree split --prefix=site-fantasias -b so-o-site
+```
+
+```bash
+git push https://github.com/SEU-USUARIO/cantinho-da-day.git so-o-site:main
+```
+
+3. No repositório novo, mova o workflow para `.github/workflows/` e tire o
+   `working-directory: site-fantasias` dele (lá o site fica na raiz).
+
 ## Personagens licenciados
 
 Alugar peça licenciada comprada legalmente pode; usar nome, logo ou imagem

@@ -1,0 +1,45 @@
+# Provas do site de fantasias (Cantinho da Day) a cada envio que mexe nele.
+name: site-fantasias
+
+on:
+  push:
+    paths: ['site-fantasias/**', '.github/workflows/site-fantasias.yml']
+  pull_request:
+    paths: ['site-fantasias/**', '.github/workflows/site-fantasias.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  provas:
+    name: Provas das regras (sem navegador)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site-fantasias
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: conferir_landing.js
+        run: node conferir_landing.js
+
+  navegador:
+    name: Testes de navegador (Chromium)
+    runs-on: ubuntu-latest
+    needs: provas
+    defaults:
+      run:
+        working-directory: site-fantasias
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar o Playwright e o Chromium
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: testes_navegador/navegador.js
+        run: node testes_navegador/navegador.js
