@@ -261,6 +261,56 @@ prova('sem locação pode apagar', L.situacaoEliminacao([{ status: 'cancelada' }
 const an = L.anonimizarCliente(Object.assign({ id: 'C0007', rg: '123', credito: 20, marketing: { consentido: true } }, cli), '2032-03-01');
 prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.endereco && !an.rg && an.nome === 'Cliente anonimizado C0007' && !an.marketing.consentido && an.anonimizado, an);
 
+/* ---------- contrato preenchido ---------- */
+{
+  const Ct = require('./contrato.js');
+  const jc = {};
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8'), vm.createContext({ window: jc }));
+  const cfgC = jc.CONFIG;
+  const fx = id => FANTASIAS.find(f => f.id === id);
+  const pedidoC = {
+    id: 'P0007', origem: 'balcao', retirada: '2027-02-05', devolucao: '2027-02-08', dataFesta: '2027-02-06', diasExtras: 1,
+    itens: [{ fantasia: 'JN05', tamanho: 'M', unidade: 'JN05-M-2', preco: 95, diaExtra: 25, caucao: 60 },
+            { fantasia: 'JN04', tamanho: 'G', unidade: 'JN04-G-1', preco: 120, diaExtra: 30, caucao: 90 }],
+    complementos: [{ nome: 'Lápis para sardas', tipo: 'venda', preco: 8, qtd: 2 }],
+    desconto: { valor: 10, motivo: 'casal de quadrilha' },
+    valores: { aluguel: 215, extras: 55, complementos: 16, desconto: 10, total: 276, sinal: 82.8, caucao: 150 },
+    pagamentos: [{ tipo: 'sinal', forma: 'pix', valor: 82.8, parcelas: 1 }, { tipo: 'saldo', forma: 'credito', valor: 193.2, parcelas: 2 }, { tipo: 'caucao', forma: 'dinheiro', valor: 150, parcelas: 1 }],
+    vistorias: { retirada: { dia: '2027-02-05', fotos: { frente: 'x', costas: 'x', barra: 'x', detalhes: 'x' }, defeitos: ['Mancha'], obs: 'mancha pequena na barra' } }
+  };
+  const cliC = { nome: 'Maria <b>das</b> Dores', cpf: '52998224725', whatsapp: '5591988887777', rg: '', email: '',
+    endereco: { cep: '66010000', rua: 'Rua A', numero: '10', bairro: 'Centro', cidade: 'Belém', uf: 'PA' }, marketing: { consentido: true } };
+  const g = Ct.gerar({ pedido: pedidoC, cliente: cliC, fantasiaDe: fx, config: cfgC, hoje: '2027-02-05', operador: 'Néia' });
+  const tx = g.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  prova('contrato: número do pedido', tx.includes('Contrato nº P0007'));
+  prova('contrato: CPF completo formatado', tx.includes('529.982.247-25'));
+  prova('contrato: nome do cliente escapado (sem HTML injetado)', g.html.includes('Maria &lt;b&gt;das&lt;/b&gt; Dores') && !g.html.includes('<b>das</b>'));
+  prova('contrato: endereço com CEP formatado', tx.includes('CEP 66010-000'));
+  prova('contrato: as duas peças com etiqueta e reposição', tx.includes('JN05-M-2') && tx.includes('JN04-G-1') && tx.includes(L.formatarPreco(fx('JN05').reposicao).replace(/\s/g, ' ')));
+  prova('contrato: itens que acompanham', tx.includes(fx('JN05').inclui.join(', ')));
+  prova('contrato: devolução com dia da semana e horário', tx.includes('seg, 08/02/2027, até 18h'));
+  prova('contrato: atraso = soma do dia extra das peças (25 + 30)', tx.replace(/\s/g, ' ').includes('R$ 55,00 por dia'));
+  prova('contrato: desconto com motivo', tx.includes('casal de quadrilha'));
+  prova('contrato: formas e parcelas', tx.includes('Cartão de crédito 2x') && tx.includes('Pix'));
+  prova('contrato: total e caução em pt-BR', tx.replace(/\s/g, ' ').includes('R$ 276,00') && tx.replace(/\s/g, ' ').includes('R$ 150,00'));
+  prova('contrato: cláusulas 1 a 12 em ordem', [1,2,3,4,5,6,7,8,9,10,11,12].every((n, i, a) => i === 0 || g.html.indexOf('<h2>' + n + '.') > g.html.indexOf('<h2>' + a[i - 1] + '.')));
+  prova('contrato: laudo com o defeito anotado e fotos marcadas', tx.includes('mancha pequena na barra') && tx.includes('☑ frente'));
+  prova('contrato: devolução em branco antes da volta', tx.includes('Na devolução — data'));
+  prova('contrato: data por extenso', tx.includes('5 de fevereiro de 2027'));
+  prova('contrato: consentimento de marketing citado só se dado', tx.includes('aceitou, à parte') &&
+    !Ct.gerar({ pedido: pedidoC, cliente: Object.assign({}, cliC, { marketing: { consentido: false } }), fantasiaDe: fx, config: cfgC, hoje: '2027-02-05' }).html.includes('aceitou, à parte'));
+  prova('contrato: pendências quando falta CNPJ e endereço do ateliê', g.pendencias.includes('CNPJ/CPF do ateliê') && g.pendencias.includes('endereço do ateliê'));
+  prova('contrato: sem undefined, NaN ou null', !/undefined|NaN|null/.test(tx), tx.match(/.{30}(undefined|NaN|null).{30}/));
+  prova('contrato: nenhum valor com ponto decimal', !/\d\.\d{2}\b/.test(tx), tx.match(/.{20}\d\.\d{2}\b.{10}/));
+  const dev = Object.assign({}, pedidoC, { vistorias: Object.assign({}, pedidoC.vistorias, { devolucao: { dia: '2027-02-10', fotos: { frente: 'y' }, defeitos: [] } }),
+    danos: [{ descricao: 'botão arrancado', valor: 12 }], acerto: L.acertoDevolucao({ caucao: 150, danos: [{ valor: 12 }], diasAtraso: 2, valorDiaAtraso: 55 }) });
+  const tx2 = Ct.gerar({ pedido: dev, cliente: cliC, fantasiaDe: fx, config: cfgC, hoje: '2027-02-10' }).html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  prova('contrato após a devolução: dano e acerto preenchidos', tx2.includes('botão arrancado') && tx2.replace(/\s/g, ' ').includes('R$ 28,00'), tx2.slice(-600));
+  const cfgOk = Object.assign({}, cfgC, { contrato: Object.assign({}, cfgC.contrato, { documento: '12.345.678/0001-90', endereco: 'Rua B, 20, Centro, Belém' }) });
+  const g3 = Ct.gerar({ pedido: pedidoC, cliente: cliC, fantasiaDe: fx, config: cfgOk, hoje: '2027-02-05' });
+  prova('contrato: com dados do ateliê, sem pendências e cidade da assinatura', !g3.pendencias.length && g3.html.includes('12.345.678/0001-90') && g3.html.includes('Belém, 5 de fevereiro de 2027'));
+}
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();
@@ -282,6 +332,7 @@ for (const f of FANTASIAS) {
   prova(q + ': kit com tipo válido', (f.kit || []).every(k => ['venda', 'aluguel'].includes(k.tipo) && k.preco > 0));
   prova(q + ': nome sem marca registrada', !proibidos.test(f.nome + ' ' + f.descricao + ' ' + (f.palavras || []).join(' ')), f.nome);
   prova(q + ': cor hexadecimal', /^#[0-9a-f]{6}$/i.test(f.cor), f.cor);
+  prova(q + ': reposição maior que a caução', f.reposicao > f.caucao, [f.reposicao, f.caucao]);
   const est = f.estoque || {};
   prova(q + ': estoque para cada tamanho, e só para eles', Object.keys(est).sort().join() === tams.slice().sort().join(), [tams, est]);
   prova(q + ': estoque inteiro positivo', Object.values(est).every(n => Number.isInteger(n) && n > 0), est);
@@ -354,6 +405,24 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   prova('clientes de exemplo com CPF válido', S.clientes().every(c => L.cpfValido(c.cpf)));
   prova('clientes de exemplo passam na validação', S.clientes().every(c => L.validarCliente(Object.assign({}, c, { avisoPrivacidade: true })).length === 0), L.validarCliente(Object.assign({}, S.clientes()[0], { avisoPrivacidade: true })));
   const per = L.periodoAluguel('2027-03-11', S.dia(), 0, lojaN);
+
+  // pedido do site retirado na loja: cliente cadastra no balcão e paga tudo na entrega
+  S.abrirCaixa(0);
+  const perS = L.periodoAluguel('2027-03-11', S.dia(), 0, lojaN);
+  const pedS = S.criarPedidoSite({ fantasia: 'JN05', tamanho: 'P', unidade: 'JN05-P-2', retirada: perS.retirada, devolucao: perS.devolucao, total: 95, sinal: 28.5, caucao: 60 });
+  prova('pedido do site sem cliente', !S.porId(pedS.id).clienteId && S.saldo(S.porId(pedS.id)) === 95);
+  S.registrarRetirada(pedS.id, { clienteId: 'CE002', linhasSaldo: [{ forma: 'pix', valor: 95, confirmado: true }], linhasCaucao: [{ forma: 'dinheiro', valor: 60, entregue: 60 }], vistoria: { dia: S.dia(), fotos: {}, defeitos: [], obs: '' } });
+  const rS = S.porId(pedS.id);
+  prova('retirada do pedido do site: vincula o cliente, recebe tudo e entrega', rS.status === 'retirada' && rS.clienteId === 'CE002' && S.saldo(rS) === 0 && S.caucaoRecebida(rS), rS);
+  // cliente do site com crédito na loja paga parte com o vale
+  const cliV = S.salvarCliente({ nome: 'Rita Vale', cpf: '111.444.777-35', whatsapp: '91 95555-4444', endereco: { cep: '66000000', rua: 'R', numero: '1', bairro: 'B', cidade: 'C', uf: 'PA' } });
+  const pV0 = S.criarPedidoBalcao({ clienteId: cliV.id, periodo: L.periodoAluguel(L.somarDias(S.dia(), 3), S.dia(), 0, lojaN), itens: [{ fantasia: 'JN05', tamanho: 'G', unidade: 'JN05-G-2', preco: 95, diaExtra: 25, caucao: 60 }],
+    complementos: [], desconto: { valor: 0 }, recebe: 'sinal', linhas: [{ forma: 'pix', valor: 28.5, confirmado: true }] });
+  S.cancelar(pV0.id, {});
+  const pedV = S.criarPedidoSite({ fantasia: 'JN05', tamanho: 'M', unidade: 'JN05-M-3', retirada: perS.retirada, devolucao: perS.devolucao, total: 95, sinal: 28.5, caucao: 60 });
+  S.registrarRetirada(pedV.id, { clienteId: cliV.id, linhasSaldo: [{ forma: 'vale', valor: 28.5 }, { forma: 'pix', valor: 66.5, confirmado: true }], linhasCaucao: [{ forma: 'pix', valor: 60, confirmado: true }], vistoria: { dia: S.dia(), fotos: {}, defeitos: [], obs: '' } });
+  prova('retirada do site com vale: crédito do cliente abatido', S.clientePorId(cliV.id).credito === 0 && S.saldo(S.porId(pedV.id)) === 0, S.clientePorId(cliV.id).credito);
+  S.zerar(); S.definirDia('2027-03-10');
 
   // pedido do site segura a peça; recusado, libera
   const ped = S.criarPedidoSite({ fantasia: 'JN05', tamanho: 'M', unidade: 'JN05-M-1', retirada: per.retirada, devolucao: per.devolucao, total: 95, sinal: 28.5, caucao: 60 });
@@ -485,7 +554,8 @@ if (montou.status === 0) {
   prova('simulação sem <html>/<head>/<body> próprios', !/<(html|head|body)[\s>]/i.test(sim));
   prova('simulação com <title> no início', /^<title>[^<]{3,60}<\/title>/.test(sim));
   const blocos = [...sim.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-  prova('simulação com 9 scripts inline', blocos.length === 9, blocos.length);
+  prova('simulação com 10 scripts inline', blocos.length === 10, blocos.length);
+  prova('contrato carrega depois da lógica', sim.indexOf('/* logica.js */') < sim.indexOf('/* contrato.js */'));
   prova('estado da loja carrega antes do app (a vitrine nasce com a agenda certa)', sim.indexOf('/* simulacao/estado.js */') < sim.indexOf('/* app.js */') && sim.indexOf('/* logica.js */') < sim.indexOf('/* simulacao/estado.js */'));
   prova('simulação usa a agenda de exemplo, não a real', sim.includes('/* simulacao/agenda_exemplo.js */') && !sim.includes('/* agenda.js */'));
   blocos.forEach((b, i) => prova('script inline ' + i + ' compila', (() => { try { new vm.Script(b); return true; } catch (e) { return false; } })()));

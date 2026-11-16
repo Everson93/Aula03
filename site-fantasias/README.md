@@ -131,7 +131,9 @@ dados e as fontes estão em [`PESQUISA_PAINEL.md`](PESQUISA_PAINEL.md).
 | --- | --- |
 | Início | sai, volta, atrasados, pedidos do site, alertas |
 | Nova venda | PDV: cliente, datas, várias peças, complementos, desconto com motivo, pagamento dividido (Pix, dinheiro com troco, débito, crédito em até 6x, vale), recibo, entrega |
+| Retirada | cliente reservou (no site ou no balcão) e veio buscar: busca pelo código do pedido, nome, CPF ou WhatsApp; confere o documento ou cadastra quem veio do site; recebe saldo e caução; vistoria; contrato; entrega |
 | Pedidos | todos, por situação; cancelamento (estorno até 7 dias antes, depois vira crédito na loja) |
+| Contrato | sai preenchido do pedido (cliente, peças com etiqueta e valor de reposição, datas, valores, formas de pagamento, laudo da vistoria), com as mesmas 12 cláusulas do modelo; botão em Pedidos, Recibo e Retirada |
 | Clientes | cadastro mínimo, CPF mascarado, consentimento de marketing à parte, crédito na loja, direitos do titular |
 | Acervo | onde está cada peça física no dia |
 | Caixa | abertura, sangria, suprimento, fechamento com conferência cega |
@@ -140,7 +142,11 @@ dados e as fontes estão em [`PESQUISA_PAINEL.md`](PESQUISA_PAINEL.md).
 `simulacao/estado.js` faz o papel do banco de dados; no sistema de verdade
 cada atendente entra com login. Os parâmetros novos ficam em `config.js`:
 `pagamentos` (chave Pix, parcelas, taxas de **exemplo**), `lgpd` (prazos de
-guarda e de resposta, versão do aviso) e `operadores`.
+guarda e de resposta, versão do aviso), `operadores` e `contrato` (CNPJ/CPF e
+endereço do ateliê, horário de devolução, prazos das cláusulas 7, 8 e 9; vazio
+sai como linha para preencher à mão). O contrato é gerado por `contrato.js`,
+puro e testado, pronto para o sistema de verdade; cada fantasia em `dados.js`
+ganhou `reposicao` (valor de reposição, de exemplo).
 
 ## Provas
 
@@ -148,7 +154,7 @@ guarda e de resposta, versão do aviso) e `operadores`.
 node conferir_landing.js
 ```
 
-679 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
+732 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
 sugere menor que o ideal), filtros, orçamento em centavos, mensagem e link do
 WhatsApp, coerência de `dados.js` com `config.js` (loja existe, temas
 existem, medidas completas, sinal entre 30 e 50, nenhum nome de marca

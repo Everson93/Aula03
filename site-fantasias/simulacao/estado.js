@@ -300,12 +300,17 @@
       return p;
     },
 
+    /* Entrega. Serve também para pedido do site ainda sem sinal (cliente veio
+     * pagar tudo na loja): sem pagamento anterior, o aluguel inteiro entra como saldo. */
     registrarRetirada: function (id, d) {
       var p = porId(id);
+      if (!p.clienteId && d.clienteId) p = Object.assign({}, p, { clienteId: d.clienteId }); // vale do cliente precisa dele vinculado
       var pags = p.pagamentos || [];
       if (d.linhasSaldo && d.linhasSaldo.length) pags = receber(Object.assign({}, p, { pagamentos: pags }), 'saldo', d.linhasSaldo);
       if (d.linhasCaucao && d.linhasCaucao.length) pags = receber(Object.assign({}, p, { pagamentos: pags }), 'caucao', d.linhasCaucao);
-      mudar(id, { status: 'retirada', retiradoEm: estado.dia, pagamentos: pags, vistorias: Object.assign({}, p.vistorias, { retirada: d.vistoria }) });
+      var patch = { status: 'retirada', retiradoEm: estado.dia, expiraEm: null, pagamentos: pags, vistorias: Object.assign({}, p.vistorias, { retirada: d.vistoria }) };
+      if (d.clienteId) patch.clienteId = d.clienteId; // quem reservou pelo site e se cadastrou no balcão
+      mudar(id, patch);
     },
 
     registrarDevolucao: function (id, d) {

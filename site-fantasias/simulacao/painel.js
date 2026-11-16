@@ -30,6 +30,7 @@
   var DEFEITOS = ['Mancha', 'Rasgo', 'Botão ou zíper', 'Barra descosturada', 'Desbotado', 'Peça faltando'];
   var ICONES = {
     inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
+    retirada: 'M6 8h12l1 12H5zM9 8V6a3 3 0 0 1 6 0v2M9.5 13.5l2 2 3.5-3.5',
     venda: 'M4 5h2l2.4 10.2a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.8L21 8H7M10 20a1 1 0 1 0 0 .01M18 20a1 1 0 1 0 0 .01',
     pedidos: 'M8 4h8l1 2h3v15H4V6h3zM8 11h8M8 15h6',
     clientes: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 12 0v1M16 3.5a4 4 0 0 1 0 7.5M22 21v-1a6 6 0 0 0-4-5.7',
@@ -37,7 +38,7 @@
     caixa: 'M3 7h18v12H3zM3 11h18M7 15h3',
     privacidade: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4'
   };
-  var PAGINAS = [['inicio', 'Início'], ['venda', 'Nova venda'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
+  var PAGINAS = [['inicio', 'Início'], ['venda', 'Nova venda'], ['retirada', 'Retirada'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
     ['acervo', 'Acervo'], ['caixa', 'Caixa'], ['privacidade', 'Privacidade']];
 
   function $(id) { return document.getElementById(id); }
@@ -153,6 +154,7 @@
     }
     var rs = LOJA.todos();
     contar('inicio', rs.filter(function (p) { return p.status === 'pendente'; }).length + rs.filter(function (p) { return visivel(p) === 'atrasada'; }).length);
+    contar('retirada', rs.filter(function (p) { return (p.status === 'confirmada' || p.status === 'pendente') && (p.itens || []).length && p.retirada <= dia(); }).length);
     contar('privacidade', LOJA.solicitacoes().filter(function (s) { return s.status === 'aberta'; }).length);
     var av = LOJA.aviso();
     $('sis-aviso').textContent = av;
@@ -165,6 +167,7 @@
     var corpo = $('sis-conteudo');
     if (pagina === 'inicio') corpo.innerHTML = htmlInicio();
     else if (pagina === 'venda') { corpo.innerHTML = htmlVenda(); ligarVenda(); atualizarVenda(); }
+    else if (pagina === 'retirada') { corpo.innerHTML = htmlRetirada(); ligarRetirada(); }
     else if (pagina === 'pedidos') { corpo.innerHTML = htmlPedidos(); ligarBusca('sis-busca-ped', function (v) { buscaPedidos = v; }); }
     else if (pagina === 'clientes') { corpo.innerHTML = htmlClientes(); ligarBusca('sis-busca-cli', function (v) { buscaClientes = v; }); }
     else if (pagina === 'acervo') corpo.innerHTML = htmlAcervo();
@@ -189,7 +192,8 @@
     if (a === 'detalhe') abrirPedido(id);
     else if (a === 'confirmar') abrirSinal(id);
     else if (a === 'recusar') { LOJA.cancelar(id, { motivo: 'Recusado pelo ateliê' }); if (modal.open) modal.close(); }
-    else if (a === 'retirar') abrirRetirada(id);
+    else if (a === 'retirar') irRetirada(id);
+    else if (a === 'contrato') abrirContrato(LOJA.porId(id));
     else if (a === 'devolver') abrirDevolucao(id);
     else if (a === 'ir-dia') LOJA.definirDia(b.dataset.dia);
     else if (a === 'cliente') abrirCliente(id);
@@ -630,6 +634,7 @@
         (troco ? '<p class="pn-msg pn-msg--ok">Troco: ' + R$(troco) + '</p>' : '') +
         '<p class="sis-mudo">Recibo simples, não é documento fiscal. A nota fiscal (NFC-e) sai do emissor do ateliê.</p>' +
       '</div>',
+      ((p.itens || []).length ? botao('contrato', p.id, 'Contrato') : '') +
       ((p.itens || []).length && p.retirada === dia() ? botao('retirar', p.id, 'Entregar agora', true) : '') +
       '<button type="button" class="botao botao--leve" id="rc-ok">Fechar</button>');
     $('rc-ok').addEventListener('click', function () { modal.close(); render(); });
@@ -659,6 +664,7 @@
    * MODAIS: pedido, sinal, entrega, devolução, cancelamento
    * ===================================================================== */
   function abrirModal(titulo, corpo, rodape) {
+    modal.classList.remove('pn-modal--contrato');
     modal.innerHTML = '<div class="pn-modal__topo"><h2 id="pn-modal-titulo">' + titulo + '</h2>' +
       '<button type="button" class="sim-whats__fechar" id="pn-modal-fechar" aria-label="Fechar">×</button></div>' +
       '<div class="pn-modal__corpo">' + corpo + '</div>' + (rodape ? '<div class="pn-modal__rodape">' + rodape + '</div>' : '');
@@ -679,6 +685,7 @@
     if (st === 'pendente') acoes = botao('confirmar', p.id, 'Sinal recebido', true) + botao('recusar', p.id, 'Recusar');
     if (st === 'confirmada' && (p.itens || []).length) acoes = (dia() >= p.retirada ? botao('retirar', p.id, 'Entregar', true) : '') + '<button type="button" class="botao botao--leve pn-botao" id="pd-cancelar">Cancelar pedido</button>';
     if (st === 'retirada' || st === 'atrasada') acoes = lembrete(p) + botao('devolver', p.id, 'Receber de volta', true);
+    if ((p.itens || []).length && st !== 'cancelada' && st !== 'expirada') acoes = botao('contrato', p.id, 'Contrato') + acoes;
     abrirModal('Pedido ' + p.id, cabeca(p) +
       '<p class="sis-mudo">Origem: ' + ({ site: 'pedido pelo site', balcao: 'balcão', exemplo: 'pedido de exemplo' }[p.origem]) + (p.dataFesta ? ' · festa ' + esc(L.dataBR(p.dataFesta)) : '') + '</p>' +
       '<h3>Valores</h3>' + htmlValores(p) + '<h3>Pagamentos</h3>' + htmlPagamentos(p) +
@@ -765,8 +772,9 @@
     g.font = '14px sans-serif'; g.fillText(unidadesTxt(p).slice(0, 26), 16, 64); g.fillText(L.dataBR(dia()), 16, 84); g.fillText('foto simulada', 16, 280);
     return cv.toDataURL('image/jpeg', 0.6);
   }
-  function ligarFotos(pref, p, fotos) {
-    modal.querySelectorAll('[data-foto]').forEach(function (inp) {
+  function ligarFotos(pref, p, fotos, onde) {
+    var raizFotos = onde || modal;
+    raizFotos.querySelectorAll('[data-foto]').forEach(function (inp) {
       inp.addEventListener('change', function () {
         var a = inp.files && inp.files[0];
         if (!a) return;
@@ -775,9 +783,10 @@
         r.readAsDataURL(a);
       });
     });
-    modal.querySelectorAll('[data-simular]').forEach(function (b) {
+    raizFotos.querySelectorAll('[data-simular]').forEach(function (b) {
       b.addEventListener('click', function () { fotos[b.dataset.simular] = fotoSimulada(FOTOS.find(function (x) { return x[0] === b.dataset.simular; })[1], p); pintar(); });
     });
+    pintar();
     function pintar() {
       FOTOS.forEach(function (f) {
         var box = $(pref + '-img-' + f[0]);
@@ -794,40 +803,178 @@
       '<p>Defeitos anotados: ' + ((v.defeitos || []).length || v.obs ? esc((v.defeitos || []).concat(v.obs ? [v.obs] : []).join('; ')) : 'nenhum') + '</p></div>';
   }
 
-  function abrirRetirada(id) {
-    if (!LOJA.caixaAberto()) { pedirCaixa(function () { abrirRetirada(id); }); return; }
-    var p = LOJA.porId(id);
-    var saldo = LOJA.saldo(p);
-    var caucaoPaga = LOJA.caucaoRecebida(p);
-    var cli = p.clienteId && LOJA.clientePorId(p.clienteId);
-    var fotos = {}, defeitos = [];
-    var okS = !saldo, okC = caucaoPaga;
-    abrirModal('Entrega · ' + p.id, cabeca(p) +
-      '<h3>1. Saldo do aluguel</h3>' + (saldo ? '<div id="rt-saldo"></div>' : '<p class="pn-msg pn-msg--ok">Aluguel já pago.</p>') +
-      '<h3>2. Caução (volta na devolução)</h3>' + (caucaoPaga ? '<p class="pn-msg pn-msg--ok">Caução já recebida.</p>' : '<div id="rt-caucao"></div>') +
-      '<h3>3. Vistoria com fotos</h3><p class="pn-dica">As quatro fotos são obrigatórias, de cada peça. Elas protegem o ateliê e o cliente na devolução.</p>' + htmlFotos('rt') +
-      '<p class="pn-rotulo">Defeitos que a peça já tem</p><div class="pn-chips" id="rt-def">' + DEFEITOS.map(function (d) { return '<button type="button" class="pn-chip" aria-pressed="false" data-def="' + esc(d) + '">' + esc(d) + '</button>'; }).join('') + '</div>' +
-      '<label class="pn-bloco">Onde e como <textarea id="rt-obs" rows="2" placeholder="Ex.: mancha pequena na barra, lado esquerdo"></textarea></label>' +
-      '<label class="pn-aceite"><input type="checkbox" id="rt-aceite"> O cliente conferiu as fotos, os defeitos e assinou o contrato.</label>' +
-      '<p class="pn-msg pn-msg--erro" id="rt-erro" hidden></p>',
-      '<button type="button" class="botao botao--leve" id="rt-voltar">Agora não</button><button type="button" class="botao botao--destaque" id="rt-ok">Confirmar entrega</button>');
-    var edS = saldo ? editorPagamento($('rt-saldo'), saldo, { valeDisponivel: cli ? cli.credito : 0, aoMudar: function (r) { okS = r.ok; } }) : null;
-    var edC = caucaoPaga ? null : editorPagamento($('rt-caucao'), p.valores.caucao, { aoMudar: function (r) { okC = r.ok; } });
-    ligarFotos('rt', p, fotos);
+  /* =====================================================================
+   * RETIRADA — o cliente reservou (no site ou no balcão) e veio buscar
+   * ===================================================================== */
+  var ret = null;            // retirada em andamento
+  var buscaRetirada = '';
+  function irRetirada(id) {
+    ret = id ? { id: id, clienteId: '', docOk: false, fotos: {}, defeitos: [], obs: '', assinado: false, feito: false } : null;
+    if (modal.open) modal.close();
+    irPara('retirada');
+  }
+
+  function htmlRetirada() {
+    if (ret) {
+      var p = LOJA.porId(ret.id);
+      if (p && ret.feito) return htmlRetiradaFeita(p);
+      if (p && (p.status === 'confirmada' || p.status === 'pendente')) return htmlRetiradaPedido(p);
+      ret = null;
+    }
+    var d = dia();
+    var t = L.normalizar(buscaRetirada), dg = buscaRetirada.replace(/\D/g, '');
+    var cand = LOJA.todos().filter(function (p) { return (p.status === 'confirmada' || p.status === 'pendente') && (p.itens || []).length; });
+    var acha = function (p) {
+      var c = p.clienteId && LOJA.clientePorId(p.clienteId);
+      return L.normalizar([p.id, nome(p), pecasTxt(p), unidadesTxt(p)].join(' ')).indexOf(t) !== -1 ||
+        (dg.length >= 3 && c && (c.cpf.indexOf(dg) !== -1 || c.whatsapp.indexOf(dg) !== -1));
+    };
+    var lista = (t ? cand.filter(acha) : cand.filter(function (p) { return p.retirada <= d; })).sort(function (a, b) { return a.retirada < b.retirada ? -1 : 1; });
+    var prox = t ? [] : cand.filter(function (p) { return p.retirada > d && p.retirada <= L.somarDias(d, 7); }).sort(function (a, b) { return a.retirada < b.retirada ? -1 : 1; });
+    var fila = function (p) {
+      var x = p.status === 'pendente' ? '<strong class="pn-alerta">sinal não pago</strong> · ' : '';
+      if (p.retirada < d) x += '<strong class="pn-alerta">era para ' + curta(p.retirada) + '</strong> · ';
+      return linha(p, x + 'receber ' + R$(LOJA.saldo(p)) + ' + caução ' + R$(p.valores.caucao), botao('retirar', p.id, 'Iniciar retirada', true));
+    };
+    setTimeout(function () { ligarBusca('sis-busca-ret', function (v) { buscaRetirada = v; }); });
+    return '<div class="sis-barra"><input type="search" id="sis-busca-ret" class="pn-busca" placeholder="Código do pedido (P0001), nome, CPF ou WhatsApp do cliente" value="' + esc(buscaRetirada) + '"></div>' +
+      '<p class="pn-dica">O cliente reservou pelo site ou no balcão e veio buscar. Peça o código do pedido (vai na mensagem do WhatsApp) ou busque pelo nome ou CPF.</p>' +
+      cartao(t ? 'Resultado da busca' : 'Para retirar hoje', '', tabelaPedidos(lista.map(fila), t ? 'Nenhum pedido a retirar com essa busca.' : 'Ninguém para retirar hoje.')) +
+      (prox.length ? cartao('Próximos 7 dias', 'Retirada antes do dia marcado não é liberada: a peça pode estar com outro cliente.', tabelaPedidos(prox.map(function (p) { return linha(p, 'retira ' + curta(p.retirada), ''); }), '')) : '');
+  }
+
+  function htmlRetiradaPedido(p) {
+    var cliId = p.clienteId || ret.clienteId;
+    var cli = cliId && LOJA.clientePorId(cliId);
+    var voltar = '<button type="button" class="sis-link" id="rt-lista">← Voltar para a lista</button>';
+    if (dia() < p.retirada) {
+      return voltar + cartao('Retirada marcada para ' + esc(L.dataComDia(p.retirada)), 'Antes disso a peça pode estar com outro cliente ou em higienização.',
+        cabeca(p) + botao('ir-dia', '', 'Ir para o dia da retirada', false, ' data-dia="' + p.retirada + '"'));
+    }
+    var site = p.origem === 'site';
+    var pendente = p.status === 'pendente';
+    return voltar +
+      cartao('Retirada do pedido ' + p.id, (site ? 'Pedido feito pelo site. ' : '') + 'Siga os passos e entregue no fim.', cabeca(p)) +
+      cartao('1. Cliente e documento', cli ? 'Confira um documento com foto: o CPF tem de ser o do cadastro.' : 'Quem reservou pelo site ainda não tem cadastro. Busque ou cadastre agora: vai no contrato.',
+        cli ? '<dl class="pn-conta-tab"><div><dt>Nome</dt><dd>' + esc(cli.nome) + '</dd></div><div><dt>CPF</dt><dd>' + L.mascararCpf(cli.cpf) + '</dd></div>' +
+            '<div><dt>WhatsApp</dt><dd>' + esc(formatarFone(cli.whatsapp)) + '</dd></div></dl>' +
+            (!p.clienteId ? '<button type="button" class="sis-link" id="rt-trocar-cli">Trocar cliente</button>' : '') +
+            '<label class="pn-aceite"><input type="checkbox" id="rt-doc"' + (ret.docOk ? ' checked' : '') + '> Conferi o documento com foto: o CPF confere.</label>'
+          : '<div class="sis-linha-busca"><input type="search" id="rt-busca-cli" class="pn-busca" placeholder="Buscar por nome, CPF ou WhatsApp">' +
+            botao('novo-cliente', '', '+ Cadastrar cliente', true, ' data-volta="retirada:' + p.id + '"') + '</div><div id="rt-res-cli"></div>') +
+      cartao('2. Pagamento', pendente ? 'O sinal não foi pago pelo site: o aluguel inteiro é pago agora.' : 'O sinal já foi pago; falta o saldo do aluguel e a caução.',
+        '<h3 class="sis-h3">Aluguel</h3>' + (LOJA.saldo(p) ? '<div id="rt-saldo"></div>' : '<p class="pn-msg pn-msg--ok">Aluguel já pago.</p>') +
+        '<h3 class="sis-h3">Caução (volta na devolução)</h3>' + (LOJA.caucaoRecebida(p) ? '<p class="pn-msg pn-msg--ok">Caução já recebida.</p>' : '<div id="rt-caucao"></div>')) +
+      cartao('3. Vistoria com fotos', 'As quatro fotos são obrigatórias. Elas protegem o ateliê e o cliente na devolução.',
+        htmlFotos('rt') +
+        '<p class="pn-rotulo">Defeitos que a peça já tem</p><div class="pn-chips" id="rt-def">' + DEFEITOS.map(function (d) {
+          return '<button type="button" class="pn-chip" aria-pressed="' + (ret.defeitos.indexOf(d) !== -1) + '" data-def="' + esc(d) + '">' + esc(d) + '</button>';
+        }).join('') + '</div>' +
+        '<label class="pn-bloco">Onde e como <textarea id="rt-obs" rows="2" placeholder="Ex.: mancha pequena na barra, lado esquerdo">' + esc(ret.obs) + '</textarea></label>') +
+      cartao('4. Contrato', 'Sai preenchido com o cliente, as peças, os valores e o laudo desta vistoria. Imprima duas vias e colha a assinatura.',
+        '<div class="sis-botoes"><button type="button" class="botao botao--leve pn-botao" id="rt-contrato">Ver contrato preenchido</button></div>' +
+        '<label class="pn-aceite"><input type="checkbox" id="rt-assinou"' + (ret.assinado ? ' checked' : '') + '> O cliente conferiu as fotos e assinou as duas vias.</label>') +
+      '<ul class="pn-erros" id="rt-erros" hidden></ul>' +
+      '<div class="sis-fim"><button type="button" class="botao botao--destaque" id="rt-ok">Confirmar retirada e entregar</button></div>';
+  }
+
+  function htmlRetiradaFeita(p) {
+    return cartao('Pedido ' + p.id + ' entregue', 'Devolução até ' + esc(L.dataComDia(p.devolucao)) + ', até ' + esc(C.contrato.horarioDevolucao) + '.',
+      cabeca(p) + '<div class="sis-botoes">' + botao('contrato', p.id, 'Ver o contrato com o laudo', true) +
+      '<button type="button" class="botao botao--leve pn-botao" id="rt-nova">Próxima retirada</button></div>');
+  }
+
+  var edSaldo = null, edCaucao = null, okSaldo = true, okCaucao = true;
+  function ligarRetirada() {
+    var lista = $('rt-lista'), nova = $('rt-nova');
+    if (lista) lista.addEventListener('click', function () { irRetirada(null); });
+    if (nova) nova.addEventListener('click', function () { irRetirada(null); });
+    if (!ret || ret.feito || !$('rt-ok')) return;
+    var p = LOJA.porId(ret.id);
+    var cliId = p.clienteId || ret.clienteId;
+    var cli = cliId && LOJA.clientePorId(cliId);
+    var area = $('sis-conteudo');
+    okSaldo = !LOJA.saldo(p); okCaucao = LOJA.caucaoRecebida(p);
+    edSaldo = $('rt-saldo') ? editorPagamento($('rt-saldo'), LOJA.saldo(p), { valeDisponivel: cli ? cli.credito : 0, aoMudar: function (r) { okSaldo = r.ok; } }) : null;
+    edCaucao = $('rt-caucao') ? editorPagamento($('rt-caucao'), p.valores.caucao, { aoMudar: function (r) { okCaucao = r.ok; } }) : null;
+    ligarFotos('rt', p, ret.fotos, area);
+    var doc = $('rt-doc');
+    if (doc) doc.addEventListener('change', function () { ret.docOk = doc.checked; });
+    var troca = $('rt-trocar-cli');
+    if (troca) troca.addEventListener('click', function () { ret.clienteId = ''; ret.docOk = false; render(); });
+    var busca = $('rt-busca-cli');
+    if (busca) {
+      busca.addEventListener('input', function () {
+        var t = L.normalizar(busca.value), dg = busca.value.replace(/\D/g, '');
+        var achados = t.length < 2 ? [] : LOJA.clientes().filter(function (x) { return !x.anonimizado && (L.normalizar(x.nome).indexOf(t) !== -1 || (dg.length >= 3 && (x.cpf.indexOf(dg) !== -1 || x.whatsapp.indexOf(dg) !== -1))); }).slice(0, 6);
+        $('rt-res-cli').innerHTML = '<div class="sis-lista-cli">' + achados.map(function (x) {
+          return '<button type="button" class="pn-resultado" data-rt-cli="' + x.id + '"><span><strong>' + esc(x.nome) + '</strong><br><small>CPF ' + L.mascararCpf(x.cpf) + ' · ' + esc(formatarFone(x.whatsapp)) + '</small></span></button>';
+        }).join('') + '</div>' + (t.length >= 2 && !achados.length ? '<p class="pn-dica">Não achei. Cadastre o cliente.</p>' : '');
+      });
+      $('rt-res-cli').addEventListener('click', function (e) { var b = e.target.closest('[data-rt-cli]'); if (b) { ret.clienteId = b.dataset.rtCli; render(); } });
+    }
     $('rt-def').addEventListener('click', function (e) {
       var b = e.target.closest('[data-def]'); if (!b) return;
       var on = b.getAttribute('aria-pressed') !== 'true';
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      defeitos = on ? defeitos.concat([b.dataset.def]) : defeitos.filter(function (d) { return d !== b.dataset.def; });
+      ret.defeitos = on ? ret.defeitos.concat([b.dataset.def]) : ret.defeitos.filter(function (d) { return d !== b.dataset.def; });
     });
-    $('rt-voltar').addEventListener('click', function () { modal.close(); });
+    $('rt-obs').addEventListener('input', function (e) { ret.obs = e.target.value; });
+    $('rt-assinou').addEventListener('change', function (e) { ret.assinado = e.target.checked; });
+    $('rt-contrato').addEventListener('click', function () { abrirContrato(previaRetirada(), 'Prévia: os pagamentos e a vistoria entram como estão na tela agora.'); });
     $('rt-ok').addEventListener('click', function () {
-      var faltam = FOTOS.filter(function (f) { return !fotos[f[0]]; }).map(function (f) { return f[1].toLowerCase(); });
-      var erro = !okS ? 'Feche o pagamento do saldo.' : !okC ? 'Feche o pagamento da caução.' : faltam.length ? 'Falta foto: ' + faltam.join(', ') + '.' : !$('rt-aceite').checked ? 'Marque que o cliente conferiu e assinou.' : '';
-      if (erro) { $('rt-erro').textContent = erro; $('rt-erro').hidden = false; return; }
-      LOJA.registrarRetirada(id, { linhasSaldo: edS ? edS.linhas() : [], linhasCaucao: edC ? edC.linhas() : [],
-        vistoria: { dia: dia(), fotos: fotos, defeitos: defeitos, obs: $('rt-obs').value.trim() } });
-      modal.close();
+      if (!LOJA.caixaAberto()) { pedirCaixa(function () { render(); }); return; }
+      var p2 = LOJA.porId(ret.id);
+      var cid = p2.clienteId || ret.clienteId;
+      var faltam = FOTOS.filter(function (f) { return !ret.fotos[f[0]]; }).map(function (f) { return f[1].toLowerCase(); });
+      var erros = [];
+      if (!cid) erros.push('Escolha ou cadastre o cliente.');
+      else if (!ret.docOk) erros.push('Confira o documento com foto.');
+      if (!okSaldo) erros.push('Feche o pagamento do aluguel.');
+      if (!okCaucao) erros.push('Feche o pagamento da caução.');
+      if (faltam.length) erros.push('Falta foto: ' + faltam.join(', ') + '.');
+      if (!ret.assinado) erros.push('Marque que o cliente assinou o contrato.');
+      var ul = $('rt-erros');
+      ul.innerHTML = erros.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+      ul.hidden = !erros.length;
+      if (erros.length) { ul.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+      // Marca antes de gravar: gravar redesenha o painel, e a tela precisa saber que é "entregue".
+      ret.feito = true;
+      try {
+        LOJA.registrarRetirada(ret.id, { clienteId: p2.clienteId ? null : cid, linhasSaldo: edSaldo ? edSaldo.linhas() : [], linhasCaucao: edCaucao ? edCaucao.linhas() : [],
+          vistoria: { dia: dia(), fotos: ret.fotos, defeitos: ret.defeitos.slice(), obs: ret.obs.trim() } });
+      } catch (e) { ret.feito = false; throw e; }
+      render();
+    });
+  }
+
+  // O pedido como vai ficar se a retirada for confirmada agora (para a prévia do contrato).
+  function previaRetirada() {
+    var p = LOJA.porId(ret.id);
+    var linhasPara = function (ed, tipo) {
+      return ed ? ed.linhas().filter(function (l) { return l.valor > 0; }).map(function (l) { return { tipo: tipo, forma: l.forma, valor: l.valor, parcelas: l.parcelas || 1 }; }) : [];
+    };
+    return Object.assign({}, p, {
+      clienteId: p.clienteId || ret.clienteId,
+      pagamentos: (p.pagamentos || []).concat(linhasPara(edSaldo, 'saldo'), linhasPara(edCaucao, 'caucao')),
+      vistorias: Object.assign({}, p.vistorias, { retirada: { dia: dia(), fotos: ret.fotos, defeitos: ret.defeitos, obs: ret.obs } })
+    });
+  }
+
+  /* ---------- contrato preenchido ---------- */
+  function abrirContrato(p, aviso) {
+    var cli = p.clienteId && LOJA.clientePorId(p.clienteId);
+    var g = window.Contrato.gerar({ pedido: p, cliente: cli, fantasiaDe: LOJA.fantasiaDe, config: C, hoje: dia(), operador: LOJA.operador() });
+    abrirModal('Contrato · ' + p.id,
+      (aviso ? '<p class="pn-msg">' + esc(aviso) + '</p>' : '') +
+      (g.pendencias.length ? '<p class="pn-msg pn-msg--erro">Sai em branco, para preencher à mão: ' + esc(g.pendencias.join(', ')) + '. Os dados do ateliê ficam em config.js (contrato).</p>' : '') +
+      g.html,
+      '<span class="sis-mudo" id="ct-nota"></span><button type="button" class="botao botao--leve" id="ct-fechar">Fechar</button><button type="button" class="botao botao--destaque" id="ct-imprimir">Imprimir</button>');
+    modal.classList.add('pn-modal--contrato');
+    $('ct-fechar').addEventListener('click', function () { modal.close(); });
+    $('ct-imprimir').addEventListener('click', function () {
+      try { window.print(); } catch (e) { /* moldura sem impressão */ }
+      $('ct-nota').textContent = 'Se a impressão não abriu, é a moldura da simulação; no sistema publicado o botão imprime só o contrato.';
     });
   }
 
@@ -989,6 +1136,7 @@
       modal.close();
       if (volta === 'venda') { carrinho.clienteId = r.id; irPara('venda'); }
       else if (volta && volta.indexOf('sinal:') === 0) abrirSinal(volta.slice(6));
+      else if (volta && volta.indexOf('retirada:') === 0) { if (ret) { ret.clienteId = r.id; ret.docOk = false; } irPara('retirada'); }
       else abrirCliente(r.id);
     });
   }

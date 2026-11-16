@@ -17,7 +17,7 @@ const html = ler('index.html');
 const corpo = /<body>([\s\S]*)<\/body>/.exec(html)[1]
   .replace(/<script src="[^"]+"><\/script>\s*/g, '');
 
-const scripts = ['config.js', 'simulacao/antes.js', 'dados.js', 'simulacao/agenda_exemplo.js', 'logica.js',
+const scripts = ['config.js', 'simulacao/antes.js', 'dados.js', 'simulacao/agenda_exemplo.js', 'logica.js', 'contrato.js',
   'simulacao/estado.js', 'app.js', 'simulacao/depois.js', 'simulacao/painel.js'];
 for (const s of scripts) {
   if (/<\/script/i.test(ler(s))) throw new Error(s + ' contém </script> e quebraria o HTML inline');

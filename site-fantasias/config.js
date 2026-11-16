@@ -54,6 +54,16 @@ window.CONFIG = {
 
   operadores: ['Néia', 'Atendente'],
 
+  // Dados do ateliê que vão no contrato. Vazio = sai uma linha para preencher à mão.
+  contrato: {
+    documento: '',               // CNPJ ou CPF do ateliê
+    endereco: '',                // rua, número, bairro, cidade
+    horarioDevolucao: '18h',     // a peça volta até esse horário no dia da devolução
+    prazoDevolucaoCaucao: 0,     // dias úteis para devolver a caução (0 = na hora)
+    diasParaPerda: 7,            // dias de atraso sem resposta para tratar a peça como perdida
+    validadeCreditoMeses: 6      // validade do crédito na loja quando o sinal vira crédito
+  },
+
   /* Medição: se você instalar o Plausible ou o Google Analytics (GA4) no
    * index.html, os eventos vão para lá automaticamente. Não precisa mexer aqui. */
   mostrarEventosNoConsole: false

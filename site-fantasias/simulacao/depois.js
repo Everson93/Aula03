@@ -124,7 +124,7 @@
     }
     var r = LOJA.criarPedidoSite(p);
     link.hidden = false;
-    txt.textContent = 'Pedido ' + r.id + ' entrou no painel do ateliê como "aguardando sinal". A peça ' + r.unidade +
+    txt.textContent = 'Pedido ' + r.id + ' entrou no painel do ateliê como "aguardando sinal". A peça ' + r.itens.map(function (it) { return it.unidade; }).join(', ') +
       ' fica segura por ' + LOJA.MINUTOS_PENDENTE + ' minutos; sem sinal, volta a ficar livre.';
   }
   document.getElementById('sim-ir-painel').addEventListener('click', function () {

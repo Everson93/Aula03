@@ -220,7 +220,7 @@ body.modo-painel { background: var(--fundo-alt); }
 .pn-modal__rodape { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid var(--borda); position: sticky; bottom: 0; background: var(--superficie); }
 .pn-modal__rodape .botao[disabled] { opacity: .45; cursor: not-allowed; }
 .pn-cabeca { background: var(--fundo-alt); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; font-size: .9rem; }
-.pn-cabeca p { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pn-cabeca p { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
 .pn-fotos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .pn-foto { display: flex; flex-direction: column; gap: 4px; align-items: center; min-width: 0; }
 .pn-foto__img { width: 100%; aspect-ratio: 4 / 5; border: 2px dashed var(--borda); border-radius: 10px; display: grid; place-items: center; overflow: hidden; color: var(--texto-suave); font-size: .8rem; font-weight: 700; }
@@ -272,4 +272,49 @@ body.modo-painel { background: var(--fundo-alt); }
   .pg-linha__base { grid-template-columns: 1fr 110px auto; }
   .sis-log li { grid-template-columns: 1fr auto; }
   .sis-log li span:last-child { grid-column: 1 / -1; }
+}
+
+/* ---------- retirada ---------- */
+#rt-lista { align-self: flex-start; }
+.sis-h3 { margin: 6px 0 0; font-size: .92rem; }
+.sis-fim { display: flex; justify-content: flex-end; }
+.sis-fim .botao { min-width: 280px; }
+
+/* ---------- contrato em papel ----------
+ * O contrato é papel: fundo claro e texto escuro nos dois temas, de propósito. */
+.pn-modal--contrato { width: min(900px, 100% - 24px); }
+.ct-papel {
+  background: #fffdf8; color: #1f140e; border: 1px solid #e3d5c0; border-radius: 6px; box-shadow: 0 2px 10px rgba(0, 0, 0, .12);
+  padding: 32px 40px; font-size: .9rem; line-height: 1.5; max-width: 210mm; margin: 0 auto; width: 100%;
+}
+.ct-papel h1 { font-size: 1.35rem; margin: 4px 0; }
+.ct-papel h2 { font-size: 1rem; margin: 18px 0 6px; padding-bottom: 3px; border-bottom: 1px solid #e3d5c0; }
+.ct-papel p { margin: 0 0 8px; }
+.ct-papel ol { margin: 0 0 8px; padding-left: 22px; }
+.ct-papel li { margin-bottom: 3px; }
+.ct-topo { text-align: center; border-bottom: 2px solid #1f140e; padding-bottom: 10px; margin-bottom: 8px; }
+.ct-marca { font-family: var(--fonte-marca); color: #b0175f; font-size: 1.2rem; margin: 0 !important; }
+.ct-tab { width: 100%; border-collapse: collapse; margin: 4px 0 10px; font-size: .86rem; }
+.ct-tab th, .ct-tab td { border: 1px solid #cdbba3; padding: 5px 8px; text-align: left; vertical-align: top; color: #1f140e; }
+.ct-tab th { background: #f4ead9; width: 30%; font-weight: 700; }
+.ct-tab--linhas th { width: auto; }
+.ct-num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ct-cod { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; }
+.ct-forte td { font-weight: 800; }
+.ct-branco { display: inline-block; min-width: 150px; border-bottom: 1px solid #1f140e; height: 1em; vertical-align: bottom; }
+.ct-assinaturas { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 44px; }
+.ct-assinaturas p { text-align: center; font-size: .82rem; }
+.ct-linha { display: block; border-bottom: 1px solid #1f140e; height: 1px; margin-bottom: 6px; }
+@media (max-width: 640px) {
+  .ct-papel { padding: 18px 14px; font-size: .84rem; }
+  .ct-assinaturas { grid-template-columns: 1fr; gap: 32px; }
+}
+/* Impressão: só o papel do contrato sai. */
+@media print {
+  body * { visibility: hidden !important; }
+  .ct-papel, .ct-papel * { visibility: visible !important; }
+  .ct-papel { position: absolute; left: 0; top: 0; border: 0; box-shadow: none; max-width: none; padding: 0; }
+  .pn-modal { position: static; max-height: none; overflow: visible; box-shadow: none; }
+  .ct-tab tr, .ct-assinaturas { break-inside: avoid; }
+  @page { size: A4; margin: 16mm; }
 }
