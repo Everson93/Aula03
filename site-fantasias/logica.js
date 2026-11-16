@@ -43,6 +43,138 @@
     return Math.round((ub - ua) / 86400000);
   }
 
+  var RE_ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
+  var DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+  // Aritmética de datas sempre em UTC sobre a string ISO: horário de verão e fuso não mexem no dia.
+  function somarDias(iso, n) {
+    var m = RE_ISO.exec(iso || '');
+    if (!m) return '';
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n));
+    var p = function (x) { return (x < 10 ? '0' : '') + x; };
+    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate());
+  }
+
+  function diaSemana(iso) {
+    var m = RE_ISO.exec(iso || '');
+    return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay() : -1;
+  }
+
+  // "sex, 05/02/2027"
+  function dataComDia(iso) {
+    var d = diaSemana(iso);
+    return d < 0 ? '' : DIAS_SEMANA[d] + ', ' + dataBR(iso);
+  }
+
+  /* Período do aluguel para uma festa.
+   * Padrão de 3 dias: retira na véspera, devolve no dia seguinte à festa.
+   * Cada dia extra empurra a devolução. Dia em que a loja não abre
+   * (loja.diasFechados, 0 = domingo) nunca é dia de retirada nem de devolução:
+   * a retirada recua (sem passar de hoje) e a devolução avança — sem custo.
+   * Devolve null para data inválida ou que já passou. */
+  function periodoAluguel(dataFesta, hoje, diasExtras, loja) {
+    if (!RE_ISO.test(dataFesta || '') || !RE_ISO.test(hoje || '') || dataFesta < hoje) return null;
+    var fechados = (loja && loja.diasFechados) || [];
+    var fechado = function (iso) { return fechados.indexOf(diaSemana(iso)) !== -1; };
+    var extras = Math.max(0, Math.floor(Number(diasExtras) || 0));
+    var i;
+
+    var retirada = somarDias(dataFesta, -1);
+    for (i = 0; i < 7 && fechado(retirada) && retirada > hoje; i++) retirada = somarDias(retirada, -1);
+    if (retirada < hoje) retirada = hoje;
+    for (i = 0; i < 7 && fechado(retirada) && retirada < dataFesta; i++) retirada = somarDias(retirada, 1);
+
+    var devolucaoPadrao = somarDias(dataFesta, 1 + extras);
+    var devolucao = devolucaoPadrao;
+    for (i = 0; i < 7 && fechado(devolucao); i++) devolucao = somarDias(devolucao, 1);
+
+    return {
+      dataFesta: dataFesta,
+      retirada: retirada,
+      devolucao: devolucao,
+      dias: diasEntre(retirada, devolucao) + 1,
+      diasExtras: extras,
+      devolucaoAdiada: devolucao !== devolucaoPadrao
+    };
+  }
+
+  /* ---------- estoque e agenda ----------
+   * Cada peça física é uma unidade: "HW01-M-2" é a 2ª bruxa M.
+   * Uma reserva ocupa a unidade da retirada até a devolução + a margem de
+   * higienização da loja. Duas reservas da mesma unidade não podem se cruzar
+   * (é a constraint de exclusão que o banco do MVP vai ter). */
+  function unidades(fantasia, tamanho) {
+    var n = (fantasia.estoque && fantasia.estoque[tamanho]) || 0;
+    var lista = [];
+    for (var i = 1; i <= n; i++) lista.push(fantasia.id + '-' + tamanho + '-' + i);
+    return lista;
+  }
+
+  function seCruzam(ini1, fim1, ini2, fim2) {
+    return ini1 <= fim2 && ini2 <= fim1;
+  }
+
+  function unidadeLivre(unidade, agenda, periodo, margem) {
+    var fimNovo = somarDias(periodo.devolucao, margem);
+    return !agenda.some(function (r) {
+      return r.unidade === unidade && seCruzam(periodo.retirada, fimNovo, r.retirada, somarDias(r.devolucao, margem));
+    });
+  }
+
+  /* { M: { total: 3, livres: ['HW01-M-1', ...] }, ... }. Sem período, todas as unidades contam como livres. */
+  function disponibilidade(fantasia, agenda, periodo, margem) {
+    var res = {};
+    ordenarTamanhos(Object.keys(fantasia.tamanhos)).forEach(function (t) {
+      var todas = unidades(fantasia, t);
+      res[t] = {
+        total: todas.length,
+        livres: periodo ? todas.filter(function (u) { return unidadeLivre(u, agenda || [], periodo, margem || 0); }) : todas
+      };
+    });
+    return res;
+  }
+
+  function tamanhosLivres(disp) {
+    return Object.keys(disp).filter(function (t) { return disp[t].livres.length > 0; });
+  }
+
+  /* Primeira data de festa, a partir de dataFesta, em que o tamanho (ou qualquer tamanho) tem unidade livre. */
+  function proximaDataLivre(fantasia, agenda, dataFesta, hoje, loja, tamanho, limiteDias) {
+    var limite = limiteDias || 60;
+    for (var i = 1; i <= limite; i++) {
+      var data = somarDias(dataFesta, i);
+      var per = periodoAluguel(data, hoje, 0, loja);
+      if (!per) continue;
+      var disp = disponibilidade(fantasia, agenda, per, loja.margemHigienizacao);
+      var ok = tamanho ? (disp[tamanho] && disp[tamanho].livres.length > 0) : tamanhosLivres(disp).length > 0;
+      if (ok) return data;
+    }
+    return null;
+  }
+
+  /* Confere a agenda como o banco conferiria: unidade existe, datas em ordem,
+   * e nenhuma unidade com duas reservas que se cruzam (contando a margem). */
+  function validarAgenda(fantasias, agenda, lojas) {
+    var erros = [];
+    var porId = {};
+    fantasias.forEach(function (f) { porId[f.id] = f; });
+    agenda.forEach(function (r, i) {
+      var f = porId[r.fantasia];
+      if (!f) { erros.push('reserva ' + i + ': fantasia ' + r.fantasia + ' não existe'); return; }
+      if (unidades(f, r.tamanho).indexOf(r.unidade) === -1) erros.push('reserva ' + i + ': unidade ' + r.unidade + ' não existe no estoque');
+      if (!RE_ISO.test(r.retirada) || !RE_ISO.test(r.devolucao) || r.retirada > r.devolucao) erros.push('reserva ' + i + ': datas inválidas');
+      var margem = (lojas[f.loja] && lojas[f.loja].margemHigienizacao) || 0;
+      for (var j = 0; j < i; j++) {
+        var o = agenda[j];
+        if (o.unidade === r.unidade &&
+            seCruzam(r.retirada, somarDias(r.devolucao, margem), o.retirada, somarDias(o.devolucao, margem))) {
+          erros.push('reservas ' + j + ' e ' + i + ' cruzam na unidade ' + r.unidade);
+        }
+      }
+    });
+    return erros;
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -101,15 +233,19 @@
 
   /* Orçamento estimado. kitIds: ids dos itens do kit marcados.
    * O sinal incide sobre aluguel + kit; a caução é à parte (devolvida). */
-  function calcularOrcamento(fantasia, kitIds, percentualSinal) {
+  function calcularOrcamento(fantasia, kitIds, percentualSinal, diasExtras) {
     var marcados = (fantasia.kit || []).filter(function (k) { return (kitIds || []).indexOf(k.id) !== -1; });
-    var aluguel = centavos(fantasia.preco);
+    var extras = Math.max(0, Math.floor(Number(diasExtras) || 0));
+    var extra = centavos(fantasia.diaExtra || 0) * extras;
+    var aluguel = centavos(fantasia.preco) + extra;
     var kit = marcados.reduce(function (s, k) { return s + centavos(k.preco); }, 0);
     var total = aluguel + kit;
     var pct = Math.min(50, Math.max(30, Number(percentualSinal) || 30));
     var sinal = Math.round((total * pct) / 100);
     return {
       aluguel: aluguel / 100,
+      diasExtras: extras,
+      valorDiasExtras: extra / 100,
       kit: kit / 100,
       total: total / 100,
       percentualSinal: pct,
@@ -120,24 +256,36 @@
     };
   }
 
+  /* dados: { nomeSite, fantasia, tamanho, dataFesta, periodo, orcamento, indisponivel }
+   * indisponivel = o tamanho escolhido não tem unidade livre na data: a mensagem
+   * vira pergunta (outra data ou tamanho), para a loja não ler como reserva. */
   function mensagemReserva(dados) {
     var f = dados.fantasia;
     var o = dados.orcamento;
+    var p = dados.periodo;
     var linhas = [
-      'Olá! Vi no site ' + dados.nomeSite + ' e quero reservar:',
+      dados.indisponivel
+        ? 'Olá! Vi no site ' + dados.nomeSite + ' que esta fantasia está esgotada na minha data. Têm outra data ou tamanho?'
+        : 'Olá! Vi no site ' + dados.nomeSite + ' e quero reservar:',
       '',
       '• Fantasia: ' + f.nome + ' (cód. ' + f.id + ')',
       '• Tamanho: ' + (dados.tamanho || 'preciso de ajuda para escolher'),
-      '• Data da festa: ' + (dataBR(dados.dataFesta) || 'ainda não defini')
+      '• Data da festa: ' + (dataComDia(dados.dataFesta) || 'ainda não defini')
     ];
+    if (p) {
+      linhas.push('• Retirada: ' + dataComDia(p.retirada));
+      linhas.push('• Devolução: ' + dataComDia(p.devolucao) +
+        (p.diasExtras ? ' (' + p.diasExtras + (p.diasExtras === 1 ? ' dia extra' : ' dias extras') + ')' : ''));
+    }
     if (o.itensKit.length) {
       linhas.push('• Kit: ' + o.itensKit.map(function (k) { return k.nome; }).join(', '));
     }
     linhas.push('• Total estimado: ' + formatarPreco(o.total) + ' (sinal de ' + o.percentualSinal + '%: ' + formatarPreco(o.sinal) + ')');
     linhas.push('• Caução: ' + formatarPreco(o.caucao));
-    linhas.push('', 'Está disponível nessa data?');
+    linhas.push('', dados.indisponivel ? 'Obrigado!' : (p ? 'Pelo site aparece disponível. Podem confirmar?' : 'Está disponível nessa data?'));
     return linhas.join('\n');
   }
+
 
   function numeroWhatsAppValido(numero) {
     return /^55\d{10,11}$/.test(String(numero || ''));
@@ -157,6 +305,15 @@
     sugerirTamanho: sugerirTamanho,
     filtrar: filtrar,
     calcularOrcamento: calcularOrcamento,
+    somarDias: somarDias,
+    diaSemana: diaSemana,
+    dataComDia: dataComDia,
+    periodoAluguel: periodoAluguel,
+    unidades: unidades,
+    disponibilidade: disponibilidade,
+    tamanhosLivres: tamanhosLivres,
+    proximaDataLivre: proximaDataLivre,
+    validarAgenda: validarAgenda,
     mensagemReserva: mensagemReserva,
     numeroWhatsAppValido: numeroWhatsAppValido,
     linkWhatsApp: linkWhatsApp

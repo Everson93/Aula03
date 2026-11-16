@@ -15,6 +15,10 @@
   --sobre-marca: #e6dcf2;
   --destaque-suave: #fdebe4;
   --branco: #ffffff;
+  --ok: #1f6f45;
+  --ok-fundo: #e2f3e9;
+  --erro: #a3271f;
+  --erro-fundo: #fbe6e3;
   --raio: 14px;
   --sombra: 0 1px 2px rgba(34, 26, 43, .06), 0 6px 20px rgba(34, 26, 43, .06);
   --sombra-forte: 0 10px 30px rgba(34, 26, 43, .12);
@@ -30,6 +34,7 @@
     --texto-suave: #b4a9c0; --borda: #3a2f48; --marca: #1f1230; --marca-clara: #c9b2ea;
     --marca-texto: #dcc9f5; --destaque: #e0582f; --destaque-escuro: #f08a63;
     --aviso: #f2c35a; --aviso-fundo: #3a2e10; --destaque-suave: #42241a;
+    --ok: #74d39e; --ok-fundo: #133222; --erro: #ff9b8f; --erro-fundo: #3d1714;
     --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
     --sombra-forte: 0 10px 30px rgba(0, 0, 0, .45);
     color-scheme: dark;
@@ -40,6 +45,7 @@
   --texto-suave: #b4a9c0; --borda: #3a2f48; --marca: #1f1230; --marca-clara: #c9b2ea;
   --marca-texto: #dcc9f5; --destaque: #e0582f; --destaque-escuro: #f08a63;
   --aviso: #f2c35a; --aviso-fundo: #3a2e10; --destaque-suave: #42241a;
+  --ok: #74d39e; --ok-fundo: #133222; --erro: #ff9b8f; --erro-fundo: #3d1714;
   --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
   --sombra-forte: 0 10px 30px rgba(0, 0, 0, .45);
   color-scheme: dark;
@@ -255,6 +261,44 @@ legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
 .politica { font-size: .85rem; color: var(--texto-suave); }
 .nota-reserva { font-size: .85rem; color: var(--texto-suave); text-align: center; margin: 8px 0 0; }
 
+/* ---------- disponibilidade e período ---------- */
+.filtro-check { flex-direction: row !important; align-items: center; gap: 8px !important; min-width: 0 !important; flex: 0 1 auto !important; font-size: .9rem !important; color: var(--texto) !important; padding-bottom: .6em; cursor: pointer; }
+.filtro-check input { width: 18px; height: 18px; accent-color: var(--destaque); }
+.filtro-check:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+.info-data { margin: -12px 0 20px; color: var(--texto-suave); font-size: .92rem; }
+.info-data strong { color: var(--texto); }
+
+.selo {
+  align-self: flex-start; margin-top: 6px; font-size: .75rem; font-weight: 600; border-radius: 6px;
+  padding: .2em .55em; background: var(--fundo-alt); color: var(--texto-suave); font-variant-numeric: tabular-nums;
+}
+.selo--livre { background: var(--ok-fundo); color: var(--ok); }
+.selo--esgotado { background: var(--erro-fundo); color: var(--erro); }
+.cartao--esgotado .cartao__capa { filter: grayscale(.7); opacity: .75; }
+
+.reserva-datas { display: flex; gap: 12px; flex-wrap: wrap; }
+.reserva-datas .campo-data { flex: 1 1 200px; max-width: none; }
+.campo-data select {
+  font: inherit; font-size: 1rem; padding: .65em .8em; border: 1px solid var(--borda);
+  border-radius: 10px; background: var(--superficie); color: var(--texto); width: 100%;
+}
+.periodo { border: 1px solid var(--borda); border-radius: var(--raio); padding: 12px 14px; margin: 8px 0 16px; }
+.periodo__linha { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.periodo__linha div { display: flex; flex-direction: column; min-width: 0; }
+.periodo__linha span { font-size: .75rem; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .04em; }
+.periodo__linha strong { font-size: .98rem; font-variant-numeric: tabular-nums; }
+.periodo__devolver strong { color: var(--destaque-escuro); }
+.periodo__nota { margin: 8px 0 0; font-size: .85rem; color: var(--texto-suave); }
+
+.tam span { flex-direction: column; gap: 0; line-height: 1.15; height: auto !important; min-height: 52px; padding: 6px 12px !important; }
+.tam__estoque { font-size: .7rem; font-weight: 600; color: var(--ok); }
+.tam--esgotado .tam__estoque { color: var(--erro); }
+.tam--esgotado b { text-decoration: line-through; text-decoration-thickness: 2px; opacity: .6; }
+.disp { margin: -6px 0 12px; font-size: .92rem; font-weight: 600; }
+.disp:empty { display: none; }
+.disp--livre { color: var(--ok); }
+.disp--esgotado { color: var(--erro); }
+
 /* ---------- celular ---------- */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -277,5 +321,6 @@ legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
   .ficha__corpo { padding: 18px; }
   .valores { grid-template-columns: 1fr 1fr 1fr; }
   .valores div { padding: 8px; }
+  .periodo__linha strong { font-size: .85rem; }
   .bloco { padding: 24px; }
 }

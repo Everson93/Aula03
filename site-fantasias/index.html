@@ -83,8 +83,10 @@
               <option value="200">R$ 200</option>
             </select>
           </label>
+          <label class="filtro-check"><input type="checkbox" id="filtro-disponivel" disabled> Só com peça livre na data</label>
           <button type="button" class="botao botao--leve" id="limpar-filtros">Limpar</button>
         </div>
+        <p class="info-data" id="info-data" aria-live="polite"></p>
 
         <ul class="grade" id="grade"></ul>
         <p class="vazio" id="vazio" hidden>Nenhuma fantasia com esses filtros. <button type="button" class="link" id="vazio-limpar">Limpar filtros</button> ou <a href="#" id="vazio-whats">pergunte no WhatsApp</a> — o acervo das lojas é maior que a vitrine.</p>
@@ -97,7 +99,7 @@
         <ol class="passos">
           <li>
             <h3>Escolha e informe a data</h3>
-            <p>Confira a tabela de medidas e a sugestão de tamanho pela sua altura e peso. Clique em reservar: a loja confirma a disponibilidade pelo WhatsApp.</p>
+            <p>Informe a data da festa e veja na hora quais tamanhos estão livres, quando retirar e até quando devolver. A sugestão de tamanho usa sua altura e peso.</p>
           </li>
           <li>
             <h3>Garanta com o sinal via Pix</h3>
@@ -131,7 +133,7 @@
         <h2>Dúvidas</h2>
         <details>
           <summary>Por quantos dias fico com a fantasia?</summary>
-          <p>O período padrão é de 3 dias (retira na véspera, devolve no dia seguinte à festa). Cada dia a mais tem o valor mostrado na página da fantasia.</p>
+          <p>O período padrão é de 3 dias: retira na véspera e devolve no dia seguinte à festa. A página da fantasia mostra as duas datas assim que você informa o dia da festa. Se a loja não abre no dia da devolução, ela passa para o próximo dia útil, sem custo. Dá para pedir dias extras, com o valor mostrado na página.</p>
         </details>
         <details>
           <summary>Como funciona a caução?</summary>
@@ -169,6 +171,7 @@
 
   <script src="config.js"></script>
   <script src="dados.js"></script>
+  <script src="agenda.js"></script>
   <script src="logica.js"></script>
   <script src="app.js"></script>
 </body>

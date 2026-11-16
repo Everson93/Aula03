@@ -7,7 +7,7 @@
   var FANTASIAS = window.FANTASIAS;
   var TEMAS = window.TEMAS;
 
-  var estado = { texto: '', tema: '', genero: '', tamanho: '', precoMax: '', dataFesta: '' };
+  var estado = { texto: '', tema: '', genero: '', tamanho: '', precoMax: '', dataFesta: '', soDisponiveis: false };
 
   function $(id) { return document.getElementById(id); }
 
@@ -84,6 +84,7 @@
 
     function limpar() {
       estado.texto = estado.tema = estado.genero = estado.tamanho = estado.precoMax = '';
+      estado.soDisponiveis = false;
       $('busca-texto').value = '';
       ['filtro-tema', 'filtro-genero', 'filtro-tamanho', 'filtro-preco'].forEach(function (id) { $(id).value = ''; });
       renderizarGrade();
@@ -93,7 +94,16 @@
 
     var data = $('busca-data');
     data.min = hojeIso();
-    data.addEventListener('change', function () { estado.dataFesta = data.value; });
+    data.addEventListener('change', function () {
+      estado.dataFesta = data.value;
+      registrar('escolheu_data', { data: data.value });
+      renderizarGrade();
+    });
+    $('filtro-disponivel').addEventListener('change', function (e) {
+      estado.soDisponiveis = e.target.checked;
+      registrar('filtro_disponivel', { valor: e.target.checked });
+      renderizarGrade();
+    });
 
     $('form-busca').addEventListener('submit', function (e) {
       e.preventDefault();
@@ -121,17 +131,42 @@
     return t ? t.nome : id;
   }
 
+  /* ---------- estoque e período ---------- */
+  function agenda() { return window.AGENDA || []; }
+  function margemDe(loja) { return loja.margemHigienizacao == null ? 1 : loja.margemHigienizacao; }
+  function periodoDe(f, extras) { return L.periodoAluguel(estado.dataFesta, hojeIso(), extras || 0, C.lojas[f.loja]); }
+  function dispDe(f, periodo) { return L.disponibilidade(f, agenda(), periodo, margemDe(C.lojas[f.loja])); }
+  function pecas(n) { return n === 1 ? '1 peça' : n + ' peças'; }
+
   function renderizarGrade() {
     var lista = L.filtrar(FANTASIAS, estado);
-    var grade = $('grade');
-    grade.innerHTML = lista.map(function (f) {
+    var comData = !!estado.dataFesta && !!L.periodoAluguel(estado.dataFesta, hojeIso(), 0, {});
+    var info = lista.map(function (f) {
+      var per = comData ? periodoDe(f, 0) : null;
+      var disp = dispDe(f, per);
+      var livres = L.tamanhosLivres(disp);
+      if (estado.tamanho) livres = livres.filter(function (t) { return t === estado.tamanho; });
+      return { f: f, disp: disp, livres: livres };
+    });
+    var comLivre = info.filter(function (x) { return x.livres.length > 0; }).length;
+    if (comData && estado.soDisponiveis) info = info.filter(function (x) { return x.livres.length > 0; });
+
+    $('grade').innerHTML = info.map(function (x) {
+      var f = x.f;
       var loja = C.lojas[f.loja];
-      return '<li><button type="button" class="cartao" data-id="' + esc(f.id) + '">' +
+      var total = Object.keys(x.disp).reduce(function (s, t) { return s + x.disp[t].total; }, 0);
+      var selo = !comData
+        ? '<span class="selo">' + pecas(total) + ' no acervo</span>'
+        : x.livres.length
+          ? '<span class="selo selo--livre">Livre na data: ' + x.livres.map(function (t) { return t + ' (' + x.disp[t].livres.length + ')'; }).join(' · ') + '</span>'
+          : '<span class="selo selo--esgotado">Esgotada nesta data</span>';
+      return '<li><button type="button" class="cartao' + (comData && !x.livres.length ? ' cartao--esgotado' : '') + '" data-id="' + esc(f.id) + '">' +
         capa(f, 'cartao__capa') +
         '<span class="cartao__info">' +
           '<span class="cartao__temas">' + f.temas.map(nomeTema).map(esc).join(' · ') + '</span>' +
           '<span class="cartao__nome">' + esc(f.nome) + '</span>' +
           '<span class="cartao__loja">' + esc(loja.nome) + ' · ' + esc(loja.bairro) + '</span>' +
+          selo +
           '<span class="cartao__rodape">' +
             '<span class="cartao__preco">' + L.formatarPreco(f.preco) + ' <small>/ 3 dias</small></span>' +
             '<span class="cartao__tamanhos">' + L.ordenarTamanhos(Object.keys(f.tamanhos)).join(' ') + '</span>' +
@@ -139,8 +174,20 @@
         '</span></button></li>';
     }).join('');
 
-    $('contagem').textContent = lista.length === 1 ? '1 fantasia' : lista.length + ' fantasias';
-    $('vazio').hidden = lista.length > 0;
+    $('contagem').textContent = info.length === 1 ? '1 fantasia' : info.length + ' fantasias';
+    $('vazio').hidden = info.length > 0;
+
+    var check = $('filtro-disponivel');
+    check.disabled = !comData;
+    check.checked = comData && estado.soDisponiveis;
+    $('info-data').innerHTML = comData
+      ? 'Festa em <strong>' + esc(L.dataComDia(estado.dataFesta)) + '</strong>: ' + comLivre + ' de ' + lista.length +
+        ' com peça livre' + (estado.tamanho ? ' no tamanho ' + esc(estado.tamanho) : '') + '. <button type="button" class="link" id="trocar-data">Trocar data</button>'
+      : 'Informe a <button type="button" class="link" id="trocar-data">data da festa</button> para ver o que está livre.';
+    $('trocar-data').addEventListener('click', function () {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      $('busca-data').focus();
+    });
 
     document.querySelectorAll('.chip').forEach(function (c) {
       c.classList.toggle('chip--ativo', c.dataset.tema === estado.tema);
@@ -149,12 +196,21 @@
   }
 
   /* ---------- ficha da fantasia ---------- */
+  var escolhas = {};   // escolhas por fantasia: voltam iguais se a ficha reabrir
+  var fichaAtual = '';
+
   function abrirFicha(id, origem) {
     var f = FANTASIAS.find(function (x) { return x.id === id; });
     if (!f) return;
+    fichaAtual = f.id;
     var loja = C.lojas[f.loja];
     var tamanhos = L.ordenarTamanhos(Object.keys(f.tamanhos));
-    var sel = { tamanho: tamanhos.length === 1 ? tamanhos[0] : '', kit: [] };
+    var sel = escolhas[f.id] = escolhas[f.id] || { tamanho: tamanhos.length === 1 ? tamanhos[0] : '', kit: [], extras: 0 };
+
+    var opcoesExtras = [0, 1, 2, 3, 4].map(function (n) {
+      var rotulo = n === 0 ? 'Sem dia extra' : '+' + n + (n === 1 ? ' dia' : ' dias') + ' (+' + L.formatarPreco(f.diaExtra * n) + ')';
+      return '<option value="' + n + '"' + (sel.extras === n ? ' selected' : '') + '>' + rotulo + '</option>';
+    }).join('');
 
     var corpo = $('ficha-corpo');
     corpo.innerHTML =
@@ -192,18 +248,25 @@
       '</div>' +
 
       '<h3>Sua reserva</h3>' +
+      '<div class="reserva-datas">' +
+        '<label class="campo-data">Data da festa <input type="date" id="ficha-data" min="' + hojeIso() + '" value="' + esc(estado.dataFesta) + '"></label>' +
+        '<label class="campo-data">Ficar mais dias? <select id="ficha-extras">' + opcoesExtras + '</select></label>' +
+      '</div>' +
+      '<p id="aviso-data" class="aviso-data" hidden></p>' +
+      '<div id="ficha-periodo" class="periodo" aria-live="polite"></div>' +
+
       '<fieldset class="tamanhos"><legend>Tamanho</legend>' +
         tamanhos.map(function (t) {
-          return '<label class="tam"><input type="radio" name="tam" value="' + t + '"' + (sel.tamanho === t ? ' checked' : '') + '><span>' + t + '</span></label>';
+          return '<label class="tam"><input type="radio" name="tam" value="' + t + '"' + (sel.tamanho === t ? ' checked' : '') + '>' +
+            '<span><b>' + t + '</b><small class="tam__estoque" data-tam="' + t + '"></small></span></label>';
         }).join('') +
       '</fieldset>' +
-      '<label class="campo-data">Data da festa <input type="date" id="ficha-data" min="' + hojeIso() + '" value="' + esc(estado.dataFesta) + '"></label>' +
-      '<p id="aviso-data" class="aviso-data" hidden></p>' +
+      '<p id="ficha-disp" class="disp" aria-live="polite"></p>' +
 
       (f.kit.length ?
         '<fieldset class="kit"><legend>Complete o look</legend>' +
           f.kit.map(function (k) {
-            return '<label class="kit__item"><input type="checkbox" value="' + esc(k.id) + '">' +
+            return '<label class="kit__item"><input type="checkbox" value="' + esc(k.id) + '"' + (sel.kit.indexOf(k.id) !== -1 ? ' checked' : '') + '>' +
               '<span>' + esc(k.nome) + ' <small>(' + (k.tipo === 'venda' ? 'é seu' : 'aluguel') + ')</small></span>' +
               '<span class="kit__preco">+ ' + L.formatarPreco(k.preco) + '</span></label>';
           }).join('') +
@@ -211,16 +274,73 @@
 
       '<div class="resumo" id="resumo"></div>' +
       '<p class="politica"><strong>Cancelamento:</strong> ' + esc(loja.politicaCancelamento) +
-        ' <strong>Caução:</strong> devolvida na entrega; só é retida se a vistoria de devolução mostrar dano que não está nas fotos da retirada.</p>' +
+        ' <strong>Caução:</strong> devolvida na entrega; só é retida se a vistoria de devolução mostrar dano que não está nas fotos da retirada.' +
+        ' <strong>Atraso:</strong> cada dia além da devolução é cobrado como dia extra.</p>' +
       '<a class="botao botao--destaque botao--largo" id="botao-reservar" target="_blank" rel="noopener">Reservar pelo WhatsApp</a>' +
       '<p class="nota-reserva" id="nota-reserva"></p>';
 
     var whatsOk = L.numeroWhatsAppValido(loja.whatsapp);
+    var situacao = {};   // última conta de disponibilidade, usada no clique
 
     function atualizar() {
-      var o = L.calcularOrcamento(f, sel.kit, loja.sinal);
+      var per = periodoDe(f, sel.extras);
+      var disp = dispDe(f, per);
+      var o = L.calcularOrcamento(f, sel.kit, loja.sinal, per ? sel.extras : 0);
+      var livreSel = sel.tamanho && disp[sel.tamanho] ? disp[sel.tamanho].livres : null;
+      var indisponivel = !!(per && sel.tamanho && livreSel && !livreSel.length);
+      situacao = { periodo: per, unidade: livreSel && livreSel.length ? livreSel[0] : '', indisponivel: indisponivel };
+
+      // período: quando retirar e quando devolver
+      var caixa = $('ficha-periodo');
+      if (per) {
+        caixa.innerHTML =
+          '<div class="periodo__linha">' +
+            '<div><span>Retire</span><strong>' + esc(L.dataComDia(per.retirada)) + '</strong></div>' +
+            '<div><span>Festa</span><strong>' + esc(L.dataComDia(per.dataFesta)) + '</strong></div>' +
+            '<div class="periodo__devolver"><span>Devolva até</span><strong>' + esc(L.dataComDia(per.devolucao)) + '</strong></div>' +
+          '</div>' +
+          '<p class="periodo__nota">' + per.dias + ' dias com a fantasia' +
+            (per.diasExtras ? ', incluindo ' + per.diasExtras + (per.diasExtras === 1 ? ' dia extra' : ' dias extras') : '') + '.' +
+            (per.devolucaoAdiada ? ' A loja não abre no dia previsto, então a devolução passou para o próximo dia útil, sem custo.' : '') +
+          '</p>';
+        caixa.hidden = false;
+      } else {
+        caixa.innerHTML = '';
+        caixa.hidden = true;
+      }
+
+      // estoque em cada botão de tamanho
+      corpo.querySelectorAll('.tam__estoque').forEach(function (s) {
+        var d = disp[s.dataset.tam];
+        var esgotado = per && !d.livres.length;
+        s.textContent = !per ? pecas(d.total) : esgotado ? 'esgotado' : d.livres.length + (d.livres.length === 1 ? ' livre' : ' livres');
+        s.closest('.tam').classList.toggle('tam--esgotado', !!esgotado);
+      });
+
+      // texto de disponibilidade
+      var txt = $('ficha-disp');
+      var livres = L.tamanhosLivres(disp);
+      if (!per) {
+        txt.className = 'disp';
+        txt.textContent = estado.dataFesta ? '' : 'Escolha a data da festa para ver quantas peças estão livres e quando devolver.';
+      } else if (!sel.tamanho) {
+        txt.className = 'disp' + (livres.length ? '' : ' disp--esgotado');
+        txt.textContent = livres.length
+          ? 'Livre nessa data: ' + livres.map(function (t) { return t + ' (' + disp[t].livres.length + ')'; }).join(', ') + '. Escolha o tamanho.'
+          : 'Esgotada em todos os tamanhos nessa data.' + proxima(null);
+      } else if (indisponivel) {
+        var outros = livres.filter(function (t) { return t !== sel.tamanho; });
+        txt.className = 'disp disp--esgotado';
+        txt.textContent = 'O tamanho ' + sel.tamanho + ' está esgotado nessa data.' +
+          (outros.length ? ' Livre: ' + outros.join(', ') + '.' : '') + proxima(sel.tamanho);
+      } else {
+        txt.className = 'disp disp--livre';
+        txt.textContent = 'Tamanho ' + sel.tamanho + ': ' + livreSel.length + ' de ' + pecas(disp[sel.tamanho].total) + ' livre' + (livreSel.length === 1 ? '' : 's') + ' nessa data.';
+      }
+
       $('resumo').innerHTML =
-        '<div><span>Aluguel</span><span>' + L.formatarPreco(o.aluguel) + '</span></div>' +
+        '<div><span>Aluguel (3 dias)</span><span>' + L.formatarPreco(f.preco) + '</span></div>' +
+        (o.diasExtras ? '<div><span>' + o.diasExtras + (o.diasExtras === 1 ? ' dia extra' : ' dias extras') + '</span><span>' + L.formatarPreco(o.valorDiasExtras) + '</span></div>' : '') +
         (o.kit ? '<div><span>Complementos</span><span>' + L.formatarPreco(o.kit) + '</span></div>' : '') +
         '<div class="resumo__total"><span>Total</span><span>' + L.formatarPreco(o.total) + '</span></div>' +
         '<div class="resumo__sinal"><span>Sinal para garantir (' + o.percentualSinal + '%, via Pix)</span><span>' + L.formatarPreco(o.sinal) + '</span></div>' +
@@ -245,6 +365,7 @@
 
       var botao = $('botao-reservar');
       var nota = $('nota-reserva');
+      botao.textContent = indisponivel ? 'Perguntar outra data ou tamanho' : 'Reservar pelo WhatsApp';
       if (!whatsOk) {
         botao.removeAttribute('href');
         botao.setAttribute('aria-disabled', 'true');
@@ -252,11 +373,19 @@
         return;
       }
       var texto = L.mensagemReserva({
-        nomeSite: C.nomeSite, fantasia: f, tamanho: sel.tamanho, dataFesta: estado.dataFesta, orcamento: o
+        nomeSite: C.nomeSite, fantasia: f, tamanho: sel.tamanho, dataFesta: estado.dataFesta,
+        periodo: per, orcamento: o, indisponivel: indisponivel
       });
       botao.href = L.linkWhatsApp(loja.whatsapp, texto);
       botao.removeAttribute('aria-disabled');
-      nota.textContent = 'A loja confirma a disponibilidade na data e envia a chave Pix do sinal.';
+      nota.textContent = indisponivel
+        ? 'A loja pode ter peça voltando antes ou outra parecida.'
+        : 'A loja confirma a reserva e envia a chave Pix do sinal.';
+    }
+
+    function proxima(tamanho) {
+      var d = L.proximaDataLivre(f, agenda(), estado.dataFesta, hojeIso(), Object.assign({}, loja, { margemHigienizacao: margemDe(loja) }), tamanho);
+      return d ? ' Próxima data de festa livre' + (tamanho ? ' no ' + tamanho : '') + ': ' + L.dataComDia(d) + '.' : '';
     }
 
     corpo.querySelectorAll('input[name="tam"]').forEach(function (r) {
@@ -272,6 +401,11 @@
     $('ficha-data').addEventListener('change', function (e) {
       estado.dataFesta = e.target.value;
       $('busca-data').value = e.target.value;
+      renderizarGrade();
+      atualizar();
+    });
+    $('ficha-extras').addEventListener('change', function (e) {
+      sel.extras = Number(e.target.value) || 0;
       atualizar();
     });
 
@@ -298,18 +432,20 @@
 
     $('botao-reservar').addEventListener('click', function (e) {
       if (!whatsOk) { e.preventDefault(); return; }
-      registrar('clique_reservar', {
-        id: f.id, loja: f.loja, tamanho: sel.tamanho || '', temData: !!estado.dataFesta, itensKit: sel.kit.length
+      var per = situacao.periodo;
+      registrar(situacao.indisponivel ? 'clique_pedir_outra_data' : 'clique_reservar', {
+        id: f.id, loja: f.loja, tamanho: sel.tamanho || '', temData: !!per, itensKit: sel.kit.length,
+        diasExtras: per ? per.diasExtras : 0,
+        retirada: per ? per.retirada : '', devolucao: per ? per.devolucao : '', unidade: situacao.unidade
       });
     });
 
     atualizar();
     var dlg = $('ficha');
-    if (!dlg.open) dlg.showModal();
-    dlg.scrollTop = 0;
+    if (!dlg.open) { dlg.showModal(); dlg.scrollTop = 0; }
     // "#f-HW01": nome simples no hash (sem "/"), que sobrevive a qualquer hospedagem.
     trocarHash('#f-' + f.id);
-    registrar('abrir_ficha', { id: f.id, origem: origem });
+    if (origem !== 'atualizacao') registrar('abrir_ficha', { id: f.id, origem: origem });
   }
 
   function ligarFicha() {
@@ -356,6 +492,20 @@
       el.addEventListener('click', function () { registrar(a[1], {}); });
     });
   }
+
+  /* Para a simulação (ou uma futura integração) atualizar a vitrine depois
+   * que a agenda muda, e escolher a data da festa por fora. */
+  window.FantasiaApp = {
+    atualizar: function () {
+      renderizarGrade();
+      if ($('ficha').open && fichaAtual) abrirFicha(fichaAtual, 'atualizacao');
+    },
+    definirData: function (iso) {
+      estado.dataFesta = iso;
+      $('busca-data').value = iso;
+      this.atualizar();
+    }
+  };
 
   /* ---------- início ---------- */
   document.querySelectorAll('[data-nome-site]').forEach(function (el) { el.textContent = C.nomeSite; });

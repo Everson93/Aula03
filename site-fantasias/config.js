@@ -11,12 +11,17 @@ window.CONFIG = {
   whatsappCentral: '',
 
   // Cada loja parceira. "sinal" é o percentual cobrado para garantir (30 a 50).
+  // "margemHigienizacao": dias que a peça fica parada depois da devolução (padrão 1).
+  // "diasFechados": dias sem atendimento, 0 = domingo ... 6 = sábado. Retirada e
+  // devolução nunca caem nesses dias.
   lojas: {
     lantejoula: {
       nome: 'Ateliê Lantejoula',
       bairro: 'Centro',
       whatsapp: '',
       sinal: 30,
+      margemHigienizacao: 1,
+      diasFechados: [0],
       politicaCancelamento: 'Até 7 dias antes da retirada: sinal devolvido integralmente. Depois disso, o sinal vira crédito para outra data.'
     },
     figurino: {
@@ -24,6 +29,8 @@ window.CONFIG = {
       bairro: 'Jardim',
       whatsapp: '',
       sinal: 40,
+      margemHigienizacao: 1,
+      diasFechados: [0],
       politicaCancelamento: 'Até 7 dias antes da retirada: sinal devolvido integralmente. Depois disso, 50% do sinal é devolvido.'
     },
     bau: {
@@ -31,6 +38,8 @@ window.CONFIG = {
       bairro: 'Vila Nova',
       whatsapp: '',
       sinal: 50,
+      margemHigienizacao: 1,
+      diasFechados: [0],
       politicaCancelamento: 'Até 7 dias antes da retirada: sinal devolvido integralmente. Depois disso, o sinal não é devolvido.'
     }
   },
