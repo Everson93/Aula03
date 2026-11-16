@@ -144,7 +144,10 @@
     raiz.querySelectorAll('.sis-nav__item').forEach(function (b) { b.setAttribute('aria-current', b.dataset.pagina === pagina ? 'page' : 'false'); });
     var cx = LOJA.caixaAberto();
     var bc = $('sis-caixa');
-    if (cx) {
+    if (cx && LOJA.caixaDeOutroDia()) {
+      bc.className = 'sis-caixa sis-caixa--fechado';
+      bc.innerHTML = '<span class="sis-luz"></span>Caixa de ' + esc(L.dataBR(cx.abertoEm.dia).slice(0, 5)) + ' aberto · fechar';
+    } else if (cx) {
       var e = L.esperadoCaixa(cx);
       bc.className = 'sis-caixa sis-caixa--aberto';
       bc.innerHTML = '<span class="sis-luz"></span>Caixa aberto · ' + R$(e.dinheiro) + ' na gaveta';
@@ -257,7 +260,8 @@
       tile('Atrasados', atr.length, atr.length ? 'erro' : '') +
       tile('Pedidos do site', pend.length, pend.length ? 'aviso' : '') +
       tile('Recebido hoje', R$(recebido), '', cx ? 'no caixa aberto' : 'caixa fechado') + '</div>';
-    if (!cx) html += '<div class="sis-alerta"><span>O caixa está fechado: sem ele não dá para receber sinal, saldo nem caução.</span>' + botao('ir', '', 'Abrir o caixa', true, ' data-pagina="caixa"') + '</div>';
+    if (cx && LOJA.caixaDeOutroDia()) html += '<div class="sis-alerta"><span>O caixa de ' + esc(L.dataBR(cx.abertoEm.dia)) + ' ainda está aberto. Confira e feche antes de receber hoje.</span>' + botao('ir', '', 'Fechar o caixa', true, ' data-pagina="caixa"') + '</div>';
+    else if (!cx) html += '<div class="sis-alerta"><span>O caixa está fechado: sem ele não dá para receber sinal, saldo nem caução.</span>' + botao('ir', '', 'Abrir o caixa', true, ' data-pagina="caixa"') + '</div>';
     if (sols.length) html += '<div class="sis-alerta sis-alerta--aviso"><span>' + sols.length + ' pedido(s) de cliente sobre os dados dele, com prazo de resposta.</span>' + botao('ir', '', 'Ver em Privacidade', false, ' data-pagina="privacidade"') + '</div>';
 
     if (pend.length) html += cartao('Pedidos do site aguardando sinal', 'O cliente reservou pelo site e combina o Pix no WhatsApp. A peça fica segura por ' + LOJA.MINUTOS_PENDENTE + ' minutos.',
@@ -455,9 +459,16 @@
     $('pdv-complementos').innerHTML = '<div class="sis-tabela-rolagem"><table class="sis-tabela sis-tabela--compacta"><tbody>' + comps.slice(0, 14).map(function (k) {
       var at = carrinho.complementos.find(function (c) { return c.fantasia === k.fantasia && c.kitId === k.kitId; });
       var dados = esc(JSON.stringify(k));
-      return '<tr><td>' + esc(k.nome) + ' <small class="sis-mudo">(' + (k.tipo === 'venda' ? 'venda' : 'aluguel') + ')</small></td><td class="sis-num">' + R$(k.preco) + '</td>' +
-        '<td class="sis-qtd"><button type="button" class="pn-icone" data-pdv="comp-menos" data-v="' + dados + '" aria-label="Tirar um">−</button><span>' + (at ? at.qtd : 0) + '</span>' +
-        '<button type="button" class="pn-icone" data-pdv="comp-mais" data-v="' + dados + '" aria-label="Pôr um">+</button></td></tr>';
+      var qtd = at ? at.qtd : 0;
+      // Acessório de aluguel: só com peça alugada (tem devolução) e até o estoque livre na data.
+      var info = '', podeMais = true;
+      if (k.tipo === 'aluguel') {
+        if (!carrinho.itens.length || !per) { info = 'só junto com peça alugada'; podeMais = false; }
+        else { var liv = LOJA.kitLivres(k.fantasia, k.kitId, per); info = liv + (liv === 1 ? ' livre' : ' livres') + ' na data'; podeMais = qtd < liv; }
+      }
+      return '<tr><td>' + esc(k.nome) + ' <small class="sis-mudo">(' + (k.tipo === 'venda' ? 'venda' : 'aluguel' + (info ? ' · ' + info : '')) + ')</small></td><td class="sis-num">' + R$(k.preco) + '</td>' +
+        '<td class="sis-qtd"><button type="button" class="pn-icone" data-pdv="comp-menos" data-v="' + dados + '" aria-label="Tirar um">−</button><span>' + qtd + '</span>' +
+        '<button type="button" class="pn-icone" data-pdv="comp-mais" data-v="' + dados + '" aria-label="Pôr um"' + (podeMais ? '' : ' disabled') + '>+</button></td></tr>';
     }).join('') + '</tbody></table></div>';
 
     // itens do cupom
@@ -498,6 +509,11 @@
     if (carrinho.itens.length && !carrinho.clienteId) e.push('Aluguel precisa de cliente cadastrado (vai no contrato).');
     if (carrinho.itens.length && !per) e.push('Escolha a data da festa.');
     if (conflitos().length) e.push('Tire as peças marcadas: não estão livres nessa data.');
+    var aluguelAcess = carrinho.complementos.filter(function (k) { return k.tipo === 'aluguel'; });
+    if (aluguelAcess.length && !carrinho.itens.length) e.push('Acessório de aluguel só vai junto com uma peça alugada: tire-o ou ponha a peça.');
+    else if (per) aluguelAcess.forEach(function (k) {
+      if (k.qtd > LOJA.kitLivres(k.fantasia, k.kitId, per)) e.push(k.nome + ': não há ' + k.qtd + ' livres nessa data.');
+    });
     var d = lerValor(carrinho.desconto);
     if (carrinho.desconto && !(d >= 0)) e.push('Desconto em reais, por exemplo 10,00.');
     if (d > 0 && !carrinho.motivoDesconto.trim()) e.push('Diga o motivo do desconto (fica no pedido).');
@@ -510,7 +526,7 @@
     ul.innerHTML = e.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
     ul.hidden = !e.length;
     if (e.length) return;
-    if (!LOJA.caixaAberto()) { pedirCaixa(irPagamento); return; }
+    if (!caixaPronto()) { pedirCaixa(irPagamento); return; }
     var v = valoresCarrinho();
     var temAluguel = carrinho.itens.length > 0;
     var devido = !temAluguel || carrinho.recebe === 'total' ? v.total : v.sinal;
@@ -607,7 +623,17 @@
     return { linhas: lido, resultado: conta };
   }
 
+  function caixaPronto() { return !!LOJA.caixaAberto() && !LOJA.caixaDeOutroDia(); }
+
   function pedirCaixa(depois) {
+    if (LOJA.caixaDeOutroDia()) {
+      var velho = LOJA.caixaAberto();
+      abrirModal('Feche o caixa de ' + esc(L.dataBR(velho.abertoEm.dia)), '<p>O caixa aberto é de outro dia. Confira e feche esse caixa, e abra o de hoje com o dinheiro que está na gaveta.</p>',
+        '<button type="button" class="botao botao--leve" id="cx-voltar">Voltar</button>' + botao('ir', '', 'Ir para o caixa', true, ' data-pagina="caixa"'));
+      $('cx-voltar').addEventListener('click', function () { modal.close(); });
+      modal.querySelector('[data-pagina="caixa"]').addEventListener('click', function () { modal.close(); });
+      return;
+    }
     abrirModal('Abrir o caixa', '<p>Para receber pagamentos, abra o caixa com o dinheiro que está na gaveta para troco.</p>' +
       '<div class="pn-campos"><label>Fundo de troco (R$) <input id="cx-fundo" inputmode="decimal" value="100,00"></label></div><p class="pn-msg pn-msg--erro" id="cx-erro" hidden></p>',
       '<button type="button" class="botao botao--leve" id="cx-voltar">Voltar</button><button type="button" class="botao botao--destaque" id="cx-abrir">Abrir caixa</button>');
@@ -707,7 +733,7 @@
         : '<p>Faltam ' + Math.max(0, rb.diasAntes) + ' dias para a retirada (menos de 7). Pela política do ateliê, os <strong>' + R$(pago) + '</strong> pagos viram crédito na loja para o cliente usar em outra data.</p>') +
       '<button type="button" class="botao botao--destaque" id="pd-ok">' + (rb.integral ? 'Cancelar e estornar ' + R$(pago) : 'Cancelar e gerar crédito de ' + R$(pago)) + '</button></div>';
     $('pd-ok').addEventListener('click', function () {
-      if (rb.integral && !LOJA.caixaAberto()) { pedirCaixa(function () { mostrarCancelamentoDepois(p, rb); }); return; }
+      if (rb.integral && !caixaPronto()) { pedirCaixa(function () { mostrarCancelamentoDepois(p, rb); }); return; }
       mostrarCancelamentoDepois(p, rb);
     });
   }
@@ -719,7 +745,7 @@
 
   // Pedido do site: escolhe ou cadastra o cliente e registra o Pix do sinal.
   function abrirSinal(id) {
-    if (!LOJA.caixaAberto()) { pedirCaixa(function () { abrirSinal(id); }); return; }
+    if (!caixaPronto()) { pedirCaixa(function () { abrirSinal(id); }); return; }
     var p = LOJA.porId(id);
     var escolhido = '';
     abrirModal('Sinal recebido · ' + p.id, cabeca(p) +
@@ -838,7 +864,8 @@
     };
     setTimeout(function () { ligarBusca('sis-busca-ret', function (v) { buscaRetirada = v; }); });
     return '<div class="sis-barra"><input type="search" id="sis-busca-ret" class="pn-busca" placeholder="Código do pedido (P0001), nome, CPF ou WhatsApp do cliente" value="' + esc(buscaRetirada) + '"></div>' +
-      '<p class="pn-dica">O cliente reservou pelo site ou no balcão e veio buscar. Peça o código do pedido (vai na mensagem do WhatsApp) ou busque pelo nome ou CPF.</p>' +
+      '<p class="pn-dica">O cliente reservou e veio buscar. Busque pelo nome, CPF, WhatsApp, código do pedido ou da fantasia (ex.: JN05). ' +
+        'No site publicado, a reserva chega pelo WhatsApp com o código da fantasia: registre-a em <strong>Nova venda</strong> quando o sinal entrar, e ela aparece aqui no dia.</p>' +
       cartao(t ? 'Resultado da busca' : 'Para retirar hoje', '', tabelaPedidos(lista.map(fila), t ? 'Nenhum pedido a retirar com essa busca.' : 'Ninguém para retirar hoje.')) +
       (prox.length ? cartao('Próximos 7 dias', 'Retirada antes do dia marcado não é liberada: a peça pode estar com outro cliente.', tabelaPedidos(prox.map(function (p) { return linha(p, 'retira ' + curta(p.retirada), ''); }), '')) : '');
   }
@@ -923,7 +950,7 @@
     $('rt-assinou').addEventListener('change', function (e) { ret.assinado = e.target.checked; });
     $('rt-contrato').addEventListener('click', function () { abrirContrato(previaRetirada(), 'Prévia: os pagamentos e a vistoria entram como estão na tela agora.'); });
     $('rt-ok').addEventListener('click', function () {
-      if (!LOJA.caixaAberto()) { pedirCaixa(function () { render(); }); return; }
+      if (!caixaPronto()) { pedirCaixa(function () { render(); }); return; }
       var p2 = LOJA.porId(ret.id);
       var cid = p2.clienteId || ret.clienteId;
       var faltam = FOTOS.filter(function (f) { return !ret.fotos[f[0]]; }).map(function (f) { return f[1].toLowerCase(); });
@@ -979,7 +1006,7 @@
   }
 
   function abrirDevolucao(id) {
-    if (!LOJA.caixaAberto()) { pedirCaixa(function () { abrirDevolucao(id); }); return; }
+    if (!caixaPronto()) { pedirCaixa(function () { abrirDevolucao(id); }); return; }
     var p = LOJA.porId(id);
     var diaExtra = p.itens.reduce(function (s, it) { return s + it.diaExtra; }, 0);
     var atraso = Math.max(0, L.diasEntre(p.devolucao, dia()) || 0);
@@ -1269,7 +1296,7 @@
         Object.keys(FORMAS).map(function (f) {
           return '<tr><td>' + FORMAS[f].nome + (f === 'vale' ? ' <small class="sis-mudo">(não é dinheiro)</small>' : '') + '</td><td class="sis-num">' + R$(ent[f] / 100) + '</td><td class="sis-num">' + R$(sai[f] / 100) + '</td><td class="sis-num"><strong>' + R$(e[f]) + '</strong></td></tr>';
         }).join('') + '</tbody></table></div>',
-        '<div class="sis-botoes">' + '<button type="button" class="botao botao--leve pn-botao" id="cx-sup">Suprimento</button><button type="button" class="botao botao--leve pn-botao" id="cx-san">Sangria</button>' +
+        '<div class="sis-botoes">' + (LOJA.caixaDeOutroDia() ? '<span class="pn-msg pn-msg--erro">Caixa de outro dia: só falta fechar.</span>' : '<button type="button" class="botao botao--leve pn-botao" id="cx-sup">Suprimento</button><button type="button" class="botao botao--leve pn-botao" id="cx-san">Sangria</button>') +
         '<button type="button" class="botao botao--destaque pn-botao" id="cx-fechar">Fechar caixa</button></div>') +
       cartao('Lançamentos', '', cx.movimentos.length ? '<div class="sis-tabela-rolagem"><table class="sis-tabela"><thead><tr><th>Hora</th><th>O quê</th><th>Forma</th><th>Atendente</th><th class="sis-num">Valor</th></tr></thead><tbody>' +
         cx.movimentos.slice().reverse().map(function (m) {

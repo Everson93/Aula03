@@ -311,6 +311,18 @@ prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.enderec
   prova('contrato: com dados do ateliê, sem pendências e cidade da assinatura', !g3.pendencias.length && g3.html.includes('12.345.678/0001-90') && g3.html.includes('Belém, 5 de fevereiro de 2027'));
 }
 
+/* ---------- estoque de acessório alugado ---------- */
+{
+  const perK = { retirada: '2027-02-05', devolucao: '2027-02-08' };
+  prova('acessório: sem reservas, todo o estoque', L.kitLivres(3, [], perK, 1) === 3);
+  prova('acessório: reserva no período ocupa', L.kitLivres(3, [{ retirada: '2027-02-05', devolucao: '2027-02-08', qtd: 2 }], perK, 1) === 1);
+  prova('acessório: margem de higienização conta', L.kitLivres(1, [{ retirada: '2027-02-01', devolucao: '2027-02-04', qtd: 1 }], perK, 1) === 0);
+  prova('acessório: duas reservas em sequência contam o pico, não a soma',
+    L.kitLivres(2, [{ retirada: '2027-02-01', devolucao: '2027-02-05', qtd: 1 }, { retirada: '2027-02-08', devolucao: '2027-02-10', qtd: 1 }], perK, 0) === 1);
+  prova('acessório: nunca negativo', L.kitLivres(1, [{ retirada: '2027-02-05', devolucao: '2027-02-08', qtd: 3 }], perK, 1) === 0);
+  prova('acessório: sem período, estoque inteiro', L.kitLivres(2, [{ retirada: '2027-02-05', devolucao: '2027-02-08', qtd: 2 }], null, 1) === 2);
+}
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();
@@ -330,6 +342,7 @@ for (const f of FANTASIAS) {
   const kitIds = (f.kit || []).map(k => k.id);
   prova(q + ': kit com ids únicos', new Set(kitIds).size === kitIds.length);
   prova(q + ': kit com tipo válido', (f.kit || []).every(k => ['venda', 'aluguel'].includes(k.tipo) && k.preco > 0));
+  prova(q + ': acessório de aluguel tem estoque', (f.kit || []).filter(k => k.tipo === 'aluguel').every(k => Number.isInteger(k.estoque) && k.estoque > 0));
   prova(q + ': nome sem marca registrada', !proibidos.test(f.nome + ' ' + f.descricao + ' ' + (f.palavras || []).join(' ')), f.nome);
   prova(q + ': cor hexadecimal', /^#[0-9a-f]{6}$/i.test(f.cor), f.cor);
   prova(q + ': reposição maior que a caução', f.reposicao > f.caucao, [f.reposicao, f.caucao]);
@@ -442,6 +455,9 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
     endereco: { cep: '66010000', rua: 'Rua A', numero: '10', bairro: 'Centro', cidade: 'Belém', uf: 'PA' }, marketing: false };
   const cli = S.salvarCliente(dadosCli);
   prova('cliente salvo com WhatsApp normalizado e aviso registrado', cli.id && cli.whatsapp === '5591988887777' && cli.avisoPrivacidade.versao && !cli.marketing.consentido);
+  const outroEx = S.clientes().find(x => x.origem === 'exemplo');
+  const rCorr = S.salvarCliente(Object.assign({}, cli, { id: cli.id, cpf: outroEx.cpf, avisoPrivacidade: true }));
+  prova('correção de cadastro não aceita CPF de outro cliente', rCorr.erro && S.clientes().filter(c => c.cpf === outroEx.cpf).length === 1, rCorr);
   prova('CPF repetido não cria outro cadastro', S.salvarCliente(dadosCli).erro && S.clientes().filter(c => c.cpf === '52998224725').length === 1);
   S.definirMarketing(cli.id, true);
   prova('consentimento de marketing registrado com data e versão', S.clientePorId(cli.id).marketing.consentido && S.clientePorId(cli.id).marketing.em === S.dia());
@@ -468,7 +484,13 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   prova('crédito parcelado guardado com as parcelas', r.pagamentos.some(p => p.forma === 'credito' && p.parcelas === 2));
 
   // devolução atrasada com dano: caução devolvida em dinheiro sai do caixa
+  // virada do dia: fecha o caixa de ontem (conferido) e abre o de hoje com o dinheiro da gaveta
+  const ontem = L.esperadoCaixa(S.caixaAberto());
   S.definirDia(L.somarDias(per.devolucao, 2));
+  prova('caixa de ontem aberto é detectado na virada', S.caixaDeOutroDia());
+  const fechOntem = S.fecharCaixa({ dinheiro: ontem.dinheiro, pix: ontem.pix, debito: ontem.debito, credito: ontem.credito });
+  prova('caixa de ontem fecha conferido', fechOntem.conferencia.confere && ontem.dinheiro === 340 && ontem.credito === 140, ontem);
+  S.abrirCaixa(ontem.dinheiro);
   const ag = jan.AGENDA.find(x => x.unidade === 'JN05-M-2' && x.retirada === per.retirada);
   prova('peça atrasada continua bloqueada até hoje', ag.devolucao === S.dia(), ag);
   const acerto = L.acertoDevolucao({ caucao: 120, danos: [{ descricao: 'botão', valor: 5 }], diasAtraso: 2, valorDiaAtraso: 50 });
@@ -476,12 +498,12 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   r = S.porId(b.id);
   prova('devolução: concluída, devolve 15 da caução', r.status === 'concluida' && r.acerto.devolver === 15 && r.pagamentos.some(p => p.tipo === 'caucao_devolvida' && p.valor === 15), r.acerto);
   esp = L.esperadoCaixa(S.caixaAberto());
-  prova('caixa: 220 + 120 caução − 15 devolvidos = 325 em dinheiro', esp.dinheiro === 325 && esp.credito === 140, esp);
+  prova('caixa de hoje: fundo 340 (gaveta de ontem) − 15 devolvidos = 325', esp.dinheiro === 325 && esp.credito === 0, esp);
   prova('situação: higienização no dia da devolução', L.situacaoUnidade('JN05-M-2', S.linhasPorPeca(), S.dia(), 1).estado === 'higienizacao');
 
   // sangria, suprimento e fechamento com conferência cega
   S.sangria(100, 'depósito'); S.suprimento(10, 'troco');
-  const fechado = S.fecharCaixa({ dinheiro: 230, pix: 40, debito: 0, credito: 140 });
+  const fechado = S.fecharCaixa({ dinheiro: 230, pix: 0, debito: 0, credito: 0 });
   prova('fechamento acha os R$ 5 faltando no dinheiro', fechado.fechadoEm && !fechado.conferencia.confere && fechado.conferencia.diferenca === -5, fechado.conferencia);
   prova('vale não entra na conferência da gaveta', !fechado.conferencia.linhas.some(l => l.forma === 'vale'));
 
@@ -494,6 +516,26 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   prova('cancelou a 3 dias: sinal vira crédito na loja', S.porId(c2.id).status === 'cancelada' && S.clientePorId(cli.id).credito === 28.5);
   S.criarPedidoBalcao({ clienteId: cli.id, periodo: null, itens: [], complementos: [{ nome: 'Lápis', preco: 8, qtd: 1 }], desconto: { valor: 0 }, linhas: [{ forma: 'vale', valor: 8 }] });
   prova('vale abate do crédito', S.clientePorId(cli.id).credito === 20.5);
+
+  // venda avulsa não leva acessório de aluguel; com peça, o acessório ocupa estoque
+  let erroAvulsa = '';
+  try { S.criarPedidoBalcao({ clienteId: null, periodo: null, itens: [], complementos: [{ fantasia: 'HW01', kitId: 'vassoura', nome: 'Vassoura', tipo: 'aluguel', preco: 15, qtd: 1 }], desconto: { valor: 0 }, linhas: [{ forma: 'dinheiro', valor: 15 }] }); } catch (e) { erroAvulsa = e.message; }
+  prova('acessório de aluguel não sai em venda avulsa', /só vai junto com uma peça alugada/.test(erroAvulsa));
+  const perK2 = L.periodoAluguel(L.somarDias(S.dia(), 1), S.dia(), 0, lojaN);
+  const antesK = S.kitLivres('HW01', 'vassoura', perK2);
+  S.criarPedidoBalcao({ clienteId: 'CE003', periodo: perK2, itens: [{ fantasia: 'HW01', tamanho: 'M', unidade: 'HW01-M-3', preco: 140, diaExtra: 35, caucao: 100 }],
+    complementos: [{ fantasia: 'HW01', kitId: 'vassoura', nome: 'Vassoura decorativa', tipo: 'aluguel', preco: 15, qtd: 2 }], desconto: { valor: 0 }, recebe: 'total', linhas: [{ forma: 'pix', valor: 170, confirmado: true }] });
+  prova('acessório alugado baixa o estoque na data (3 → 1)', antesK === 3 && S.kitLivres('HW01', 'vassoura', perK2) === 1, [antesK, S.kitLivres('HW01', 'vassoura', perK2)]);
+  prova('agenda de acessórios publicada para o site', jan.AGENDA_KITS.some(k => k.kitId === 'vassoura' && k.qtd === 2));
+
+  // caixa é do dia
+  const diaCx = S.dia();
+  S.definirDia(L.somarDias(diaCx, 1));
+  let erroDia = '';
+  try { S.criarPedidoBalcao({ clienteId: null, periodo: null, itens: [], complementos: [{ nome: 'Lápis', tipo: 'venda', preco: 8, qtd: 1 }], desconto: { valor: 0 }, linhas: [{ forma: 'dinheiro', valor: 8 }] }); } catch (e) { erroDia = e.message; }
+  prova('caixa de ontem não recebe hoje', S.caixaDeOutroDia() && erroDia === 'Caixa de outro dia');
+  S.definirDia(diaCx);
+  prova('no próprio dia o caixa recebe', !S.caixaDeOutroDia());
 
   // LGPD: eliminação respeita a guarda; anonimizar tira os dados e mantém o histórico
   const sit = S.situacaoEliminacao(cli.id);

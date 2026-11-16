@@ -267,6 +267,7 @@ legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
 .kit__item input { width: 20px; height: 20px; accent-color: var(--destaque); }
 .kit__item small { color: var(--texto-suave); }
 .kit__preco { margin-left: auto; font-weight: 600; white-space: nowrap; }
+.kit__item--esgotado { opacity: .5; cursor: not-allowed; }
 
 .resumo { background: var(--fundo-alt); border-radius: var(--raio); padding: 14px 16px; margin: 16px 0; }
 .resumo div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: .95rem; }

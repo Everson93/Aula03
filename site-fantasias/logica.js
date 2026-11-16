@@ -175,6 +175,24 @@
     return erros;
   }
 
+  /* Acessório alugado (vassoura, chapéu, espada) não tem etiqueta por peça:
+   * tem quantidade. Livres = estoque − o pico de uso em qualquer dia do período
+   * pedido (cada reserva ocupa da retirada até a devolução + margem). Pico por
+   * dia, e não soma de tudo que cruza o período: duas reservas em sequência não
+   * contam em dobro. reservas: [{ retirada, devolucao, qtd }] */
+  function kitLivres(estoque, reservas, periodo, margem) {
+    var total = Math.max(0, Math.floor(Number(estoque) || 0));
+    if (!periodo) return total;
+    var fim = somarDias(periodo.devolucao, margem || 0), pico = 0;
+    for (var dia = periodo.retirada, i = 0; dia <= fim && i < 60; dia = somarDias(dia, 1), i++) {
+      var uso = (reservas || []).reduce(function (s, r) {
+        return s + (r.retirada <= dia && dia <= somarDias(r.devolucao, margem || 0) ? (r.qtd || 1) : 0);
+      }, 0);
+      if (uso > pico) pico = uso;
+    }
+    return Math.max(0, total - pico);
+  }
+
   /* ---------- balcão e painel do ateliê ---------- */
 
   // CPF pelos dois dígitos verificadores. Rejeita sequências repetidas (111.111.111-11).
@@ -533,6 +551,7 @@
     tamanhosLivres: tamanhosLivres,
     proximaDataLivre: proximaDataLivre,
     validarAgenda: validarAgenda,
+    kitLivres: kitLivres,
     cpfValido: cpfValido,
     FORMAS_PAGAMENTO: FORMAS_PAGAMENTO,
     dividirParcelas: dividirParcelas,

@@ -15,6 +15,7 @@
  *   estoque    { P: 2, M: 3 } — quantas peças físicas de cada tamanho
  *   inclui     o que vem na peça
  *   kit        complementos; tipo 'venda' (descartável) ou 'aluguel'
+ *              (de aluguel: estoque = quantas unidades o ateliê tem)
  *   fotos      caminhos das fotos reais, ex.: ['fotos/bruxa-1.jpg']
  *              (vazio = cartão ilustrativo com a cor da peça)
  */
@@ -37,7 +38,7 @@ window.FANTASIAS = [
     estoque: { P: 2, M: 3, G: 2 },
     inclui: ['Vestido', 'Chapéu', 'Cinto de corda'],
     kit: [
-      { id: 'vassoura', nome: 'Vassoura decorativa', tipo: 'aluguel', preco: 15 },
+      { id: 'vassoura', nome: 'Vassoura decorativa', tipo: 'aluguel', preco: 15, estoque: 3 },
       { id: 'maq-verde', nome: 'Maquiagem verde e preta', tipo: 'venda', preco: 22 }
     ],
     palavras: ['feiticeira'], fotos: []
@@ -102,8 +103,8 @@ window.FANTASIAS = [
     estoque: { PP: 1, P: 2, M: 2, G: 2 },
     inclui: ['Vestido', 'Faixa com pena', 'Colar de pérolas'],
     kit: [
-      { id: 'piteira', nome: 'Piteira cenográfica', tipo: 'aluguel', preco: 10 },
-      { id: 'luvas', nome: 'Luvas longas', tipo: 'aluguel', preco: 15 }
+      { id: 'piteira', nome: 'Piteira cenográfica', tipo: 'aluguel', preco: 10, estoque: 3 },
+      { id: 'luvas', nome: 'Luvas longas', tipo: 'aluguel', preco: 15, estoque: 3 }
     ],
     palavras: ['charleston', 'gatsby'], fotos: []
   },
@@ -163,7 +164,7 @@ window.FANTASIAS = [
     estoque: { PP: 1, P: 2, M: 3, G: 2 },
     inclui: ['Vestido', 'Laço de cabelo'],
     kit: [
-      { id: 'chapeu-palha', nome: 'Chapéu de palha', tipo: 'aluguel', preco: 12 },
+      { id: 'chapeu-palha', nome: 'Chapéu de palha', tipo: 'aluguel', preco: 12, estoque: 3 },
       { id: 'sardas', nome: 'Lápis para sardas', tipo: 'venda', preco: 8 }
     ],
     palavras: ['sao joao', 'quadrilha', 'arraia'], fotos: []
@@ -175,7 +176,7 @@ window.FANTASIAS = [
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180], GG: [114, 102, 116, 186] },
     estoque: { M: 3, G: 2, GG: 1 },
     inclui: ['Camisa', 'Calça', 'Lenço'],
-    kit: [{ id: 'chapeu-palha2', nome: 'Chapéu de palha', tipo: 'aluguel', preco: 12 }],
+    kit: [{ id: 'chapeu-palha2', nome: 'Chapéu de palha', tipo: 'aluguel', preco: 12, estoque: 3 }],
     palavras: ['sao joao', 'quadrilha', 'arraia'], fotos: []
   },
   {
@@ -206,7 +207,7 @@ window.FANTASIAS = [
     estoque: { PP: 1, P: 3, M: 3, G: 2, GG: 1 },
     inclui: ['Vestido', 'Bolero', 'Fita'],
     kit: [
-      { id: 'chapeu-palha3', nome: 'Chapéu de palha com flores', tipo: 'aluguel', preco: 15 },
+      { id: 'chapeu-palha3', nome: 'Chapéu de palha com flores', tipo: 'aluguel', preco: 15, estoque: 3 },
       { id: 'sardas4', nome: 'Lápis para sardas', tipo: 'venda', preco: 8 }
     ],
     palavras: ['chita', 'sao joao', 'quadrilha', 'arraia'], fotos: []
@@ -246,7 +247,7 @@ window.FANTASIAS = [
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180] },
     estoque: { M: 3, G: 2 },
     inclui: ['Paletó', 'Calça', 'Camisa'],
-    kit: [{ id: 'peruca-black', nome: 'Peruca black power', tipo: 'aluguel', preco: 25 }],
+    kit: [{ id: 'peruca-black', nome: 'Peruca black power', tipo: 'aluguel', preco: 25, estoque: 3 }],
     palavras: ['discoteca', 'anos 70', 'dancing'], fotos: []
   },
   {
@@ -275,7 +276,7 @@ window.FANTASIAS = [
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180] },
     estoque: { M: 1, G: 1 },
     inclui: ['Túnica', 'Cota de malha', 'Peitoral', 'Elmo', 'Escudo'],
-    kit: [{ id: 'espada', nome: 'Espada de espuma', tipo: 'aluguel', preco: 20 }],
+    kit: [{ id: 'espada', nome: 'Espada de espuma', tipo: 'aluguel', preco: 20, estoque: 3 }],
     palavras: ['armadura', 'templario'], fotos: []
   },
   {
@@ -296,7 +297,7 @@ window.FANTASIAS = [
     inclui: ['Casaca', 'Camisa', 'Faixa', 'Chapéu'],
     kit: [
       { id: 'tapa-olho', nome: 'Tapa-olho', tipo: 'venda', preco: 6 },
-      { id: 'espada-pirata', nome: 'Espada de espuma', tipo: 'aluguel', preco: 20 }
+      { id: 'espada-pirata', nome: 'Espada de espuma', tipo: 'aluguel', preco: 20, estoque: 3 }
     ],
     palavras: ['capitao', 'navio'], fotos: []
   },

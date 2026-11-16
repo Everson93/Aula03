@@ -148,8 +148,31 @@
     });
   }
 
+  // Acessórios alugados em cada pedido ativo ou já devolvido (para o pico de uso por dia).
+  function agendaKits() {
+    var dia = estado.dia;
+    var out = [];
+    todos(dia).forEach(function (p) {
+      if (['pendente', 'confirmada', 'retirada', 'concluida'].indexOf(p.status) === -1) return;
+      (p.complementos || []).forEach(function (k) {
+        if (k.tipo !== 'aluguel' || !k.kitId) return;
+        out.push({ fantasia: k.fantasia, kitId: k.kitId, qtd: k.qtd || 1, retirada: p.retirada,
+          devolucao: p.status === 'retirada' && dia > p.devolucao ? dia : p.devolucao });
+      });
+    });
+    return out;
+  }
+  function kitLivres(fantasiaId, kitId, periodo) {
+    var f = fantasiaDe(fantasiaId);
+    var k = f && (f.kit || []).find(function (x) { return x.id === kitId; });
+    if (!k) return 0;
+    var reservas = agendaKits().filter(function (r) { return r.fantasia === fantasiaId && r.kitId === kitId; });
+    return L.kitLivres(k.estoque, reservas, periodo, margemDe(f));
+  }
+
   function publicar() {
     window.AGENDA = agendaBloqueios();
+    window.AGENDA_KITS = agendaKits();
     if (window.FantasiaApp) window.FantasiaApp.atualizar();
     ouvintes.forEach(function (fn) { try { fn(); } catch (e) { /* um ouvinte não derruba os outros */ } });
   }
@@ -182,6 +205,8 @@
   function movimento(tipo, forma, valor, motivo, ref, parcelas) {
     var cx = caixaAberto();
     if (!cx) throw new Error('Caixa fechado');
+    // Caixa é do dia: o de ontem precisa ser conferido e fechado antes de receber hoje.
+    if (cx.abertoEm.dia !== estado.dia) throw new Error('Caixa de outro dia');
     cx.movimentos.push({ id: novoId('M', 5), tipo: tipo, forma: forma, valor: cent(valor) / 100, motivo: motivo || '', ref: ref || '', parcelas: parcelas || 1, dia: estado.dia, hora: agora(), quem: estado.operador });
   }
 
@@ -250,6 +275,7 @@
     fantasiaDe: fantasiaDe,
     margemDe: margemDe,
     calcularPedido: calcularPedido,
+    kitLivres: kitLivres,
 
     todos: todos,
     todas: todos,
@@ -287,6 +313,9 @@
     criarPedidoBalcao: function (d) {
       var v = calcularPedido({ itens: d.itens, complementos: d.complementos, desconto: d.desconto, diasExtras: d.periodo ? d.periodo.diasExtras : 0 });
       var soVenda = !d.itens.length;
+      if (soVenda && (d.complementos || []).some(function (k) { return k.tipo === 'aluguel'; })) {
+        throw new Error('Acessório de aluguel só vai junto com uma peça alugada');
+      }
       var p = {
         id: novoId('P'), origem: 'balcao', status: soVenda ? 'concluida' : 'confirmada', criadoEm: agora(), clienteId: d.clienteId,
         retirada: d.periodo ? d.periodo.retirada : estado.dia, devolucao: d.periodo ? d.periodo.devolucao : estado.dia,
@@ -348,14 +377,14 @@
         nome: dados.nome.trim(), cpf: String(dados.cpf).replace(/\D/g, ''), whatsapp: L.normalizarWhatsApp(dados.whatsapp),
         email: (dados.email || '').trim(), rg: (dados.rg || '').trim(), endereco: dados.endereco, medidas: dados.medidas || null
       };
+      var outroCpf = clientes().find(function (c) { return c.cpf && c.cpf === base.cpf && c.id !== dados.id; });
+      if (outroCpf) return { erro: 'Já existe cliente com esse CPF: ' + outroCpf.nome + ' (' + outroCpf.id + ').', existente: outroCpf };
       if (dados.id) {
         var antigo = clientePorId(dados.id);
         var mudou = Object.keys(base).filter(function (k) { return JSON.stringify(antigo[k]) !== JSON.stringify(base[k]); });
         mudarCliente(dados.id, base, mudou.length ? 'Dados corrigidos: ' + mudou.join(', ') : '');
         return clientePorId(dados.id);
       }
-      var cpfIgual = clientes().find(function (c) { return c.cpf && c.cpf === base.cpf; });
-      if (cpfIgual) return { erro: 'Já existe cliente com esse CPF: ' + cpfIgual.nome + ' (' + cpfIgual.id + ').', existente: cpfIgual };
       var c = Object.assign(base, {
         id: novoId('C'), origem: 'balcao', credito: 0, criadoEm: estado.dia,
         avisoPrivacidade: { em: estado.dia, versao: C.lgpd.versaoAviso, por: estado.operador },
@@ -397,6 +426,7 @@
 
     /* ---------- caixa ---------- */
     caixaAberto: caixaAberto,
+    caixaDeOutroDia: function () { var cx = caixaAberto(); return !!cx && cx.abertoEm.dia !== estado.dia; },
     caixas: function () { return estado.caixas.slice(); },
     abrirCaixa: function (fundo) {
       if (caixaAberto()) return caixaAberto();
@@ -443,6 +473,7 @@
 
   window.SIM_LOJA = API;
   window.AGENDA = agendaBloqueios();
+  window.AGENDA_KITS = agendaKits();
   setInterval(function () {
     var mudou = false;
     estado.pedidos.forEach(function (p) {

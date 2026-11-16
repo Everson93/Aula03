@@ -268,7 +268,7 @@
         '<fieldset class="kit"><legend>Complete o look</legend>' +
           f.kit.map(function (k) {
             return '<label class="kit__item"><input type="checkbox" value="' + esc(k.id) + '"' + (sel.kit.indexOf(k.id) !== -1 ? ' checked' : '') + '>' +
-              '<span>' + esc(k.nome) + ' <small>(' + (k.tipo === 'venda' ? 'é seu' : 'aluguel') + ')</small></span>' +
+              '<span>' + esc(k.nome) + ' <small data-kit-info="' + esc(k.id) + '">(' + (k.tipo === 'venda' ? 'é seu' : 'aluguel') + ')</small></span>' +
               '<span class="kit__preco">+ ' + L.formatarPreco(k.preco) + '</span></label>';
           }).join('') +
         '</fieldset>' : '') +
@@ -286,6 +286,19 @@
     function atualizar() {
       var per = periodoDe(f, sel.extras);
       var disp = dispDe(f, per);
+
+      // Acessório de aluguel tem quantidade: esgotado na data, sai do pedido.
+      corpo.querySelectorAll('.kit input').forEach(function (c) {
+        var k = f.kit.find(function (x) { return x.id === c.value; });
+        if (!k || k.tipo !== 'aluguel') return;
+        var reservas = (window.AGENDA_KITS || []).filter(function (r) { return r.fantasia === f.id && r.kitId === k.id; });
+        var livres = per ? L.kitLivres(k.estoque, reservas, per, margemDe(loja)) : k.estoque;
+        var esgotado = !!per && livres < 1;
+        c.disabled = esgotado;
+        if (esgotado && c.checked) { c.checked = false; sel.kit = sel.kit.filter(function (id) { return id !== k.id; }); }
+        c.closest('.kit__item').classList.toggle('kit__item--esgotado', esgotado);
+        corpo.querySelector('[data-kit-info="' + k.id + '"]').textContent = esgotado ? '(aluguel · esgotado nessa data)' : '(aluguel)';
+      });
       var o = L.calcularOrcamento(f, sel.kit, loja.sinal, per ? sel.extras : 0);
       var livreSel = sel.tamanho && disp[sel.tamanho] ? disp[sel.tamanho].livres : null;
       var indisponivel = !!(per && sel.tamanho && livreSel && !livreSel.length);
