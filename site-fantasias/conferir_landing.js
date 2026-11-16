@@ -387,6 +387,23 @@ prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.enderec
   prova('config: há uma dona', C.operadores.some(o => o.papel === 'dona'));
 }
 
+/* ---------- lembretes do dia ---------- */
+{
+  const w = '5591988887777';
+  const lem = L.lembretesDoDia({ dia: '2027-02-08', nomeSite: 'Cantinho da Day', endereco: 'Rua A, 10', horarioDevolucao: '18h',
+    pedidos: [
+      { id: 'P1', status: 'confirmada', retirada: '2027-02-09', devolucao: '2027-02-12', nome: 'Ana Silva', whatsapp: w, pecas: 'Pierrô M', diaExtra: 30 },
+      { id: 'P2', status: 'retirada', retirada: '2027-02-05', devolucao: '2027-02-08', nome: 'Bia', whatsapp: w, pecas: 'Colombina P', diaExtra: 30 },
+      { id: 'P3', status: 'retirada', retirada: '2027-02-01', devolucao: '2027-02-06', nome: 'Caio', whatsapp: w, pecas: 'Pirata M', diaExtra: 35 },
+      { id: 'P4', status: 'confirmada', retirada: '2027-02-09', devolucao: '2027-02-12', nome: 'Sem Zap', whatsapp: '', pecas: 'x', diaExtra: 1 },
+      { id: 'P5', status: 'concluida', retirada: '2027-02-01', devolucao: '2027-02-04', nome: 'D', whatsapp: w, pecas: 'x', diaExtra: 1 } ],
+    provas: [{ id: 'A1', dia: '2027-02-09', hora: '10:00', nome: 'Rosa Lima', whatsapp: w, status: 'marcada' }, { id: 'A2', dia: '2027-02-09', hora: '11:00', nome: 'X', whatsapp: w, status: 'cancelada' }] });
+  prova('lembretes: atraso, devolução de hoje, retirada de amanhã e prova de amanhã, nessa ordem', lem.map(x => x.tipo + ':' + x.ref).join() === 'atraso:P3,devolucao:P2,retirada:P1,prova:A1', lem.map(x => x.tipo + ':' + x.ref));
+  prova('lembrete de atraso com dias e valor em pt-BR', lem[0].texto.includes('2 dias de atraso') && lem[0].texto.replace(/\s/g, ' ').includes('R$ 35,00'));
+  prova('lembrete de retirada pede documento e diz o endereço', lem[2].texto.includes('documento com foto') && lem[2].texto.includes('Rua A, 10') && lem[2].texto.includes('ter, 09/02/2027'));
+  prova('sem WhatsApp não gera lembrete; concluído e prova cancelada também não', !lem.some(x => ['P4', 'P5', 'A2'].includes(x.ref)));
+}
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();

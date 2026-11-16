@@ -328,3 +328,10 @@ body.modo-painel { background: var(--fundo-alt); }
 .sis-prova--livre .sis-prova__hora { color: var(--texto-suave); font-weight: 600; }
 .sis-prova--realizada, .sis-prova--faltou { opacity: .7; }
 @media (max-width: 640px) { .sis-prova { grid-template-columns: 52px 1fr; } .sis-prova .sis-acoes { grid-column: 1 / -1; text-align: left; } }
+
+/* ---------- lembretes ---------- */
+.sis-lembretes { list-style: none; margin: 0; padding: 0; border: 1px solid var(--borda); border-radius: 10px; }
+.sis-lembretes li { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--borda); }
+.sis-lembretes li:last-child { border-bottom: 0; }
+.sis-lembrete__texto { margin: 0; font-size: .86rem; color: var(--texto-suave); background: var(--fundo-alt); border-radius: 8px; padding: 6px 10px; }
+@media (max-width: 760px) { .sis-lembretes li { grid-template-columns: 1fr; } .sis-lembretes .sis-acoes { text-align: left; } }

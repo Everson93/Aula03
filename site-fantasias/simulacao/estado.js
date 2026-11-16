@@ -83,7 +83,7 @@
   /* ---------- estado guardado ---------- */
   function estadoNovo(dia) {
     return { dia: dia || hojeReal(), operador: ((C.operadores || [])[0] || { nome: 'Atendente' }).nome, seq: { P: 1, C: 1, X: 1, S: 1, M: 1, B: 1, A: 1, O: 1, W: 1 },
-      pedidos: [], alteracoes: {}, clientes: [], clientesAlt: {}, caixas: [], solicitacoes: [], bloqueios: [], provas: [], orcamentos: [], espera: [] };
+      pedidos: [], alteracoes: {}, clientes: [], clientesAlt: {}, caixas: [], solicitacoes: [], bloqueios: [], provas: [], orcamentos: [], espera: [], lembretes: {} };
   }
   var estado;
   try {
@@ -95,6 +95,7 @@
     estado.provas = estado.provas || [];
     estado.orcamentos = estado.orcamentos || [];
     estado.espera = estado.espera || [];
+    estado.lembretes = estado.lembretes || {};
   } catch (e) { estado = estadoNovo(); }
   var ouvintes = [];
   var avisoArmazenamento = '';
@@ -607,6 +608,23 @@
       var w = estado.espera.find(function (x) { return x.id === id; });
       if (w) { w.status = status; w.atualizadoEm = estado.dia; salvar(); publicar(); }
     },
+
+    /* ---------- lembretes do dia ---------- */
+    lembretes: function () {
+      var lista = L.lembretesDoDia({
+        dia: estado.dia, nomeSite: C.nomeSite, horarioDevolucao: (C.contrato || {}).horarioDevolucao,
+        endereco: [(C.local || {}).endereco, (C.local || {}).cidade].filter(Boolean).join(', '),
+        pedidos: todos().filter(function (p) { return p.clienteId && (p.itens || []).length; }).map(function (p) {
+          var c = clientePorId(p.clienteId);
+          return { id: p.id, status: p.status, retirada: p.retirada, devolucao: p.devolucao, nome: c ? c.nome : '', whatsapp: c ? c.whatsapp : '',
+            pecas: p.itens.map(function (it) { var f = fantasiaDe(it.fantasia); return f.nome + ' ' + it.tamanho; }).join(', '),
+            diaExtra: p.itens.reduce(function (s2, it) { return s2 + it.diaExtra; }, 0) };
+        }),
+        provas: estado.provas
+      });
+      return lista.map(function (x) { x.chave = estado.dia + ':' + x.tipo + ':' + x.ref; x.enviado = estado.lembretes[x.chave] || null; return x; });
+    },
+    marcarLembrete: function (chave) { estado.lembretes[chave] = { hora: agora(), quem: estado.operador }; salvar(); publicar(); },
 
     zerar: function () {
       estado = estadoNovo(estado.dia);

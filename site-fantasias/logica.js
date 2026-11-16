@@ -533,6 +533,43 @@
     return b > 0 ? Math.round(centavos(desconto) * 10000 / b) / 100 : 0;
   }
 
+  /* ---------- lembretes do dia ----------
+   * Os mesmos textos viram os modelos aprovados quando a API oficial do WhatsApp
+   * entrar (Fase 2); até lá, cada um sai com um clique.
+   * d: { dia, nomeSite, endereco, horarioDevolucao,
+   *      pedidos: [{ id, status, retirada, devolucao, nome, whatsapp, pecas, diaExtra }],
+   *      provas: [{ id, dia, hora, nome, whatsapp, status }] } */
+  function lembretesDoDia(d) {
+    var amanha = somarDias(d.dia, 1), out = [];
+    var primeiro = function (n) { return String(n || '').split(' ')[0]; };
+    var onde = d.endereco ? ' Endereço: ' + d.endereco + '.' : '';
+    (d.pedidos || []).forEach(function (p) {
+      if (!numeroWhatsAppValido(p.whatsapp)) return;
+      if (p.status === 'confirmada' && p.retirada === amanha) {
+        out.push({ tipo: 'retirada', ref: p.id, nome: p.nome, whatsapp: p.whatsapp,
+          texto: 'Olá, ' + primeiro(p.nome) + '! Amanhã (' + dataComDia(p.retirada) + ') é dia de retirar ' + p.pecas + ' no ' + d.nomeSite + '. Traga um documento com foto.' + onde });
+      }
+      if (p.status === 'retirada' && p.devolucao === d.dia) {
+        out.push({ tipo: 'devolucao', ref: p.id, nome: p.nome, whatsapp: p.whatsapp,
+          texto: 'Olá, ' + primeiro(p.nome) + '! Hoje é o dia de devolver ' + p.pecas + ' no ' + d.nomeSite + ', até ' + (d.horarioDevolucao || '18h') + '. Esperamos que a festa tenha sido ótima!' + onde });
+      }
+      if (p.status === 'retirada' && p.devolucao < d.dia) {
+        var n = diasEntre(p.devolucao, d.dia);
+        out.push({ tipo: 'atraso', ref: p.id, nome: p.nome, whatsapp: p.whatsapp, dias: n,
+          texto: 'Olá, ' + primeiro(p.nome) + '. A devolução de ' + p.pecas + ' era em ' + dataBR(p.devolucao) + ' (' + n + (n === 1 ? ' dia' : ' dias') + ' de atraso). ' +
+            'Cada dia é cobrado como dia extra (' + formatarPreco(p.diaExtra) + '). Podemos combinar a devolução para hoje?' });
+      }
+    });
+    (d.provas || []).forEach(function (x) {
+      if (x.status === 'marcada' && x.dia === amanha && numeroWhatsAppValido(x.whatsapp)) {
+        out.push({ tipo: 'prova', ref: x.id, nome: x.nome, whatsapp: x.whatsapp,
+          texto: 'Olá, ' + primeiro(x.nome) + '! Lembrando da sua prova amanhã (' + dataComDia(x.dia) + ') às ' + x.hora + ' no ' + d.nomeSite + '.' + onde + ' Se não puder vir, avise por aqui.' });
+      }
+    });
+    var ordem = { atraso: 0, devolucao: 1, retirada: 2, prova: 3 };
+    return out.sort(function (a, b) { return ordem[a.tipo] - ordem[b.tipo]; });
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -679,6 +716,7 @@
     validarAgenda: validarAgenda,
     kitLivres: kitLivres,
     textoHorarios: textoHorarios,
+    lembretesDoDia: lembretesDoDia,
     papelDe: papelDe,
     pode: pode,
     percentualDesconto: percentualDesconto,

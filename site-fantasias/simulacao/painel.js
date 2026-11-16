@@ -32,6 +32,7 @@
     inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
     retirada: 'M6 8h12l1 12H5zM9 8V6a3 3 0 0 1 6 0v2M9.5 13.5l2 2 3.5-3.5',
     orcamentos: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h6M9 17h4',
+    lembretes: 'M4 5h16v11H9l-5 4zM8 9h8M8 12h5',
     espera: 'M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
     provas: 'M4 17L17 4l3 3L7 20zM8 13l1.5 1.5M11 10l1.5 1.5M14 7l1.5 1.5',
     venda: 'M4 5h2l2.4 10.2a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.8L21 8H7M10 20a1 1 0 1 0 0 .01M18 20a1 1 0 1 0 0 .01',
@@ -41,7 +42,7 @@
     caixa: 'M3 7h18v12H3zM3 11h18M7 15h3',
     privacidade: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4'
   };
-  var PAGINAS = [['inicio', 'Início'], ['venda', 'Nova venda'], ['orcamentos', 'Orçamentos'], ['retirada', 'Retirada'], ['provas', 'Provas'], ['espera', 'Lista de espera'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
+  var PAGINAS = [['inicio', 'Início'], ['lembretes', 'Lembretes'], ['venda', 'Nova venda'], ['orcamentos', 'Orçamentos'], ['retirada', 'Retirada'], ['provas', 'Provas'], ['espera', 'Lista de espera'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
     ['acervo', 'Acervo'], ['caixa', 'Caixa'], ['privacidade', 'Privacidade']];
 
   function $(id) { return document.getElementById(id); }
@@ -163,6 +164,7 @@
     var rs = LOJA.todos();
     contar('inicio', rs.filter(function (p) { return p.status === 'pendente'; }).length + rs.filter(function (p) { return visivel(p) === 'atrasada'; }).length);
     contar('retirada', rs.filter(function (p) { return (p.status === 'confirmada' || p.status === 'pendente') && (p.itens || []).length && p.retirada <= dia(); }).length);
+    contar('lembretes', LOJA.lembretes().filter(function (x) { return !x.enviado; }).length);
     contar('espera', LOJA.espera().filter(function (w) { return w.liberou && w.status === 'aguardando'; }).length);
     contar('provas', LOJA.provas(dia()).filter(function (x) { return x.status === 'marcada'; }).length);
     contar('privacidade', LOJA.solicitacoes().filter(function (s) { return s.status === 'aberta'; }).length);
@@ -181,6 +183,7 @@
     else if (pagina === 'provas') corpo.innerHTML = htmlProvas();
     else if (pagina === 'orcamentos') corpo.innerHTML = htmlOrcamentos();
     else if (pagina === 'espera') corpo.innerHTML = htmlEspera();
+    else if (pagina === 'lembretes') corpo.innerHTML = htmlLembretes();
     else if (pagina === 'pedidos') { corpo.innerHTML = htmlPedidos(); ligarBusca('sis-busca-ped', function (v) { buscaPedidos = v; }); }
     else if (pagina === 'clientes') { corpo.innerHTML = htmlClientes(); ligarBusca('sis-busca-cli', function (v) { buscaClientes = v; }); }
     else if (pagina === 'acervo') corpo.innerHTML = htmlAcervo();
@@ -283,6 +286,9 @@
     else if (!cx) html += '<div class="sis-alerta"><span>O caixa está fechado: sem ele não dá para receber sinal, saldo nem caução.</span>' + botao('ir', '', 'Abrir o caixa', true, ' data-pagina="caixa"') + '</div>';
     if (sols.length) html += '<div class="sis-alerta sis-alerta--aviso"><span>' + sols.length + ' pedido(s) de cliente sobre os dados dele, com prazo de resposta.</span>' + botao('ir', '', 'Ver em Privacidade', false, ' data-pagina="privacidade"') + '</div>';
 
+    var pendLem = LOJA.lembretes().filter(function (x) { return !x.enviado; }).length;
+    if (pendLem) html += '<div class="sis-alerta sis-alerta--aviso"><span>' + pendLem + (pendLem === 1 ? ' lembrete' : ' lembretes') + ' de WhatsApp para mandar hoje (retirada, devolução, atraso, prova).</span>' +
+      botao('ir', '', 'Ver lembretes', false, ' data-pagina="lembretes"') + '</div>';
     var liberaram = LOJA.espera().filter(function (w) { return w.liberou && w.status === 'aguardando'; });
     if (liberaram.length) html += '<div class="sis-alerta sis-alerta--ok"><span>Lista de espera: ' + liberaram.length + (liberaram.length === 1 ? ' pessoa espera uma peça que liberou' : ' pessoas esperam peças que liberaram') + '. Avise antes que outro cliente pegue.</span>' +
       botao('ir', '', 'Ver a lista', true, ' data-pagina="espera"') + '</div>';
@@ -1385,6 +1391,31 @@
     if (modal.open) modal.close();
     irPara('venda');
   }
+
+  /* =====================================================================
+   * LEMBRETES
+   * ===================================================================== */
+  var TIPOS_LEM = [['atraso', 'Atrasados', 'erro'], ['devolucao', 'Devolvem hoje', 'magenta'], ['retirada', 'Retiram amanhã', 'info'], ['prova', 'Prova amanhã', 'info']];
+  function htmlLembretes() {
+    var lista = LOJA.lembretes();
+    var html = '<p class="pn-dica">Mensagens do dia, montadas sozinhas a partir dos pedidos e das provas. Cada uma abre o WhatsApp já escrita; quando o ateliê ligar a API oficial do WhatsApp (Fase 2), estes mesmos textos saem sem clique.</p>';
+    if (!lista.length) return html + '<div class="pn-vazio"><p>Nenhum lembrete para ' + esc(L.dataComDia(dia())) + '.</p></div>';
+    TIPOS_LEM.forEach(function (t) {
+      var doTipo = lista.filter(function (x) { return x.tipo === t[0]; });
+      if (!doTipo.length) return;
+      html += cartao(t[1] + ' <span class="pn-conta">' + doTipo.length + '</span>', '', '<ul class="sis-lembretes">' + doTipo.map(function (x) {
+        return '<li><div class="sis-lembrete__quem"><strong>' + esc(x.nome) + '</strong> <span class="pn-cod">' + esc(x.ref) + '</span><div class="sis-mudo">' + esc(formatarFone(x.whatsapp)) + '</div></div>' +
+          '<p class="sis-lembrete__texto">' + esc(x.texto) + '</p>' +
+          '<div class="sis-acoes">' + (x.enviado ? '<span class="pn-status pn-status--ok">Enviado ' + hora(x.enviado.hora) + ' · ' + esc(x.enviado.quem) + '</span>' :
+            '<a class="botao botao--destaque pn-botao" data-lembrete="' + esc(x.chave) + '" href="' + esc(L.linkWhatsApp(x.whatsapp, x.texto)) + '" target="_blank" rel="noopener">Enviar no WhatsApp</a>') + '</div></li>';
+      }).join('') + '</ul>');
+    });
+    return html;
+  }
+  raiz.addEventListener('click', function (e) {
+    var a = e.target.closest('[data-lembrete]');
+    if (a) LOJA.marcarLembrete(a.dataset.lembrete);
+  });
 
   /* =====================================================================
    * LISTA DE ESPERA
