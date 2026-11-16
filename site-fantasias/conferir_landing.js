@@ -205,6 +205,62 @@ prova('livre depois da higienização', sit('A-M-2', '2027-02-06').estado === 'l
 prova('sai hoje', sit('A-M-3', '2027-02-05').estado === 'sai-hoje');
 prova('cancelada não ocupa e a próxima aparece', sit('A-M-4', '2027-02-05').estado === 'livre' && sit('A-M-4', '2027-02-05').proxima.retirada === '2027-02-12');
 
+/* ---------- PDV: pagamentos e caixa ---------- */
+prova('parcelas somam o total e a 1ª leva o resto', L.dividirParcelas(100, 3).join() === '33.34,33.33,33.33');
+prova('parcela única', L.dividirParcelas(95, 1).join() === '95');
+prova('máximo de parcelas respeita a mínima', L.maxParcelas(160, { parcelasMax: 6, parcelaMinima: 50 }) === 3);
+prova('máximo de parcelas respeita o teto', L.maxParcelas(1000, { parcelasMax: 6, parcelaMinima: 50 }) === 6);
+prova('valor pequeno: 1x', L.maxParcelas(30, { parcelasMax: 6, parcelaMinima: 50 }) === 1);
+let tx = L.taxaEstimada(100, 'credito', 3, { creditoVista: 4.99, creditoParcelado: 6.99 });
+prova('taxa do crédito parcelado', tx.taxa === 6.99 && tx.liquido === 93.01, tx);
+prova('taxa do débito', L.taxaEstimada(100, 'debito', 1, { debito: 1.99 }).liquido === 98.01);
+prova('dinheiro sem taxa', L.taxaEstimada(100, 'dinheiro', 1, { debito: 1.99 }).taxa === 0);
+let vp = L.validarPagamentos(110, [{ forma: 'pix', valor: 60, confirmado: true }, { forma: 'dinheiro', valor: 50, entregue: 100 }]);
+prova('pagamento misto Pix + dinheiro com troco', vp.ok && vp.troco === 50 && vp.falta === 0, vp);
+vp = L.validarPagamentos(110, [{ forma: 'pix', valor: 60, confirmado: true }]);
+prova('falta mostrada e não fecha', !vp.ok && vp.falta === 50 && !vp.erros.length, vp);
+vp = L.validarPagamentos(110, [{ forma: 'pix', valor: 120, confirmado: true }]);
+prova('Pix acima do total é recusado (troco só no dinheiro)', !vp.ok && vp.erros.some(e => /troco só sai do dinheiro/.test(e)), vp);
+vp = L.validarPagamentos(110, [{ forma: 'debito', valor: 110 }]);
+prova('cartão sem "aprovado" não fecha', !vp.ok && vp.erros.some(e => /aprovado/.test(e)), vp);
+vp = L.validarPagamentos(110, [{ forma: 'dinheiro', valor: 110, entregue: 100 }]);
+prova('dinheiro entregue menor que o valor', !vp.ok && vp.erros.some(e => /menos que o valor/.test(e)));
+vp = L.validarPagamentos(160, [{ forma: 'credito', valor: 160, parcelas: 4, confirmado: true }], { parcelas: { parcelasMax: 6, parcelaMinima: 50 } });
+prova('crédito em parcelas demais para o valor', !vp.ok && vp.erros.some(e => /no máximo 3x/.test(e)), vp);
+vp = L.validarPagamentos(100, [{ forma: 'vale', valor: 40 }, { forma: 'pix', valor: 60, confirmado: true }], { valeDisponivel: 30 });
+prova('vale maior que o crédito do cliente', !vp.ok && vp.erros.some(e => /crédito na loja/.test(e)), vp);
+vp = L.validarPagamentos(100, [{ forma: 'vale', valor: 30 }, { forma: 'pix', valor: 70, confirmado: true }], { valeDisponivel: 30 });
+prova('vale + Pix fecham', vp.ok, vp);
+prova('pagamento em centavos', L.validarPagamentos(0.15, [{ forma: 'dinheiro', valor: 0.14 }, { forma: 'dinheiro', valor: 0.01 }]).ok);
+const cx = L.esperadoCaixa({ fundo: 200, movimentos: [
+  { tipo: 'entrada', forma: 'dinheiro', valor: 100 }, { tipo: 'saida', forma: 'dinheiro', valor: 15 },
+  { tipo: 'entrada', forma: 'pix', valor: 60 }, { tipo: 'sangria', valor: 150 }, { tipo: 'suprimento', valor: 20 },
+  { tipo: 'saida', forma: 'pix', valor: 10 } ] });
+prova('esperado do caixa: dinheiro = fundo + entradas − troco − sangria + suprimento', cx.dinheiro === 155 && cx.pix === 50, cx);
+const cf = L.conferirCaixa(cx, { dinheiro: 150, pix: 50 });
+prova('conferência acha a diferença por forma', !cf.confere && cf.diferenca === -5 && cf.linhas.find(l => l.forma === 'dinheiro').diferenca === -5, cf);
+prova('conferência que bate', L.conferirCaixa({ dinheiro: 10, pix: 0 }, { dinheiro: 10 }).confere);
+
+/* ---------- cadastro de cliente (LGPD) ---------- */
+prova('WhatsApp normalizado', L.normalizarWhatsApp('(91) 98888-7777') === '5591988887777' && L.normalizarWhatsApp('5591988887777') === '5591988887777');
+prova('CPF mascarado na lista', L.mascararCpf('529.982.247-25') === '***.982.247-**');
+const cli = { nome: 'Maria das Dores', cpf: '52998224725', whatsapp: '91 98888-7777', email: '',
+  endereco: { cep: '66010-000', rua: 'Rua A', numero: '10', bairro: 'Centro', cidade: 'Belém' }, avisoPrivacidade: true };
+prova('cadastro mínimo completo passa', L.validarCliente(cli).length === 0, L.validarCliente(cli));
+prova('sem aviso de privacidade não cadastra', L.validarCliente(Object.assign({}, cli, { avisoPrivacidade: false })).some(e => /aviso de privacidade/.test(e)));
+prova('e-mail é opcional mas validado', L.validarCliente(Object.assign({}, cli, { email: 'maria@' })).length === 1);
+prova('endereço incompleto', L.validarCliente(Object.assign({}, cli, { endereco: { cep: '66010000' } })).some(e => /Endereço/.test(e)));
+prova('somarAnos', L.somarAnos('2027-02-08', 5) === '2032-02-08' && L.somarAnos('2028-02-29', 1) === '2029-02-28');
+let se = L.situacaoEliminacao([{ status: 'retirada', devolucao: '2027-02-08' }], '2027-02-07', 5);
+prova('não apaga com locação em andamento', !se.pode && se.motivo === 'locacao');
+se = L.situacaoEliminacao([{ status: 'concluida', devolucao: '2027-02-08', devolvidaEm: '2027-02-09' }], '2030-01-01', 5);
+prova('guarda de 5 anos depois da última devolução', !se.pode && se.motivo === 'guarda' && se.ate === '2032-02-09', se);
+se = L.situacaoEliminacao([{ status: 'concluida', devolucao: '2027-02-08', devolvidaEm: '2027-02-09' }], '2032-02-09', 5);
+prova('depois da guarda pode apagar', se.pode);
+prova('sem locação pode apagar', L.situacaoEliminacao([{ status: 'cancelada' }], '2027-01-01', 5).pode);
+const an = L.anonimizarCliente(Object.assign({ id: 'C0007', rg: '123', credito: 20, marketing: { consentido: true } }, cli), '2032-03-01');
+prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.endereco && !an.rg && an.nome === 'Cliente anonimizado C0007' && !an.marketing.consentido && an.anonimizado, an);
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();
@@ -294,30 +350,105 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   const fJ = jan.FANTASIAS.find(f => f.id === 'JN05');
   const livresM = festa => L.disponibilidade(fJ, jan.AGENDA, L.periodoAluguel(festa, S.dia(), 0, lojaN), 1).M.livres.length;
   const antes = livresM('2027-03-11');
-  prova('estado: exemplo carregado', S.todas().length > 300);
+  prova('estado: exemplo carregado (pedidos e clientes)', S.todos().length > 300 && S.clientes().length > 20);
+  prova('clientes de exemplo com CPF válido', S.clientes().every(c => L.cpfValido(c.cpf)));
+  prova('clientes de exemplo passam na validação', S.clientes().every(c => L.validarCliente(Object.assign({}, c, { avisoPrivacidade: true })).length === 0), L.validarCliente(Object.assign({}, S.clientes()[0], { avisoPrivacidade: true })));
   const per = L.periodoAluguel('2027-03-11', S.dia(), 0, lojaN);
+
+  // pedido do site segura a peça; recusado, libera
   const ped = S.criarPedidoSite({ fantasia: 'JN05', tamanho: 'M', unidade: 'JN05-M-1', retirada: per.retirada, devolucao: per.devolucao, total: 95, sinal: 28.5, caucao: 60 });
   prova('pedido do site nasce aguardando sinal e segura a peça', S.porId(ped.id).status === 'pendente' && livresM('2027-03-11') === antes - 1);
   S.cancelar(ped.id, { motivo: 'teste' });
   prova('pedido recusado libera a peça', livresM('2027-03-11') === antes);
-  const b = S.criarBalcao({ cliente: { nome: 'Maria Teste', whatsapp: '5591988887777', cpf: '52998224725' }, fantasia: 'JN05', tamanho: 'M', unidade: 'JN05-M-2',
-    retirada: per.retirada, devolucao: per.devolucao, dataFesta: '2027-03-11', total: 95, sinal: 28.5, caucao: 60, recebido: { tipo: 'sinal', forma: 'Pix' } });
-  prova('balcão: reserva confirmada, sinal lançado, saldo certo', S.porId(b.id).status === 'confirmada' && S.saldo(S.porId(b.id)) === 66.5);
-  prova('balcão baixa o estoque que o site vê', livresM('2027-03-11') === antes - 1);
-  S.registrarRetirada(b.id, { saldo: { valor: 66.5, forma: 'Dinheiro' }, caucao: { valor: 60, forma: 'Pix' }, vistoria: { dia: S.dia(), fotos: {}, defeitos: [], obs: '' } });
+
+  // sem caixa aberto não recebe
+  let erroCaixa = '';
+  try { S.criarPedidoBalcao({ clienteId: 'CE001', periodo: per, itens: [], complementos: [{ nome: 'x', preco: 8, qtd: 1 }], linhas: [{ forma: 'dinheiro', valor: 8 }] }); } catch (e) { erroCaixa = e.message; }
+  prova('sem caixa aberto não registra pagamento', erroCaixa === 'Caixa fechado');
+  S.abrirCaixa(200);
+  prova('caixa aberto com fundo', S.caixaAberto() && S.caixaAberto().fundo === 200);
+
+  // cliente novo (LGPD)
+  const dadosCli = { nome: 'Maria Teste', cpf: '529.982.247-25', whatsapp: '(91) 98888-7777', email: '', rg: '',
+    endereco: { cep: '66010000', rua: 'Rua A', numero: '10', bairro: 'Centro', cidade: 'Belém', uf: 'PA' }, marketing: false };
+  const cli = S.salvarCliente(dadosCli);
+  prova('cliente salvo com WhatsApp normalizado e aviso registrado', cli.id && cli.whatsapp === '5591988887777' && cli.avisoPrivacidade.versao && !cli.marketing.consentido);
+  prova('CPF repetido não cria outro cadastro', S.salvarCliente(dadosCli).erro && S.clientes().filter(c => c.cpf === '52998224725').length === 1);
+  S.definirMarketing(cli.id, true);
+  prova('consentimento de marketing registrado com data e versão', S.clientePorId(cli.id).marketing.consentido && S.clientePorId(cli.id).marketing.em === S.dia());
+  S.definirMarketing(cli.id, false);
+  prova('revogação registrada no histórico', !S.clientePorId(cli.id).marketing.consentido && S.clientePorId(cli.id).log.some(l => /Revogou/.test(l.acao)));
+
+  // pedido no balcão: 2 peças + complemento, desconto, pagamento misto com troco
+  const itens = [{ fantasia: 'JN05', tamanho: 'M', unidade: 'JN05-M-2', preco: 95, diaExtra: 25, caucao: 60 },
+                 { fantasia: 'JN05', tamanho: 'G', unidade: 'JN05-G-1', preco: 95, diaExtra: 25, caucao: 60 }];
+  const v = S.calcularPedido({ itens, complementos: [{ nome: 'Lápis', preco: 8, qtd: 2 }], desconto: { valor: 6 }, diasExtras: 0 });
+  prova('pedido: 2 × 95 + 2 × 8 − 6 = 200; caução 120; sinal 30% = 60', v.total === 200 && v.caucao === 120 && v.sinal === 60, v);
+  const b = S.criarPedidoBalcao({ clienteId: cli.id, periodo: per, itens, complementos: [{ nome: 'Lápis', preco: 8, qtd: 2 }], desconto: { valor: 6, motivo: 'quadrilha' },
+    recebe: 'sinal', linhas: [{ forma: 'pix', valor: 40, confirmado: true }, { forma: 'dinheiro', valor: 20, entregue: 50 }] });
   let r = S.porId(b.id);
+  prova('balcão: confirmado, sinal em 2 formas, saldo 140', r.status === 'confirmada' && r.pagamentos.length === 2 && S.saldo(r) === 140);
+  prova('balcão baixa o estoque das duas peças', livresM('2027-03-11') === antes - 1 && L.disponibilidade(fJ, jan.AGENDA, per, 1).G.livres.indexOf('JN05-G-1') === -1);
+  let esp = L.esperadoCaixa(S.caixaAberto());
+  prova('caixa: fundo 200 + 20 dinheiro (troco 30 já saiu) e 40 no Pix', esp.dinheiro === 220 && esp.pix === 40, esp);
+
+  // entrega: saldo no crédito 2x e caução em dinheiro
+  S.registrarRetirada(b.id, { linhasSaldo: [{ forma: 'credito', valor: 140, parcelas: 2, confirmado: true }], linhasCaucao: [{ forma: 'dinheiro', valor: 120, entregue: 120 }], vistoria: { dia: S.dia(), fotos: {}, defeitos: [], obs: '' } });
+  r = S.porId(b.id);
   prova('entrega: com o cliente, nada a receber, caução recebida', r.status === 'retirada' && S.saldo(r) === 0 && S.caucaoRecebida(r));
-  S.definirDia(L.somarDias(per.devolucao, 2)); // voltou 2 dias atrasada
+  prova('crédito parcelado guardado com as parcelas', r.pagamentos.some(p => p.forma === 'credito' && p.parcelas === 2));
+
+  // devolução atrasada com dano: caução devolvida em dinheiro sai do caixa
+  S.definirDia(L.somarDias(per.devolucao, 2));
   const ag = jan.AGENDA.find(x => x.unidade === 'JN05-M-2' && x.retirada === per.retirada);
   prova('peça atrasada continua bloqueada até hoje', ag.devolucao === S.dia(), ag);
-  prova('situação: atrasada', L.situacaoUnidade('JN05-M-2', S.todas(), S.dia(), 1).estado === 'atrasada');
-  const acerto = L.acertoDevolucao({ caucao: 60, danos: [{ descricao: 'botão', valor: 5 }], diasAtraso: 2, valorDiaAtraso: fJ.diaExtra });
-  S.registrarDevolucao(b.id, { acerto, danos: [], forma: 'Pix', vistoria: { dia: S.dia(), fotos: {}, defeitos: [], obs: '' } });
+  const acerto = L.acertoDevolucao({ caucao: 120, danos: [{ descricao: 'botão', valor: 5 }], diasAtraso: 2, valorDiaAtraso: 50 });
+  S.registrarDevolucao(b.id, { acerto, danos: [], forma: 'dinheiro', vistoria: { dia: S.dia(), fotos: {}, defeitos: [], obs: '' } });
   r = S.porId(b.id);
-  prova('devolução: concluída com acerto (atraso 2 × 25 + dano 5 = 55, devolve 5)', r.status === 'concluida' && r.acerto.devolver === 5 && r.pagamentos.some(p => p.tipo === 'caucao_devolvida' && p.valor === 5), r.acerto);
-  prova('situação: higienização no dia da devolução', L.situacaoUnidade('JN05-M-2', S.todas(), S.dia(), 1).estado === 'higienizacao');
-  prova('estado guardado no navegador', typeof guardado['simulacao-cantinho-v2'] === 'string' && guardado['simulacao-cantinho-v2'].includes(b.id));
-  const ex = S.todas().find(x => x.origem === 'exemplo');
+  prova('devolução: concluída, devolve 15 da caução', r.status === 'concluida' && r.acerto.devolver === 15 && r.pagamentos.some(p => p.tipo === 'caucao_devolvida' && p.valor === 15), r.acerto);
+  esp = L.esperadoCaixa(S.caixaAberto());
+  prova('caixa: 220 + 120 caução − 15 devolvidos = 325 em dinheiro', esp.dinheiro === 325 && esp.credito === 140, esp);
+  prova('situação: higienização no dia da devolução', L.situacaoUnidade('JN05-M-2', S.linhasPorPeca(), S.dia(), 1).estado === 'higienizacao');
+
+  // sangria, suprimento e fechamento com conferência cega
+  S.sangria(100, 'depósito'); S.suprimento(10, 'troco');
+  const fechado = S.fecharCaixa({ dinheiro: 230, pix: 40, debito: 0, credito: 140 });
+  prova('fechamento acha os R$ 5 faltando no dinheiro', fechado.fechadoEm && !fechado.conferencia.confere && fechado.conferencia.diferenca === -5, fechado.conferencia);
+  prova('vale não entra na conferência da gaveta', !fechado.conferencia.linhas.some(l => l.forma === 'vale'));
+
+  // cancelamento com menos de 7 dias: sinal vira crédito, que paga outro pedido como vale
+  S.abrirCaixa(0);
+  const per2 = L.periodoAluguel(L.somarDias(S.dia(), 3), S.dia(), 0, lojaN);
+  const c2 = S.criarPedidoBalcao({ clienteId: cli.id, periodo: per2, itens: [{ fantasia: 'JN05', tamanho: 'P', unidade: 'JN05-P-1', preco: 95, diaExtra: 25, caucao: 60 }],
+    complementos: [], desconto: { valor: 0 }, recebe: 'sinal', linhas: [{ forma: 'pix', valor: 28.5, confirmado: true }] });
+  S.cancelar(c2.id, { motivo: 'desistiu' });
+  prova('cancelou a 3 dias: sinal vira crédito na loja', S.porId(c2.id).status === 'cancelada' && S.clientePorId(cli.id).credito === 28.5);
+  S.criarPedidoBalcao({ clienteId: cli.id, periodo: null, itens: [], complementos: [{ nome: 'Lápis', preco: 8, qtd: 1 }], desconto: { valor: 0 }, linhas: [{ forma: 'vale', valor: 8 }] });
+  prova('vale abate do crédito', S.clientePorId(cli.id).credito === 20.5);
+
+  // LGPD: eliminação respeita a guarda; anonimizar tira os dados e mantém o histórico
+  const sit = S.situacaoEliminacao(cli.id);
+  prova('cliente com locação recente: guarda até 5 anos depois', !sit.pode && sit.motivo === 'guarda', sit);
+  const sol = S.abrirSolicitacao(cli.id, 'Eliminação dos dados');
+  prova('pedido do titular com prazo de 15 dias', sol.prazo === L.somarDias(S.dia(), 15));
+  S.anonimizar(cli.id);
+  const an = S.clientePorId(cli.id);
+  prova('anonimizado: sem CPF e sem WhatsApp, pedidos mantidos', an.anonimizado && !an.cpf && !an.whatsapp && S.pedidosDoCliente(cli.id).length >= 2);
+  prova('pedido do titular fechado ao anonimizar', S.solicitacoes().find(x => x.id === sol.id).status === 'atendida');
+  S.abrirCaixa(0);
+  const pf = S.criarPedidoBalcao({ clienteId: 'CE001', periodo: L.periodoAluguel(L.somarDias(S.dia(), 1), S.dia(), 0, lojaN), itens: [{ fantasia: 'JN05', tamanho: 'GG', unidade: 'JN05-GG-1', preco: 95, diaExtra: 25, caucao: 60 }],
+    complementos: [], desconto: { valor: 0 }, recebe: 'total', linhas: [{ forma: 'pix', valor: 95, confirmado: true }] });
+  S.registrarRetirada(pf.id, { linhasCaucao: [{ forma: 'pix', valor: 60, confirmado: true }], vistoria: { dia: S.dia(), fotos: { frente: 'data:x' }, defeitos: [], obs: '' } });
+  S.registrarDevolucao(pf.id, { acerto: L.acertoDevolucao({ caucao: 60 }), danos: [], forma: 'pix', vistoria: { dia: S.dia(), fotos: { frente: 'data:y' }, defeitos: [], obs: '' } });
+  prova('fotos ainda dentro da guarda', S.fotosVencidas().length === 0);
+  const diaVolta = S.dia();
+  S.definirDia(L.somarDias(diaVolta, 183));
+  prova('fotos vencidas depois de 6 meses', S.fotosVencidas().some(x => x.id === pf.id));
+  S.apagarFotosVencidas();
+  prova('fotos apagadas, laudo escrito mantido', !Object.keys(S.porId(pf.id).vistorias.retirada.fotos).length && S.porId(pf.id).vistorias.retirada.fotosApagadasEm && S.porId(pf.id).status === 'concluida');
+  prova('estado guardado no navegador', typeof guardado['simulacao-cantinho-v3'] === 'string' && guardado['simulacao-cantinho-v3'].includes(b.id));
+
+  const ex = S.todos().find(x => x.origem === 'exemplo');
   S.definirDia(L.somarDias(ex.retirada, -1));
   prova('exemplo antes da retirada: confirmada', S.porId(ex.id).status === 'confirmada');
   const exR = S.porId(ex.id);
@@ -327,7 +458,7 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   S.definirDia(L.somarDias(ex.retirada, 1));
   prova('exemplo no dia seguinte: com o cliente', S.porId(ex.id).status === 'retirada');
   S.zerar();
-  prova('recomeçar apaga o que foi criado', !S.porId(b.id) && S.todas().every(x => x.origem === 'exemplo'));
+  prova('recomeçar apaga pedidos, clientes e caixas criados', !S.porId(b.id) && !S.clientePorId(cli.id) && !S.caixas().length);
 }
 
 /* ---------- contrato HTML <-> app.js ---------- */

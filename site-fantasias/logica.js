@@ -242,6 +242,158 @@
     return { estado: 'livre', proxima: futuras[0] || null };
   }
 
+  /* ---------- pagamentos (PDV) ----------
+   * Cada linha de pagamento tem forma e valor. Troco só sai do dinheiro:
+   * Pix, cartão e vale nunca passam do que falta. Pix e cartão só contam
+   * depois de confirmados (Pix no app do banco, cartão "aprovado" na maquininha). */
+  var FORMAS_PAGAMENTO = {
+    dinheiro: { nome: 'Dinheiro' },
+    pix: { nome: 'Pix', confirmar: true },
+    debito: { nome: 'Cartão de débito', confirmar: true, cartao: true },
+    credito: { nome: 'Cartão de crédito', confirmar: true, cartao: true, parcela: true },
+    vale: { nome: 'Crédito na loja (vale)' }
+  };
+
+  // Divide em parcelas de centavos inteiros; a primeira leva o resto.
+  function dividirParcelas(valor, n) {
+    var c = centavos(valor), q = Math.max(1, Math.floor(Number(n) || 1));
+    var base = Math.floor(c / q), resto = c - base * q;
+    var lista = [];
+    for (var i = 0; i < q; i++) lista.push((base + (i === 0 ? resto : 0)) / 100);
+    return lista;
+  }
+
+  // Quantas parcelas cabem: até o máximo, sem parcela menor que a mínima.
+  function maxParcelas(valor, cfg) {
+    var max = (cfg && cfg.parcelasMax) || 1, min = (cfg && cfg.parcelaMinima) || 0;
+    var cabe = min > 0 ? Math.floor(centavos(valor) / centavos(min)) : max;
+    return Math.max(1, Math.min(max, cabe));
+  }
+
+  // Taxa estimada da maquininha (só para mostrar o líquido; a real vem da adquirente).
+  function taxaEstimada(valor, forma, parcelas, taxas) {
+    var t = taxas || {};
+    var pct = forma === 'debito' ? t.debito : forma === 'credito' ? ((parcelas || 1) > 1 ? t.creditoParcelado : t.creditoVista) : forma === 'pix' ? t.pix : 0;
+    var c = centavos(valor), taxa = Math.round(c * (Number(pct) || 0) / 100);
+    return { percentual: Number(pct) || 0, taxa: taxa / 100, liquido: (c - taxa) / 100 };
+  }
+
+  /* linhas: [{ forma, valor, entregue?, parcelas?, confirmado? }]
+   * opcoes: { valeDisponivel, parcelas: cfg } */
+  function validarPagamentos(devido, linhas, opcoes) {
+    var o = opcoes || {};
+    var alvo = centavos(devido), soma = 0, naoDinheiro = 0, troco = 0, vale = 0;
+    var erros = [];
+    (linhas || []).forEach(function (l, i) {
+      var n = i + 1, v = centavos(l.valor || 0), f = FORMAS_PAGAMENTO[l.forma];
+      if (!f) { erros.push('Linha ' + n + ': escolha a forma de pagamento.'); return; }
+      if (!(v > 0)) { erros.push('Linha ' + n + ' (' + f.nome + '): valor precisa ser maior que zero.'); return; }
+      soma += v;
+      if (l.forma === 'dinheiro') {
+        var ent = l.entregue === '' || l.entregue == null ? v : centavos(l.entregue);
+        if (ent < v) erros.push('Linha ' + n + ' (Dinheiro): o cliente entregou menos que o valor.');
+        else troco += ent - v;
+      } else {
+        naoDinheiro += v;
+        if (f.confirmar && !l.confirmado) erros.push('Linha ' + n + ' (' + f.nome + '): confirme ' + (f.cartao ? 'o "aprovado" na maquininha.' : 'o crédito no app do banco.'));
+        if (l.forma === 'credito') {
+          var p = Math.max(1, Math.floor(Number(l.parcelas) || 1));
+          if (p > maxParcelas(v / 100, o.parcelas)) erros.push('Linha ' + n + ' (Crédito): no máximo ' + maxParcelas(v / 100, o.parcelas) + 'x para esse valor.');
+        }
+        if (l.forma === 'vale') vale += v;
+      }
+    });
+    if (vale > centavos(o.valeDisponivel || 0)) erros.push('O cliente tem só ' + formatarPreco(centavos(o.valeDisponivel || 0) / 100) + ' de crédito na loja.');
+    if (naoDinheiro > alvo) erros.push('Pix, cartão e vale passaram do total: troco só sai do dinheiro.');
+    else if (soma > alvo) erros.push('A soma passou do total. Se o cliente deu mais em dinheiro, ponha o valor certo e o que ele entregou: o troco é calculado.');
+    return { ok: !erros.length && soma === alvo, devido: alvo / 100, soma: soma / 100, falta: Math.max(0, alvo - soma) / 100, troco: troco / 100, erros: erros };
+  }
+
+  /* ---------- caixa ----------
+   * caixa: { fundo, movimentos: [{ tipo, forma, valor }] }
+   * tipo: 'entrada' | 'saida' | 'suprimento' | 'sangria'. Troco é saída em dinheiro. */
+  function esperadoCaixa(caixa) {
+    var e = {};
+    Object.keys(FORMAS_PAGAMENTO).forEach(function (f) { e[f] = 0; });
+    e.dinheiro = centavos(caixa.fundo || 0);
+    (caixa.movimentos || []).forEach(function (m) {
+      var v = centavos(m.valor || 0), f = m.tipo === 'suprimento' || m.tipo === 'sangria' ? 'dinheiro' : m.forma;
+      if (!(f in e)) e[f] = 0;
+      e[f] += m.tipo === 'entrada' || m.tipo === 'suprimento' ? v : -v;
+    });
+    Object.keys(e).forEach(function (f) { e[f] = e[f] / 100; });
+    return e;
+  }
+
+  function conferirCaixa(esperado, contado) {
+    var linhas = Object.keys(esperado).map(function (f) {
+      var es = centavos(esperado[f]), co = centavos((contado || {})[f] || 0);
+      return { forma: f, esperado: es / 100, contado: co / 100, diferenca: (co - es) / 100 };
+    });
+    var total = linhas.reduce(function (s, l) { return s + centavos(l.diferenca); }, 0) / 100;
+    return { linhas: linhas, diferenca: total, confere: linhas.every(function (l) { return l.diferenca === 0; }) };
+  }
+
+  /* ---------- cadastro de cliente (LGPD) ----------
+   * Só o necessário para o contrato de locação (art. 7º, V): identificar quem
+   * leva a peça (nome, CPF), falar com ele (WhatsApp) e cobrar se ela não
+   * voltar (endereço). E-mail, RG e medidas são opcionais. Marketing pede
+   * consentimento à parte (art. 7º, I e art. 8º), nunca marcado de fábrica. */
+  // "(91) 98888-7777" ou "91988887777" -> "5591988887777"
+  function normalizarWhatsApp(w) {
+    var d = String(w || '').replace(/\D/g, '');
+    return d.length === 10 || d.length === 11 ? '55' + d : d;
+  }
+
+  function mascararCpf(cpf) {
+    var d = String(cpf || '').replace(/\D/g, '');
+    return d.length === 11 ? '***.' + d.slice(3, 6) + '.' + d.slice(6, 9) + '-**' : '';
+  }
+
+  function validarCliente(c) {
+    var erros = [];
+    var e = c.endereco || {};
+    if (String(c.nome || '').trim().split(/\s+/).length < 2) erros.push('Nome e sobrenome.');
+    if (!cpfValido(c.cpf)) erros.push('CPF válido.');
+    if (!numeroWhatsAppValido(normalizarWhatsApp(c.whatsapp))) erros.push('WhatsApp com DDD.');
+    if (String(e.cep || '').replace(/\D/g, '').length !== 8) erros.push('CEP com 8 números.');
+    if (!String(e.rua || '').trim() || !String(e.numero || '').trim() || !String(e.bairro || '').trim() || !String(e.cidade || '').trim()) erros.push('Endereço completo (rua, número, bairro, cidade).');
+    if (c.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.email)) erros.push('E-mail em formato válido (ou deixe em branco).');
+    if (!c.avisoPrivacidade) erros.push('Mostrar o aviso de privacidade ao cliente.');
+    return erros;
+  }
+
+  function somarAnos(iso, anos) {
+    var m = RE_ISO.exec(iso || '');
+    if (!m) return '';
+    var ano = +m[1] + anos, mes = m[2], dia = m[3];
+    if (mes === '02' && dia === '29' && !((ano % 4 === 0 && ano % 100 !== 0) || ano % 400 === 0)) dia = '28';
+    return ano + '-' + mes + '-' + dia;
+  }
+
+  /* Pode apagar (anonimizar) o cadastro? Não com locação em andamento, nem
+   * antes de terminar a guarda depois da última locação (defesa em eventual
+   * reclamação: art. 16, I e art. 7º, VI). pedidos: [{ status, devolucao, devolvidaEm }] */
+  function situacaoEliminacao(pedidos, hoje, anos) {
+    var ativos = pedidos.filter(function (p) { return p.status === 'pendente' || p.status === 'confirmada' || p.status === 'retirada'; });
+    if (ativos.length) return { pode: false, motivo: 'locacao', ate: '' };
+    var ultima = pedidos.filter(function (p) { return p.status === 'concluida'; })
+      .map(function (p) { return p.devolvidaEm || p.devolucao; }).sort().pop();
+    if (!ultima) return { pode: true, motivo: '', ate: '' };
+    var ate = somarAnos(ultima, anos);
+    return hoje >= ate ? { pode: true, motivo: '', ate: ate } : { pode: false, motivo: 'guarda', ate: ate };
+  }
+
+  // Tira tudo que identifica a pessoa; o histórico de locações fica, sem nome.
+  function anonimizarCliente(c, quando) {
+    return {
+      id: c.id, anonimizado: true, nome: 'Cliente anonimizado ' + c.id, cpf: '', whatsapp: '', email: '', rg: '',
+      endereco: null, medidas: null, credito: 0, marketing: { consentido: false },
+      criadoEm: c.criadoEm, anonimizadoEm: quando,
+      log: [{ quando: quando, acao: 'Dados pessoais anonimizados a pedido do titular ou fim da guarda' }]
+    };
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -382,6 +534,19 @@
     proximaDataLivre: proximaDataLivre,
     validarAgenda: validarAgenda,
     cpfValido: cpfValido,
+    FORMAS_PAGAMENTO: FORMAS_PAGAMENTO,
+    dividirParcelas: dividirParcelas,
+    maxParcelas: maxParcelas,
+    taxaEstimada: taxaEstimada,
+    validarPagamentos: validarPagamentos,
+    esperadoCaixa: esperadoCaixa,
+    conferirCaixa: conferirCaixa,
+    mascararCpf: mascararCpf,
+    normalizarWhatsApp: normalizarWhatsApp,
+    validarCliente: validarCliente,
+    somarAnos: somarAnos,
+    situacaoEliminacao: situacaoEliminacao,
+    anonimizarCliente: anonimizarCliente,
     acertoDevolucao: acertoDevolucao,
     reembolsoCancelamento: reembolsoCancelamento,
     situacaoUnidade: situacaoUnidade,

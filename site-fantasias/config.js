@@ -34,6 +34,26 @@ window.CONFIG = {
     }
   },
 
+  // Painel do ateliê (balcão). Usado pelo sistema de gestão; a vitrine não lê.
+  pagamentos: {
+    chavePix: '',            // e-mail, CPF/CNPJ, celular ou chave aleatória do ateliê
+    parcelasMax: 6,          // crédito em até 6x...
+    parcelaMinima: 50,       // ...sem parcela menor que R$ 50
+    // Taxas da maquininha em %, só para estimar o líquido no fechamento do caixa.
+    // São valores de EXEMPLO: confirme as suas com a adquirente (mudam por plano e prazo).
+    taxas: { pix: 0, debito: 1.99, creditoVista: 4.99, creditoParcelado: 6.99 }
+  },
+
+  // LGPD: quanto tempo guardar e em quanto tempo responder ao cliente.
+  lgpd: {
+    retencaoCadastroAnos: 5,  // depois da última locação (prazo do CDC para reclamações)
+    retencaoFotosMeses: 6,    // fotos da vistoria, depois da devolução
+    prazoRespostaDias: 15,    // pedido do titular (ver, corrigir, apagar)
+    versaoAviso: '2026-11'    // muda quando o texto do aviso de privacidade mudar
+  },
+
+  operadores: ['Néia', 'Atendente'],
+
   /* Medição: se você instalar o Plausible ou o Google Analytics (GA4) no
    * index.html, os eventos vão para lá automaticamente. Não precisa mexer aqui. */
   mostrarEventosNoConsole: false
