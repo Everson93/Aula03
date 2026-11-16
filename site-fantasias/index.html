@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fantasia na Data — aluguel de fantasias com reserva garantida</title>
+  <meta name="description" content="Escolha a fantasia, veja as medidas e garanta para a data da sua festa. Carnaval, Halloween, festa junina e mais.">
+  <meta name="theme-color" content="#2a1840">
+  <link rel="stylesheet" href="estilo.css">
+  <!-- Medição: cole aqui o script do Plausible ou do GA4. Os eventos do site vão para ele sozinhos. -->
+</head>
+<body>
+  <div id="aviso-config" class="aviso-config" hidden></div>
+
+  <header class="topo">
+    <div class="largura topo__linha">
+      <a href="#" class="marca" data-nome-site>Fantasia na Data</a>
+      <nav class="topo__nav" aria-label="Seções">
+        <a href="#catalogo">Fantasias</a>
+        <a href="#como-funciona">Como funciona</a>
+        <a href="#grupos">Grupos</a>
+        <a href="#duvidas">Dúvidas</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="largura">
+        <h1>A fantasia certa, garantida para o dia da festa.</h1>
+        <p class="hero__sub">Veja as medidas, escolha o tamanho e reserve em 2 minutos. Caução com regra clara e vistoria por foto na retirada e na devolução.</p>
+
+        <form class="busca" id="form-busca" role="search">
+          <label class="busca__campo">
+            <span>O que você procura?</span>
+            <input type="search" id="busca-texto" placeholder="Ex.: bruxa, anos 80, pirata" autocomplete="off">
+          </label>
+          <label class="busca__campo busca__campo--data">
+            <span>Data da festa</span>
+            <input type="date" id="busca-data">
+          </label>
+          <button type="submit" class="botao botao--destaque">Buscar</button>
+        </form>
+
+        <div class="chips" id="chips-temas" aria-label="Temas"></div>
+      </div>
+    </section>
+
+    <section class="faixa-confianca" aria-label="Por que reservar aqui">
+      <div class="largura faixa-confianca__grade">
+        <div><strong>Medidas reais</strong><span>Busto, cintura, quadril e altura de cada tamanho</span></div>
+        <div><strong>Sinal pequeno</strong><span>Garanta com 30% a 50%; o resto na retirada</span></div>
+        <div><strong>Caução sem surpresa</strong><span>Só é retida com dano novo comprovado em foto</span></div>
+      </div>
+    </section>
+
+    <section id="catalogo" class="secao">
+      <div class="largura">
+        <div class="secao__cabeca">
+          <h2>Fantasias</h2>
+          <p id="contagem" class="contagem" aria-live="polite"></p>
+        </div>
+
+        <div class="filtros" id="filtros">
+          <label>Tema
+            <select id="filtro-tema"><option value="">Todos</option></select>
+          </label>
+          <label>Para
+            <select id="filtro-genero">
+              <option value="">Todos</option>
+              <option value="feminino">Feminino</option>
+              <option value="masculino">Masculino</option>
+            </select>
+          </label>
+          <label>Tamanho
+            <select id="filtro-tamanho"><option value="">Todos</option></select>
+          </label>
+          <label>Até
+            <select id="filtro-preco">
+              <option value="">Qualquer preço</option>
+              <option value="100">R$ 100</option>
+              <option value="150">R$ 150</option>
+              <option value="200">R$ 200</option>
+            </select>
+          </label>
+          <button type="button" class="botao botao--leve" id="limpar-filtros">Limpar</button>
+        </div>
+
+        <ul class="grade" id="grade"></ul>
+        <p class="vazio" id="vazio" hidden>Nenhuma fantasia com esses filtros. <button type="button" class="link" id="vazio-limpar">Limpar filtros</button> ou <a href="#" id="vazio-whats">pergunte no WhatsApp</a> — o acervo das lojas é maior que a vitrine.</p>
+      </div>
+    </section>
+
+    <section id="como-funciona" class="secao secao--alt">
+      <div class="largura">
+        <h2>Como funciona</h2>
+        <ol class="passos">
+          <li>
+            <h3>Escolha e informe a data</h3>
+            <p>Confira a tabela de medidas e a sugestão de tamanho pela sua altura e peso. Clique em reservar: a loja confirma a disponibilidade pelo WhatsApp.</p>
+          </li>
+          <li>
+            <h3>Garanta com o sinal via Pix</h3>
+            <p>Um sinal de 30% a 50% segura a peça para você. O saldo é pago na retirada. Cancelou até 7 dias antes? O sinal volta inteiro.</p>
+          </li>
+          <li>
+            <h3>Retire e devolva com vistoria</h3>
+            <p>Na retirada e na devolução, a peça é fotografada (frente, costas, barra e detalhes). A caução só fica retida se a devolução mostrar um dano que não estava lá — e com o custo explicado item a item.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="grupos" class="secao">
+      <div class="largura dois-blocos">
+        <div class="bloco">
+          <h2>Grupos, escolas e empresas</h2>
+          <p>Bloco de Carnaval, quadrilha da escola, festa da firma: monte um pedido com várias peças do mesmo tema e receba um orçamento único.</p>
+          <a href="#" class="botao botao--destaque" id="botao-grupo">Pedir orçamento de grupo</a>
+        </div>
+        <div class="bloco bloco--escuro">
+          <h2>Tem loja ou ateliê de fantasias?</h2>
+          <p>Coloque seu acervo na vitrine e receba reservas com data marcada e sinal pago. Sem mensalidade nesta fase.</p>
+          <a href="#" class="botao botao--claro" id="botao-parceiro">Quero ser parceiro</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="duvidas" class="secao secao--alt">
+      <div class="largura estreito">
+        <h2>Dúvidas</h2>
+        <details>
+          <summary>Por quantos dias fico com a fantasia?</summary>
+          <p>O período padrão é de 3 dias (retira na véspera, devolve no dia seguinte à festa). Cada dia a mais tem o valor mostrado na página da fantasia.</p>
+        </details>
+        <details>
+          <summary>Como funciona a caução?</summary>
+          <p>É um valor fixo por peça, mostrado antes de você reservar. Ela é devolvida na entrega, a menos que a vistoria de devolução mostre um dano que não aparece nas fotos da retirada. Nesse caso, a cobrança vem itemizada.</p>
+        </details>
+        <details>
+          <summary>E se não servir?</summary>
+          <p>Cada tamanho tem medidas reais. Se na retirada a peça não servir e houver outro tamanho livre na data, a troca é feita na hora.</p>
+        </details>
+        <details>
+          <summary>Posso cancelar?</summary>
+          <p>Até 7 dias antes da retirada, o sinal é devolvido integralmente. Depois disso vale a política da loja, que aparece na página de cada fantasia antes de você reservar.</p>
+        </details>
+        <details>
+          <summary>A fantasia é higienizada?</summary>
+          <p>Sim. Toda peça passa por limpeza entre um aluguel e outro — é por isso que existe um intervalo entre reservas.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="rodape">
+    <div class="largura">
+      <p><strong data-nome-site>Fantasia na Data</strong> — vitrine de lojas e ateliês parceiros. Cada reserva é feita com a loja responsável pela peça.</p>
+      <p class="rodape__nota">Fotos ilustrativas até a loja enviar as fotos reais. Nomes das fantasias são descritivos.</p>
+    </div>
+  </footer>
+
+  <dialog id="ficha" class="ficha" aria-labelledby="ficha-nome">
+    <form method="dialog" class="ficha__fechar-form">
+      <button class="ficha__fechar" aria-label="Fechar">×</button>
+    </form>
+    <div class="ficha__corpo" id="ficha-corpo"></div>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="dados.js"></script>
+  <script src="logica.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
