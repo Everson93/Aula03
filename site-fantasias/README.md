@@ -96,9 +96,10 @@ com sinal pago vindas desta página.
   endereço do contrato. Os dias sem horário precisam bater com `diasFechados`
   da loja; a suíte confere.
 - **`instagram`**: aparece no rodapé e no Google.
-- **`medicao`**: `plausible` (sem cookies, recomendado) ou `ga4`. Com GA4, a
-  lei pede aviso e escolha do visitante antes de medir; esse aviso ainda não
-  está pronto no site, então prefira o Plausible.
+- **`medicao`**: `plausible` (sem cookies, recomendado: cole o script do
+  Plausible no `<head>`) ou `ga4` (ponha o ID em `ga4Id` e **não** cole o
+  script do Google: o site mostra o aviso de cookies e só carrega o Analytics
+  depois do "Aceitar"; a escolha pode ser mudada na política de privacidade).
 - **Política de privacidade**: no rodapé (link `#privacidade`), montada a
   partir do `config.js` (prazos de guarda e de resposta, versão).
 - **Prévia do link**: `og-imagem.png` (1200×630) e `favicon.svg`. Depois de

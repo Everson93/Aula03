@@ -425,6 +425,12 @@ prova('anonimizar tira o que identifica', !an.cpf && !an.whatsapp && !an.enderec
   prova('relatório: nome do mês', L.nomeMes('2027-02') === 'fev/27');
 }
 
+/* ---------- medição e cookies ---------- */
+prova('Plausible mede sem perguntar', L.medicaoPermitida('plausible', ''));
+prova('GA4 só mede depois do aceite', !L.medicaoPermitida('ga4', '') && !L.medicaoPermitida('ga4', 'recusado') && L.medicaoPermitida('ga4', 'aceito'));
+prova('sem medição, nada', !L.medicaoPermitida('', 'aceito'));
+prova('o script do GA não está colado no index.html (passaria por cima do aceite)', !/googletagmanager\.com\/gtag/.test(fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8')));
+
 /* ---------- coerência dos dados ---------- */
 const idsTemas = new Set(TEMAS.map(t => t.id));
 const vistos = new Set();

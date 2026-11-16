@@ -31,6 +31,8 @@ window.CONFIG = {
   // Medição do site: 'plausible' (sem cookies, recomendado) ou 'ga4' (usa cookies:
   // aí a lei pede aviso e escolha do visitante antes de medir). Vazio = sem medição.
   medicao: 'plausible',
+  ga4Id: '',               // com medicao 'ga4': o ID de medição (G-XXXXXXX). Não cole o script do GA no index.html:
+                           // o site carrega sozinho, só depois do "Aceitar" do visitante.
 
   // WhatsApp para pedido de grupo e "não achei o que procuro".
   // Pode ser o mesmo número da loja.

@@ -605,9 +605,46 @@
     document.head.appendChild(ld);
   }
 
+  /* ---------- cookies (só com Google Analytics) ---------- */
+  var CHAVE_COOKIES = 'consentimento-medicao';
+  function lerEscolha() { try { return localStorage.getItem(CHAVE_COOKIES) || ''; } catch (e) { return ''; } }
+  function carregarGa4() {
+    if (!C.ga4Id || window.gtag) return;
+    var sc = document.createElement('script');
+    sc.async = true;
+    sc.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(C.ga4Id);
+    document.head.appendChild(sc);
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };
+    window.gtag('js', new Date());
+    window.gtag('config', C.ga4Id);
+  }
+  function cookies() {
+    if (C.medicao !== 'ga4') return;
+    var caixa = $('cookies');
+    var escolher = function (v) {
+      try { localStorage.setItem(CHAVE_COOKIES, v); } catch (e) { /* sem armazenamento: pergunta de novo na próxima visita */ }
+      caixa.hidden = true;
+      if (L.medicaoPermitida(C.medicao, v)) carregarGa4();
+    };
+    $('cookies-aceitar').addEventListener('click', function () { escolher('aceito'); });
+    $('cookies-recusar').addEventListener('click', function () { escolher('recusado'); });
+    if (L.medicaoPermitida(C.medicao, lerEscolha())) carregarGa4();
+    else caixa.hidden = lerEscolha() === 'recusado';
+    // Na política de privacidade: mudar a escolha a qualquer momento.
+    var p = document.createElement('p');
+    p.innerHTML = '<button type="button" class="link" id="cookies-mudar">Mudar minha escolha sobre cookies</button>';
+    $('privacidade-texto').appendChild(p);
+    $('cookies-mudar').addEventListener('click', function () {
+      try { localStorage.removeItem(CHAVE_COOKIES); } catch (e) { /* idem */ }
+      caixa.hidden = false;
+    });
+  }
+
   /* ---------- início ---------- */
   aplicarMarca();
   montarLocal();
+  cookies();
   document.title = C.nomeSite + ' — aluguel de trajes juninos e fantasias';
   avisarConfiguracao();
   montarFiltros();

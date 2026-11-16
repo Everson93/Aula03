@@ -622,6 +622,14 @@
     return m + '/' + mes.slice(2, 4);
   }
 
+  /* Medição: Plausible não usa cookies (pode medir direto); GA4 usa, então só
+   * depois que o visitante aceitar (LGPD). escolha: 'aceito' | 'recusado' | '' */
+  function medicaoPermitida(medicao, escolha) {
+    if (medicao === 'plausible') return true;
+    if (medicao === 'ga4') return escolha === 'aceito';
+    return false;
+  }
+
   function normalizar(texto) {
     return String(texto || '')
       .normalize('NFD')
@@ -768,6 +776,7 @@
     validarAgenda: validarAgenda,
     kitLivres: kitLivres,
     textoHorarios: textoHorarios,
+    medicaoPermitida: medicaoPermitida,
     somarMeses: somarMeses,
     relatorioMes: relatorioMes,
     faturamentoPorMes: faturamentoPorMes,
