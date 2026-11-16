@@ -22,9 +22,13 @@ for (const s of scripts) {
   if (/<\/script/i.test(ler(s))) throw new Error(s + ' contém </script> e quebraria o HTML inline');
 }
 
+// Fontes do Google: as mesmas linhas do <head> do site (o artefato só aceita fontes de lá).
+const fontes = (html.match(/<link rel="(?:stylesheet|preconnect)" href="https:\/\/fonts\.(?:googleapis|gstatic)\.com[^>]*>/g) || []);
+
 const pagina = [
-  '<title>Simulador Fantasia na Data</title>',
-  '<meta name="description" content="Simulação da landing de aluguel de fantasias antes de publicar.">',
+  '<title>Simulador Cantinho da Day</title>',
+  '<meta name="description" content="Simulação do site de aluguel de trajes juninos e fantasias antes de publicar.">',
+  ...fontes,
   '<style>', ler('estilo.css'), ler('simulacao/simulacao.css'), '</style>',
   corpo.trim(),
   ...scripts.map(s => '<script>/* ' + s + ' */\n' + ler(s) + '\n</script>')

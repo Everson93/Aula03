@@ -18,9 +18,9 @@
  *              (vazio = cartão ilustrativo com a cor da peça)
  */
 window.TEMAS = [
+  { id: 'junina', nome: 'Festa junina' },
   { id: 'carnaval', nome: 'Carnaval' },
   { id: 'halloween', nome: 'Halloween' },
-  { id: 'junina', nome: 'Festa junina' },
   { id: 'decadas', nome: 'Anos 20 a 90' },
   { id: 'medieval', nome: 'Medieval e realeza' },
   { id: 'herois', nome: 'Heróis e aventura' },
@@ -29,7 +29,7 @@ window.TEMAS = [
 
 window.FANTASIAS = [
   {
-    id: 'HW01', nome: 'Bruxa Clássica de Veludo', loja: 'lantejoula', temas: ['halloween'], genero: 'feminino',
+    id: 'HW01', nome: 'Bruxa Clássica de Veludo', loja: 'neia', temas: ['halloween'], genero: 'feminino',
     preco: 140, diaExtra: 35, caucao: 100, cor: '#3b2a5a',
     descricao: 'Vestido longo de veludo com mangas sino e chapéu pontudo estruturado.',
     tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172] },
@@ -42,7 +42,7 @@ window.FANTASIAS = [
     palavras: ['feiticeira'], fotos: []
   },
   {
-    id: 'HW02', nome: 'Vampiro Vitoriano', loja: 'figurino', temas: ['halloween'], genero: 'masculino',
+    id: 'HW02', nome: 'Vampiro Vitoriano', loja: 'neia', temas: ['halloween'], genero: 'masculino',
     preco: 150, diaExtra: 40, caucao: 120, cor: '#5a1220',
     descricao: 'Sobrecasaca com gola alta, colete bordado e capa com forro vermelho.',
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180], GG: [114, 102, 116, 186] },
@@ -55,7 +55,7 @@ window.FANTASIAS = [
     palavras: ['dracula', 'conde'], fotos: []
   },
   {
-    id: 'HW03', nome: 'Catrina — Caveira Mexicana', loja: 'bau', temas: ['halloween'], genero: 'feminino',
+    id: 'HW03', nome: 'Catrina — Caveira Mexicana', loja: 'neia', temas: ['halloween'], genero: 'feminino',
     preco: 160, diaExtra: 40, caucao: 120, cor: '#8a2b4f',
     descricao: 'Vestido rodado com babados e arranjo de flores para a cabeça.',
     tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166] },
@@ -65,7 +65,7 @@ window.FANTASIAS = [
     palavras: ['dia de los muertos', 'mexico'], fotos: []
   },
   {
-    id: 'HW04', nome: 'Múmia Egípcia', loja: 'lantejoula', temas: ['halloween', 'historia'], genero: 'unissex',
+    id: 'HW04', nome: 'Múmia Egípcia', loja: 'neia', temas: ['halloween', 'historia'], genero: 'unissex',
     preco: 95, diaExtra: 25, caucao: 60, cor: '#8f7a55',
     descricao: 'Macacão com faixas costuradas — não solta na festa.',
     tamanhos: { P: [88, 72, 96, 162], M: [96, 80, 102, 170], G: [104, 90, 110, 178] },
@@ -75,7 +75,7 @@ window.FANTASIAS = [
     palavras: [], fotos: []
   },
   {
-    id: 'HW05', nome: 'Noiva Zumbi', loja: 'figurino', temas: ['halloween'], genero: 'feminino',
+    id: 'HW05', nome: 'Noiva Zumbi', loja: 'neia', temas: ['halloween'], genero: 'feminino',
     preco: 130, diaExtra: 35, caucao: 100, cor: '#55605a',
     descricao: 'Vestido de noiva envelhecido, véu rasgado e buquê seco.',
     tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172] },
@@ -85,7 +85,7 @@ window.FANTASIAS = [
     palavras: ['morta-viva'], fotos: []
   },
   {
-    id: 'HW06', nome: 'Lobisomem', loja: 'bau', temas: ['halloween'], genero: 'masculino',
+    id: 'HW06', nome: 'Lobisomem', loja: 'neia', temas: ['halloween'], genero: 'masculino',
     preco: 180, diaExtra: 45, caucao: 150, cor: '#4a3a2a',
     descricao: 'Camisa rasgada com pelagem aplicada, luvas de garra e máscara de látex.',
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180] },
@@ -94,7 +94,7 @@ window.FANTASIAS = [
     kit: [], palavras: ['lobo'], fotos: []
   },
   {
-    id: 'CV01', nome: 'Melindrosa Anos 20', loja: 'lantejoula', temas: ['carnaval', 'decadas'], genero: 'feminino',
+    id: 'CV01', nome: 'Melindrosa Anos 20', loja: 'neia', temas: ['carnaval', 'decadas'], genero: 'feminino',
     preco: 150, diaExtra: 35, caucao: 120, cor: '#1f3b4d',
     descricao: 'Vestido de franjas com paetês, faixa de cabeça com pena.',
     tamanhos: { PP: [80, 62, 88, 155], P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172] },
@@ -107,7 +107,7 @@ window.FANTASIAS = [
     palavras: ['charleston', 'gatsby'], fotos: []
   },
   {
-    id: 'CV02', nome: 'Pierrô', loja: 'figurino', temas: ['carnaval'], genero: 'unissex',
+    id: 'CV02', nome: 'Pierrô', loja: 'neia', temas: ['carnaval'], genero: 'unissex',
     preco: 110, diaExtra: 30, caucao: 80, cor: '#2b2b3a',
     descricao: 'Bata branca com pompons pretos e gola franzida.',
     tamanhos: { P: [88, 72, 96, 162], M: [96, 80, 102, 170], G: [104, 90, 110, 178], GG: [114, 102, 116, 186] },
@@ -117,7 +117,7 @@ window.FANTASIAS = [
     palavras: ['carnaval antigo'], fotos: []
   },
   {
-    id: 'CV03', nome: 'Colombina', loja: 'figurino', temas: ['carnaval'], genero: 'feminino',
+    id: 'CV03', nome: 'Colombina', loja: 'neia', temas: ['carnaval'], genero: 'feminino',
     preco: 120, diaExtra: 30, caucao: 90, cor: '#7a2f5a',
     descricao: 'Vestido de losangos com saia armada e máscara de mão.',
     tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166] },
@@ -127,7 +127,7 @@ window.FANTASIAS = [
     palavras: ['arlequina'], fotos: []
   },
   {
-    id: 'CV04', nome: 'Marinheiro de Bloco', loja: 'bau', temas: ['carnaval'], genero: 'masculino',
+    id: 'CV04', nome: 'Marinheiro de Bloco', loja: 'neia', temas: ['carnaval'], genero: 'masculino',
     preco: 85, diaExtra: 20, caucao: 60, cor: '#1d3f7a',
     descricao: 'Camisa com gola marinheira, calça branca e quepe.',
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180], GG: [114, 102, 116, 186] },
@@ -136,7 +136,7 @@ window.FANTASIAS = [
     kit: [], palavras: ['bloco'], fotos: []
   },
   {
-    id: 'CV05', nome: 'Havaiana', loja: 'bau', temas: ['carnaval'], genero: 'feminino',
+    id: 'CV05', nome: 'Havaiana', loja: 'neia', temas: ['carnaval'], genero: 'feminino',
     preco: 80, diaExtra: 20, caucao: 50, cor: '#c0532b',
     descricao: 'Saia de ráfia, top estampado e colar de flores.',
     tamanhos: { PP: [80, 62, 88, 155], P: [86, 68, 94, 160], M: [92, 74, 100, 166] },
@@ -146,7 +146,7 @@ window.FANTASIAS = [
     palavras: ['hula', 'praia'], fotos: []
   },
   {
-    id: 'CV06', nome: 'Rei Momo', loja: 'lantejoula', temas: ['carnaval', 'medieval'], genero: 'masculino',
+    id: 'CV06', nome: 'Rei Momo', loja: 'neia', temas: ['carnaval', 'medieval'], genero: 'masculino',
     preco: 220, diaExtra: 50, caucao: 180, cor: '#8a6a14',
     descricao: 'Manto bordado, coroa e cetro — peça de destaque para desfile.',
     tamanhos: { G: [106, 94, 108, 180], GG: [114, 102, 116, 186], XG: [124, 112, 124, 190] },
@@ -155,7 +155,7 @@ window.FANTASIAS = [
     kit: [], palavras: ['rei'], fotos: []
   },
   {
-    id: 'JN01', nome: 'Caipira Vestido Xadrez', loja: 'figurino', temas: ['junina'], genero: 'feminino',
+    id: 'JN01', nome: 'Caipira Vestido Xadrez', loja: 'neia', temas: ['junina'], genero: 'feminino',
     preco: 90, diaExtra: 20, caucao: 60, cor: '#a0322a',
     descricao: 'Vestido xadrez com babados de renda e laço de fita.',
     tamanhos: { PP: [80, 62, 88, 155], P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172] },
@@ -168,7 +168,7 @@ window.FANTASIAS = [
     palavras: ['sao joao', 'quadrilha', 'arraia'], fotos: []
   },
   {
-    id: 'JN02', nome: 'Caipira Camisa Xadrez e Remendo', loja: 'figurino', temas: ['junina'], genero: 'masculino',
+    id: 'JN02', nome: 'Caipira Camisa Xadrez e Remendo', loja: 'neia', temas: ['junina'], genero: 'masculino',
     preco: 80, diaExtra: 20, caucao: 50, cor: '#6b4a1f',
     descricao: 'Camisa xadrez, calça com remendos e lenço no pescoço.',
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180], GG: [114, 102, 116, 186] },
@@ -178,7 +178,49 @@ window.FANTASIAS = [
     palavras: ['sao joao', 'quadrilha', 'arraia'], fotos: []
   },
   {
-    id: 'DC01', nome: 'Roqueira Anos 80', loja: 'bau', temas: ['decadas', 'carnaval'], genero: 'feminino',
+    id: 'JN03', nome: 'Noiva da Quadrilha', loja: 'neia', temas: ['junina'], genero: 'feminino',
+    preco: 160, diaExtra: 40, caucao: 120, cor: '#b0175f',
+    descricao: 'Vestido de chita com renda, saia armada de babados, véu curto e buquê de flores de tecido.',
+    tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172] },
+    estoque: { P: 1, M: 2, G: 1 },
+    inclui: ['Vestido', 'Anágua', 'Véu', 'Buquê'],
+    kit: [{ id: 'sardas3', nome: 'Lápis para sardas', tipo: 'venda', preco: 8 }],
+    palavras: ['casamento caipira', 'quadrilha', 'sao joao', 'arraia'], fotos: []
+  },
+  {
+    id: 'JN04', nome: 'Noivo da Quadrilha', loja: 'neia', temas: ['junina'], genero: 'masculino',
+    preco: 120, diaExtra: 30, caucao: 90, cor: '#7a4a1f',
+    descricao: 'Paletó de xadrez com remendos, calça de barra dobrada, gravata de chita e chapéu de palha.',
+    tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180], GG: [114, 102, 116, 186] },
+    estoque: { M: 2, G: 2, GG: 1 },
+    inclui: ['Paletó', 'Calça', 'Gravata', 'Chapéu de palha'],
+    kit: [{ id: 'bigode', nome: 'Bigode e costeleta para pintar', tipo: 'venda', preco: 8 }],
+    palavras: ['casamento caipira', 'quadrilha', 'sao joao', 'arraia'], fotos: []
+  },
+  {
+    id: 'JN05', nome: 'Caipira Chita Florida', loja: 'neia', temas: ['junina'], genero: 'feminino',
+    preco: 95, diaExtra: 25, caucao: 60, cor: '#d4462f',
+    descricao: 'Vestido rodado de chita com bolero de renda e fita de cetim na cintura.',
+    tamanhos: { PP: [80, 62, 88, 155], P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172], GG: [108, 90, 116, 176] },
+    estoque: { PP: 1, P: 3, M: 3, G: 2, GG: 1 },
+    inclui: ['Vestido', 'Bolero', 'Fita'],
+    kit: [
+      { id: 'chapeu-palha3', nome: 'Chapéu de palha com flores', tipo: 'aluguel', preco: 15 },
+      { id: 'sardas4', nome: 'Lápis para sardas', tipo: 'venda', preco: 8 }
+    ],
+    palavras: ['chita', 'sao joao', 'quadrilha', 'arraia'], fotos: []
+  },
+  {
+    id: 'JN06', nome: 'Sanfoneiro do Arraiá', loja: 'neia', temas: ['junina'], genero: 'masculino',
+    preco: 110, diaExtra: 25, caucao: 80, cor: '#8a5a1a',
+    descricao: 'Gibão de couro sintético, camisa de botão, lenço vermelho e chapéu de cangaceiro em meia-lua.',
+    tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180] },
+    estoque: { M: 1, G: 1 },
+    inclui: ['Gibão', 'Camisa', 'Lenço', 'Chapéu'],
+    kit: [], palavras: ['forro', 'nordeste', 'sao joao', 'vaqueiro'], fotos: []
+  },
+  {
+    id: 'DC01', nome: 'Roqueira Anos 80', loja: 'neia', temas: ['decadas', 'carnaval'], genero: 'feminino',
     preco: 110, diaExtra: 25, caucao: 80, cor: '#3a1f4d',
     descricao: 'Jaqueta de couro sintético com tachas, saia de tule e meia arrastão.',
     tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172] },
@@ -188,7 +230,7 @@ window.FANTASIAS = [
     palavras: ['rock', 'punk', 'anos 80'], fotos: []
   },
   {
-    id: 'DC02', nome: 'Aeróbica Anos 80', loja: 'lantejoula', temas: ['decadas'], genero: 'unissex',
+    id: 'DC02', nome: 'Aeróbica Anos 80', loja: 'neia', temas: ['decadas'], genero: 'unissex',
     preco: 80, diaExtra: 20, caucao: 50, cor: '#b0306a',
     descricao: 'Collant neon, polaina e faixa de cabeça.',
     tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172] },
@@ -197,7 +239,7 @@ window.FANTASIAS = [
     kit: [], palavras: ['neon', 'anos 80', 'ginastica'], fotos: []
   },
   {
-    id: 'DC03', nome: 'Disco Anos 70', loja: 'figurino', temas: ['decadas'], genero: 'masculino',
+    id: 'DC03', nome: 'Disco Anos 70', loja: 'neia', temas: ['decadas'], genero: 'masculino',
     preco: 130, diaExtra: 30, caucao: 100, cor: '#7a5a14',
     descricao: 'Terno boca de sino brilhante com camisa de gola grande.',
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180] },
@@ -207,7 +249,7 @@ window.FANTASIAS = [
     palavras: ['discoteca', 'anos 70', 'dancing'], fotos: []
   },
   {
-    id: 'DC04', nome: 'Hippie Paz e Amor', loja: 'bau', temas: ['decadas', 'carnaval'], genero: 'unissex',
+    id: 'DC04', nome: 'Hippie Paz e Amor', loja: 'neia', temas: ['decadas', 'carnaval'], genero: 'unissex',
     preco: 85, diaExtra: 20, caucao: 50, cor: '#5a7a2a',
     descricao: 'Bata indiana, calça boca de sino e faixa de cabeça com flores.',
     tamanhos: { P: [88, 72, 96, 162], M: [96, 80, 102, 170], G: [104, 90, 110, 178] },
@@ -217,7 +259,7 @@ window.FANTASIAS = [
     palavras: ['anos 60', 'anos 70', 'woodstock'], fotos: []
   },
   {
-    id: 'MD01', nome: 'Rainha Medieval', loja: 'lantejoula', temas: ['medieval'], genero: 'feminino',
+    id: 'MD01', nome: 'Rainha Medieval', loja: 'neia', temas: ['medieval'], genero: 'feminino',
     preco: 260, diaExtra: 60, caucao: 200, cor: '#5a1a3a',
     descricao: 'Vestido de brocado com cauda, mangas longas e tiara.',
     tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172], GG: [108, 90, 116, 176] },
@@ -226,7 +268,7 @@ window.FANTASIAS = [
     kit: [], palavras: ['princesa', 'nobre'], fotos: []
   },
   {
-    id: 'MD02', nome: 'Cavaleiro de Armadura', loja: 'bau', temas: ['medieval', 'herois'], genero: 'masculino',
+    id: 'MD02', nome: 'Cavaleiro de Armadura', loja: 'neia', temas: ['medieval', 'herois'], genero: 'masculino',
     preco: 300, diaExtra: 70, caucao: 250, cor: '#4a5560',
     descricao: 'Cota de malha têxtil, peitoral de EVA pintado, elmo e escudo.',
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180] },
@@ -236,7 +278,7 @@ window.FANTASIAS = [
     palavras: ['armadura', 'templario'], fotos: []
   },
   {
-    id: 'HR01', nome: 'Super-herói de Capa Vermelha', loja: 'figurino', temas: ['herois', 'carnaval'], genero: 'masculino',
+    id: 'HR01', nome: 'Super-herói de Capa Vermelha', loja: 'neia', temas: ['herois', 'carnaval'], genero: 'masculino',
     preco: 120, diaExtra: 30, caucao: 90, cor: '#1a3a8a',
     descricao: 'Macacão azul com musculatura acolchoada e capa vermelha.',
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180], GG: [114, 102, 116, 186] },
@@ -245,7 +287,7 @@ window.FANTASIAS = [
     kit: [], palavras: ['heroi', 'super'], fotos: []
   },
   {
-    id: 'HR02', nome: 'Pirata Corsário', loja: 'lantejoula', temas: ['herois', 'carnaval'], genero: 'masculino',
+    id: 'HR02', nome: 'Pirata Corsário', loja: 'neia', temas: ['herois', 'carnaval'], genero: 'masculino',
     preco: 140, diaExtra: 35, caucao: 100, cor: '#3a2a1a',
     descricao: 'Casaca longa, camisa bufante, faixa de cintura e chapéu tricórnio.',
     tamanhos: { M: [98, 86, 100, 175], G: [106, 94, 108, 180] },
@@ -258,7 +300,7 @@ window.FANTASIAS = [
     palavras: ['capitao', 'navio'], fotos: []
   },
   {
-    id: 'HR03', nome: 'Pirata Capitã', loja: 'lantejoula', temas: ['herois', 'carnaval'], genero: 'feminino',
+    id: 'HR03', nome: 'Pirata Capitã', loja: 'neia', temas: ['herois', 'carnaval'], genero: 'feminino',
     preco: 140, diaExtra: 35, caucao: 100, cor: '#6a2a1a',
     descricao: 'Corpete, saia assimétrica, camisa bufante e chapéu com pena.',
     tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172] },
@@ -268,7 +310,7 @@ window.FANTASIAS = [
     palavras: ['capita', 'navio'], fotos: []
   },
   {
-    id: 'HS01', nome: 'Rainha Egípcia', loja: 'bau', temas: ['historia', 'carnaval'], genero: 'feminino',
+    id: 'HS01', nome: 'Rainha Egípcia', loja: 'neia', temas: ['historia', 'carnaval'], genero: 'feminino',
     preco: 190, diaExtra: 45, caucao: 150, cor: '#1a5a5a',
     descricao: 'Vestido plissado branco, gola larga dourada e coroa de serpente.',
     tamanhos: { P: [86, 68, 94, 160], M: [92, 74, 100, 166], G: [100, 82, 108, 172] },

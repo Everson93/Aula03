@@ -40,13 +40,17 @@ const FESTAS = [
   { data: '2027-02-05', tipo: 'carnaval' },
   { data: '2027-02-06', tipo: 'carnaval' },
   { data: '2027-02-08', tipo: 'carnaval' },
-  { data: '2027-02-09', tipo: 'carnaval' }
+  { data: '2027-02-09', tipo: 'carnaval' },
+  { data: '2027-06-12', tipo: 'junina' },
+  { data: '2027-06-19', tipo: 'junina' },
+  { data: '2027-06-24', tipo: 'junina' }
 ];
 
 function chance(f, tipo) {
   const tem = t => f.temas.includes(t);
   if (tipo === 'carnaval') return tem('carnaval') ? 0.42 : 0.1;
   if (tipo === 'pre-carnaval') return tem('carnaval') ? 0.25 : 0.08;
+  if (tipo === 'junina') return tem('junina') ? 0.8 : 0.04;
   if (tipo === 'fim-de-ano') return tem('decadas') || tem('herois') ? 0.3 : 0.12;
   return 0.1;
 }

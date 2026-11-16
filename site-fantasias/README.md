@@ -1,4 +1,6 @@
-# Fantasia na Data — landing de validação
+# Cantinho da Day — site de aluguel de trajes juninos e fantasias
+
+Ateliê Néia Gonçalves. Landing de validação, com uma loja só (o ateliê).
 
 Primeira etapa do site de aluguel de fantasias (ver a especificação
 "Site de Aluguel de Fantasias — Pesquisa e Especificação"). O objetivo
@@ -25,19 +27,45 @@ com sinal pago vindas desta página.
   total e sinal.
 - Link direto para cada fantasia (`index.html#f-HW01`; o formato antigo `#f/HW01` continua abrindo) — bom para anúncio e
   para mandar no Instagram.
-- Botões para pedido de grupo, para lojas que querem ser parceiras e para
-  "não encontrei o que procuro".
+- Botões para orçamento de quadrilha/grupo e para falar com o ateliê
+  ("não achei o que procuro").
 - Responsivo, com tema claro e escuro (segue o celular); sem dependências nem etapa de build.
 
-## Antes de publicar — 3 coisas
+## Estoque, retirada e devolução
 
-1. **`config.js`**: preencha `whatsappCentral` e o `whatsapp` de cada loja
-   (formato `5591988887777`: 55 + DDD + número, só dígitos). Ajuste nome,
-   bairro, percentual de sinal e política de cancelamento de cada loja.
+- **Estoque**: em `dados.js`, `estoque: { P: 2, M: 3 }` diz quantas peças
+  físicas existem de cada tamanho. Cada peça tem um código (`JN03-M-2` é a
+  2ª Noiva da Quadrilha M).
+- **Período**: o padrão é retirar na véspera e devolver no dia seguinte à
+  festa (3 dias). A ficha mostra as duas datas assim que a data da festa é
+  escolhida, e aceita até 4 dias extras (cobrados pelo `diaExtra` da peça).
+  Dia em que o ateliê não abre (`diasFechados` em `config.js`, domingo por
+  padrão) nunca é retirada nem devolução: a devolução passa para o próximo
+  dia útil, sem custo.
+- **Disponibilidade**: uma reserva ocupa a peça da retirada até a devolução,
+  mais `margemHigienizacao` dias (padrão 1). A vitrine mostra, por fantasia e
+  por tamanho, quantas peças estão livres na data; esgotada mostra a próxima
+  data livre e troca o botão por "Perguntar outra data ou tamanho".
+- **Agenda**: `agenda.js` guarda as reservas confirmadas. Ao receber um sinal
+  pelo WhatsApp, acrescente uma linha (o formato está no próprio arquivo). A
+  suíte reprova a agenda se duas reservas cruzarem na mesma peça — a mesma
+  regra que o banco do MVP vai ter.
+
+## Antes de publicar — 4 coisas
+
+0. **Logo**: salve a imagem do logo nesta pasta (ex.: `logo.png`) e ponha
+   `logo: 'logo.png'` em `config.js`. Ele entra no topo e na abertura. Vazio,
+   o site escreve "Cantinho da Day" com a letra cursiva da marca.
+
+1. **`config.js`**: preencha o `whatsapp` do ateliê e o `whatsappCentral`
+   (pode ser o mesmo número; formato `5591988887777`: 55 + DDD + número, só
+   dígitos). Confira endereço, percentual de sinal, dias fechados e a política
+   de cancelamento — os valores atuais são sugestões.
    Enquanto faltar algum número, aparece uma faixa amarela no topo e os
    botões daquele contato ficam desativados — de propósito, para nenhum
    clique se perder.
-2. **`dados.js`**: troque as 24 fantasias de exemplo pelas peças reais.
+2. **`dados.js`**: troque as 28 fantasias de exemplo (6 juninas) pelas peças
+   reais do ateliê, com o estoque de cada tamanho.
    Ponha as fotos numa pasta `fotos/` e liste em `fotos: ['fotos/hw01-1.jpg']`.
    Sem foto, a página mostra um cartão com a cor da peça e o selo
    "foto ilustrativa".
@@ -51,8 +79,10 @@ com sinal pago vindas desta página.
    | `filtro_tema`, `filtro_genero`, `filtro_tamanho`, `filtro_precoMax` | mudou um filtro |
    | `abrir_ficha` | abriu uma fantasia (`origem`: grade ou link) |
    | `sugestao_tamanho` | usou a sugestão por altura e peso |
-   | `clique_reservar` | **clicou em reservar** (peça, loja, tamanho, se tinha data) |
-   | `clique_grupo`, `clique_parceiro`, `clique_nao_encontrei` | botões de contato |
+   | `escolheu_data`, `filtro_disponivel` | escolheu a data da festa, filtrou só o que está livre |
+| `clique_reservar` | **clicou em reservar** (peça, tamanho, retirada, devolução, peça livre) |
+| `clique_pedir_outra_data` | clicou no botão de uma peça esgotada na data |
+   | `clique_grupo`, `clique_falar_atelie`, `clique_nao_encontrei` | botões de contato |
 
    As **reservas pagas** não passam pelo site nesta fase: anote cada sinal
    recebido pelo WhatsApp (o código da peça vem na mensagem) para fechar a
@@ -74,10 +104,18 @@ Para testar no computador, basta abrir o `index.html` no navegador.
 node simulacao/montar.js simulador.html
 ```
 
-Gera um HTML único com o site inteiro mais uma camada de simulação: cada loja
-ganha um número fictício, o botão de reservar mostra a conversa que a loja
-receberia (com opção de mandar para o seu próprio WhatsApp) e um painel
-"Medição" lista os eventos e o funil visitas → fichas → cliques em reservar.
+Gera um HTML único com o site inteiro mais uma camada de simulação:
+- números de WhatsApp fictícios; o botão de reservar mostra a conversa que o
+  ateliê receberia (com opção de mandar para o seu próprio WhatsApp);
+- agenda de exemplo (`simulacao/agenda_exemplo.js`, gerada por
+  `node simulacao/gerar_agenda.js` com semente fixa) com reservas no
+  Réveillon, no Carnaval 2027 e no Arraiá de junho 2027 — há peças esgotadas,
+  parciais e livres;
+- botões de data rápida, painel "Estoque" (peças livres por data e a agenda
+  de cada peça) e "Simular: loja confirmou e o sinal foi pago", que grava a
+  reserva e baixa o estoque na hora;
+- painel "Medição" com os eventos e o funil visitas → fichas → cliques em
+  reservar → sinal pago.
 O montador lê os arquivos reais, então a simulação não diverge do que vai ao
 ar. A pasta `simulacao/` **não** vai para a hospedagem.
 
@@ -87,12 +125,15 @@ ar. A pasta `simulacao/` **não** vai para a hospedagem.
 node conferir_landing.js
 ```
 
-421 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
+585 provas: formatação pt-BR (nunca `toFixed`), sugestão de tamanho (nunca
 sugere menor que o ideal), filtros, orçamento em centavos, mensagem e link do
 WhatsApp, coerência de `dados.js` com `config.js` (loja existe, temas
 existem, medidas completas, sinal entre 30 e 50, nenhum nome de marca
 registrada), o contrato entre `index.html` e `app.js` (todo id pedido existe)
-e a montagem da simulação (cada script inline compila, ordem dos scripts).
+a montagem da simulação (cada script inline compila, ordem dos scripts), as
+regras de período e estoque por peça (margem de higienização dos dois lados,
+duas reservas em sequência na mesma peça, dia fechado), as duas agendas sem
+conflito e a marca (nome, fontes, logo).
 
 A suíte foi validada por mutação: 13 defeitos reintroduzidos, todos
 derrubam a suíte com código de saída 1. Dois sobreviveram na primeira rodada e
@@ -113,8 +154,9 @@ se aparecer um nome da lista de marcas conhecidas.
 |---|---|
 | `index.html` | estrutura da página |
 | `estilo.css` | visual (desktop e celular) |
-| `config.js` | nome do site, lojas, WhatsApp, sinal, política de cancelamento |
-| `dados.js` | temas e fantasias |
+| `config.js` | nome, logo, ateliê, WhatsApp, sinal, higienização, dias fechados, cancelamento |
+| `dados.js` | temas, fantasias e estoque por tamanho |
+| `agenda.js` | reservas confirmadas (começa vazia) |
 | `logica.js` | regras puras (preço, tamanho, filtro, orçamento, mensagem) — roda no navegador e no Node |
 | `app.js` | interface |
 | `conferir_landing.js` | provas |

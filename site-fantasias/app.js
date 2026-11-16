@@ -165,7 +165,7 @@
         '<span class="cartao__info">' +
           '<span class="cartao__temas">' + f.temas.map(nomeTema).map(esc).join(' · ') + '</span>' +
           '<span class="cartao__nome">' + esc(f.nome) + '</span>' +
-          '<span class="cartao__loja">' + esc(loja.nome) + ' · ' + esc(loja.bairro) + '</span>' +
+          (variasLojas() ? '<span class="cartao__loja">' + esc(loja.nome) + (loja.bairro ? ' · ' + esc(loja.bairro) : '') + '</span>' : '') +
           selo +
           '<span class="cartao__rodape">' +
             '<span class="cartao__preco">' + L.formatarPreco(f.preco) + ' <small>/ 3 dias</small></span>' +
@@ -219,7 +219,7 @@
         '<div class="ficha__info">' +
           '<p class="ficha__temas">' + f.temas.map(nomeTema).map(esc).join(' · ') + ' · cód. ' + esc(f.id) + '</p>' +
           '<h2 id="ficha-nome">' + esc(f.nome) + '</h2>' +
-          '<p class="ficha__loja">' + esc(loja.nome) + ' — ' + esc(loja.bairro) + '</p>' +
+          '<p class="ficha__loja">' + esc(loja.nome) + (loja.endereco ? ' — ' + esc(loja.endereco) : loja.bairro ? ' — ' + esc(loja.bairro) : '') + '</p>' +
           '<p>' + esc(f.descricao) + '</p>' +
           '<dl class="valores">' +
             '<div><dt>Aluguel (3 dias)</dt><dd>' + L.formatarPreco(f.preco) + '</dd></div>' +
@@ -474,7 +474,7 @@
     var ok = L.numeroWhatsAppValido(C.whatsappCentral);
     var alvos = [
       ['botao-grupo', 'clique_grupo', 'Olá! Quero um orçamento de fantasias para um grupo. Tema: ___ · Quantidade: ___ · Data: ___'],
-      ['botao-parceiro', 'clique_parceiro', 'Olá! Tenho uma loja/ateliê de fantasias e quero ser parceiro do ' + C.nomeSite + '.'],
+      ['botao-atelie', 'clique_falar_atelie', 'Olá! Vi o site do ' + C.nomeSite + ' e procuro: ___ · Tamanho: ___ · Data da festa: ___'],
       ['vazio-whats', 'clique_nao_encontrei', 'Olá! Não encontrei no site a fantasia que procuro: ___']
     ];
     alvos.forEach(function (a) {
@@ -507,9 +507,21 @@
     }
   };
 
+  function variasLojas() { return Object.keys(C.lojas).length > 1; }
+
+  // Logo configurado: entra no lugar do nome escrito, no topo e na abertura.
+  function aplicarMarca() {
+    document.querySelectorAll('[data-nome-site]').forEach(function (el) { el.textContent = C.nomeSite; });
+    document.querySelectorAll('[data-atelie]').forEach(function (el) { el.textContent = C.atelie || ''; el.hidden = !C.atelie; });
+    if (!C.logo) return;
+    var alt = C.nomeSite + (C.atelie ? ' — ' + C.atelie : '');
+    $('marca-topo').innerHTML = '<img class="marca__logo" src="' + esc(C.logo) + '" alt="' + esc(alt) + '">';
+    $('hero-assinatura').innerHTML = '<img class="hero__logo" src="' + esc(C.logo) + '" alt="' + esc(alt) + '">';
+  }
+
   /* ---------- início ---------- */
-  document.querySelectorAll('[data-nome-site]').forEach(function (el) { el.textContent = C.nomeSite; });
-  document.title = C.nomeSite + ' — aluguel de fantasias com reserva garantida';
+  aplicarMarca();
+  document.title = C.nomeSite + ' — aluguel de trajes juninos e fantasias';
   avisarConfiguracao();
   montarFiltros();
   renderizarGrade();

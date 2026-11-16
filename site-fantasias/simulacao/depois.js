@@ -34,7 +34,7 @@
 
   /* ---------- reservas simuladas (confirmadas nesta simulação) ---------- */
   var CHAVE_RESERVAS = 'simulacao-fantasias-reservas';
-  var DATAS_RAPIDAS = [['2026-12-12', 'Festa da firma 12/12'], ['2026-12-31', 'Réveillon 31/12'], ['2027-02-06', 'Carnaval 06/02']];
+  var DATAS_RAPIDAS = [['2026-12-31', 'Réveillon 31/12'], ['2027-02-06', 'Carnaval 06/02'], ['2027-06-19', 'Arraiá 19/06']];
   var simuladas = [];
   try { simuladas = JSON.parse(localStorage.getItem(CHAVE_RESERVAS)) || []; } catch (e) { simuladas = []; }
   function salvarReservas() {

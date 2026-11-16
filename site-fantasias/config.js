@@ -4,43 +4,33 @@
  * Enquanto um número não estiver preenchido, o site mostra um aviso no topo
  * e o botão "Reservar" fica desativado (para não mandar ninguém a lugar nenhum). */
 window.CONFIG = {
-  nomeSite: 'Fantasia na Data',
+  nomeSite: 'Cantinho da Day',
+  atelie: 'Ateliê Néia Gonçalves',
   cidade: 'sua cidade',
 
-  // Recebe pedidos de grupo, dúvidas e lojas interessadas em parceria.
+  // Logo: salve a imagem nesta pasta (ex.: logo.png) e ponha o nome aqui.
+  // Vazio = o site escreve o nome com a letra cursiva da marca.
+  logo: '',
+
+  // WhatsApp para pedido de grupo e "não achei o que procuro".
+  // Pode ser o mesmo número da loja.
   whatsappCentral: '',
 
-  // Cada loja parceira. "sinal" é o percentual cobrado para garantir (30 a 50).
+  // "sinal": percentual cobrado para garantir (30 a 50).
   // "margemHigienizacao": dias que a peça fica parada depois da devolução (padrão 1).
   // "diasFechados": dias sem atendimento, 0 = domingo ... 6 = sábado. Retirada e
   // devolução nunca caem nesses dias.
+  // "endereco": aparece na ficha e no rodapé quando preenchido.
   lojas: {
-    lantejoula: {
-      nome: 'Ateliê Lantejoula',
-      bairro: 'Centro',
+    neia: {
+      nome: 'Ateliê Néia Gonçalves',
+      bairro: '',
+      endereco: '',
       whatsapp: '',
       sinal: 30,
       margemHigienizacao: 1,
       diasFechados: [0],
       politicaCancelamento: 'Até 7 dias antes da retirada: sinal devolvido integralmente. Depois disso, o sinal vira crédito para outra data.'
-    },
-    figurino: {
-      nome: 'Casa do Figurino',
-      bairro: 'Jardim',
-      whatsapp: '',
-      sinal: 40,
-      margemHigienizacao: 1,
-      diasFechados: [0],
-      politicaCancelamento: 'Até 7 dias antes da retirada: sinal devolvido integralmente. Depois disso, 50% do sinal é devolvido.'
-    },
-    bau: {
-      nome: 'Baú das Fantasias',
-      bairro: 'Vila Nova',
-      whatsapp: '',
-      sinal: 50,
-      margemHigienizacao: 1,
-      diasFechados: [0],
-      politicaCancelamento: 'Até 7 dias antes da retirada: sinal devolvido integralmente. Depois disso, o sinal não é devolvido.'
     }
   },
 

@@ -205,6 +205,16 @@ for (const k of Object.keys(C.lojas)) {
   prova('loja ' + k + ': whatsapp vazio ou válido', lj.whatsapp === '' || L.numeroWhatsAppValido(lj.whatsapp), lj.whatsapp);
 }
 
+/* ---------- marca ---------- */
+const htmlMarca = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+prova('nome e ateliê configurados', C.nomeSite === 'Cantinho da Day' && C.atelie === 'Ateliê Néia Gonçalves');
+prova('logo vazio ou arquivo existente', C.logo === '' || fs.existsSync(path.join(__dirname, C.logo)), C.logo);
+prova('fontes da marca no <head>', /fonts\.googleapis\.com\/css2\?family=Dancing\+Script[^"]*Lobster[^"]*Nunito/.test(htmlMarca));
+prova('todo [data-nome-site] do HTML vem com o nome certo', [...htmlMarca.matchAll(/data-nome-site>([^<]*)</g)].every(m => m[1] === C.nomeSite));
+prova('sem lojas fictícias antigas no site', !/Lantejoula|Casa do Figurino|Baú das Fantasias|Fantasia na Data/.test(htmlMarca + fs.readFileSync(path.join(__dirname, 'dados.js'), 'utf8') + fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8')));
+prova('festa junina é o primeiro tema', TEMAS[0].id === 'junina');
+prova('acervo junino com ao menos 5 peças', FANTASIAS.filter(f => f.temas.includes('junina')).length >= 5);
+
 /* ---------- agendas: a "constraint de exclusão" conferida estaticamente ---------- */
 prova('agenda.js é lista', Array.isArray(AGENDA));
 prova('agenda.js sem conflito', L.validarAgenda(FANTASIAS, AGENDA, C.lojas).length === 0, L.validarAgenda(FANTASIAS, AGENDA, C.lojas).slice(0, 3));
@@ -261,7 +271,10 @@ if (montou.status === 0) {
   prova('simulação com 7 scripts inline', blocos.length === 7, blocos.length);
   prova('simulação usa a agenda de exemplo, não a real', sim.includes('/* simulacao/agenda_exemplo.js */') && !sim.includes('/* agenda.js */'));
   blocos.forEach((b, i) => prova('script inline ' + i + ' compila', (() => { try { new vm.Script(b); return true; } catch (e) { return false; } })()));
-  prova('simulação sem script ou CSS externo', !/<script src=|<link /.test(sim));
+  prova('simulação sem script externo', !/<script src=/.test(sim));
+  const links = sim.match(/<link [^>]*>/g) || [];
+  prova('simulação só carrega CSS do Google Fonts', links.every(l => /href="https:\/\/fonts\.(googleapis|gstatic)\.com/.test(l)), links);
+  prova('simulação leva as fontes da marca', /family=Dancing\+Script[^"]*family=Lobster[^"]*family=Nunito/.test(sim));
   prova('antes.js vem antes do app.js', sim.indexOf('simulacao/antes.js') < sim.indexOf('/* app.js */'));
   for (const id of ['ficha', 'grade', 'busca-data']) prova('simulação mantém #' + id, sim.includes('id="' + id + '"'));
 }

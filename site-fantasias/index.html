@@ -3,9 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fantasia na Data — aluguel de fantasias com reserva garantida</title>
-  <meta name="description" content="Escolha a fantasia, veja as medidas e garanta para a data da sua festa. Carnaval, Halloween, festa junina e mais.">
-  <meta name="theme-color" content="#2a1840">
+  <title>Cantinho da Day — aluguel de trajes juninos e fantasias</title>
+  <meta name="description" content="Ateliê Néia Gonçalves: trajes juninos e fantasias para alugar. Veja as medidas, o que está livre na data da festa e reserve pelo WhatsApp.">
+  <meta name="theme-color" content="#c2185b">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Lobster&family=Nunito:wght@400;600;700;800&display=swap">
   <link rel="stylesheet" href="estilo.css">
   <!-- Medição: cole aqui o script do Plausible ou do GA4. Os eventos do site vão para ele sozinhos. -->
 </head>
@@ -14,11 +17,11 @@
 
   <header class="topo">
     <div class="largura topo__linha">
-      <a href="#" class="marca" data-nome-site>Fantasia na Data</a>
+      <a href="#" class="marca" id="marca-topo" aria-label="Cantinho da Day — início"><span class="marca__nome" data-nome-site>Cantinho da Day</span><span class="marca__sub" data-atelie>Ateliê Néia Gonçalves</span></a>
       <nav class="topo__nav" aria-label="Seções">
         <a href="#catalogo">Fantasias</a>
         <a href="#como-funciona">Como funciona</a>
-        <a href="#grupos">Grupos</a>
+        <a href="#grupos">Quadrilhas e grupos</a>
         <a href="#duvidas">Dúvidas</a>
       </nav>
     </div>
@@ -27,13 +30,17 @@
   <main>
     <section class="hero">
       <div class="largura">
-        <h1>A fantasia certa, garantida para o dia da festa.</h1>
-        <p class="hero__sub">Veja as medidas, escolha o tamanho e reserve em 2 minutos. Caução com regra clara e vistoria por foto na retirada e na devolução.</p>
+        <div class="hero__assinatura" id="hero-assinatura">
+          <span class="hero__nome" data-nome-site>Cantinho da Day</span>
+          <span class="hero__atelie" data-atelie>Ateliê Néia Gonçalves</span>
+        </div>
+        <h1>Aluguel de trajes juninos e fantasias, garantido para o dia da festa.</h1>
+        <p class="hero__sub">Veja as medidas, saiba na hora o que está livre na sua data e quando devolver, e reserve pelo WhatsApp. Caução com regra clara e vistoria por foto na retirada e na devolução.</p>
 
         <form class="busca" id="form-busca" role="search">
           <label class="busca__campo">
             <span>O que você procura?</span>
-            <input type="search" id="busca-texto" placeholder="Ex.: bruxa, anos 80, pirata" autocomplete="off">
+            <input type="search" id="busca-texto" placeholder="Ex.: caipira, noiva, anos 80, pirata" autocomplete="off">
           </label>
           <label class="busca__campo busca__campo--data">
             <span>Data da festa</span>
@@ -116,14 +123,14 @@
     <section id="grupos" class="secao">
       <div class="largura dois-blocos">
         <div class="bloco">
-          <h2>Grupos, escolas e empresas</h2>
-          <p>Bloco de Carnaval, quadrilha da escola, festa da firma: monte um pedido com várias peças do mesmo tema e receba um orçamento único.</p>
+          <h2>Quadrilhas, escolas e empresas</h2>
+          <p>Quadrilha da escola, arraiá da firma, bloco de Carnaval: monte um pedido com várias peças do mesmo tema e receba um orçamento único.</p>
           <a href="#" class="botao botao--destaque" id="botao-grupo">Pedir orçamento de grupo</a>
         </div>
         <div class="bloco bloco--escuro">
-          <h2>Tem loja ou ateliê de fantasias?</h2>
-          <p>Coloque seu acervo na vitrine e receba reservas com data marcada e sinal pago. Sem mensalidade nesta fase.</p>
-          <a href="#" class="botao botao--claro" id="botao-parceiro">Quero ser parceiro</a>
+          <h2>Não achou o que procura?</h2>
+          <p>A vitrine mostra uma parte do acervo do ateliê. Conte o tema, o tamanho e a data que a gente responde pelo WhatsApp.</p>
+          <a href="#" class="botao botao--claro" id="botao-atelie">Falar com o ateliê</a>
         </div>
       </div>
     </section>
@@ -157,8 +164,8 @@
 
   <footer class="rodape">
     <div class="largura">
-      <p><strong data-nome-site>Fantasia na Data</strong> — vitrine de lojas e ateliês parceiros. Cada reserva é feita com a loja responsável pela peça.</p>
-      <p class="rodape__nota">Fotos ilustrativas até a loja enviar as fotos reais. Nomes das fantasias são descritivos.</p>
+      <p><strong data-nome-site>Cantinho da Day</strong> · <span data-atelie>Ateliê Néia Gonçalves</span> — aluguel de trajes juninos e fantasias.</p>
+      <p class="rodape__nota">Fotos ilustrativas até entrarem as fotos reais das peças. Nomes das fantasias são descritivos.</p>
     </div>
   </footer>
 
