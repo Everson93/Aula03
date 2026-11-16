@@ -7,7 +7,9 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var ORDEM_TAMANHOS = ['PP', 'P', 'M', 'G', 'GG', 'XG'];
+  // Infantil (idade em anos, numeração brasileira) e adulto.
+  var TAMANHOS_INFANTIS = ['2', '4', '6', '8', '10', '12', '14'];
+  var ORDEM_TAMANHOS = TAMANHOS_INFANTIS.concat(['PP', 'P', 'M', 'G', 'GG', 'XG']);
 
   // Tabela genérica de referência (adulto). Cada linha: tamanho, altura máx (cm), peso máx (kg).
   var TABELA_REFERENCIA = [
@@ -18,6 +20,13 @@
     ['GG', 188, 100],
     ['XG', 999, 999]
   ];
+  // Infantil: altura máx (cm) e peso máx (kg) de referência por tamanho.
+  var TABELA_INFANTIL = [
+    ['2', 92, 14], ['4', 104, 17], ['6', 116, 22], ['8', 128, 28], ['10', 140, 35], ['12', 152, 43], ['14', 999, 999]
+  ];
+  function ehInfantil(tamanhos) {
+    return (tamanhos || []).length > 0 && tamanhos.every(function (t) { return TAMANHOS_INFANTIS.indexOf(t) !== -1; });
+  }
 
   // Preço sempre em pt-BR: "R$ 1.234,50". Nunca toFixed — o ponto se lê como milhar.
   function formatarPreco(reais) {
@@ -482,9 +491,11 @@
     var peso = Number(pesoKg);
     if (!(altura > 0) || !(peso > 0)) return null;
 
-    var idxAltura = TABELA_REFERENCIA.findIndex(function (l) { return altura <= l[1]; });
-    var idxPeso = TABELA_REFERENCIA.findIndex(function (l) { return peso <= l[2]; });
-    var ideal = TABELA_REFERENCIA[Math.max(idxAltura, idxPeso)][0];
+    // Peça infantil usa a tabela de criança; o resto, a de adulto.
+    var tabela = ehInfantil(disponiveis) ? TABELA_INFANTIL : TABELA_REFERENCIA;
+    var idxAltura = tabela.findIndex(function (l) { return altura <= l[1]; });
+    var idxPeso = tabela.findIndex(function (l) { return peso <= l[2]; });
+    var ideal = tabela[Math.max(idxAltura, idxPeso)][0];
 
     var lista = ordenarTamanhos(disponiveis || []);
     if (lista.indexOf(ideal) !== -1) return { tamanho: ideal, ideal: ideal, exato: true };
@@ -504,6 +515,7 @@
     return fantasias.filter(function (x) {
       if (f.tema && x.temas.indexOf(f.tema) === -1) return false;
       if (f.genero && x.genero !== f.genero && x.genero !== 'unissex') return false;
+      if (f.publico && (x.publico || 'adulto') !== f.publico) return false;
       if (f.precoMax && x.preco > Number(f.precoMax)) return false;
       if (f.tamanho && !Object.prototype.hasOwnProperty.call(x.tamanhos, f.tamanho)) return false;
       if (termo) {
@@ -581,6 +593,8 @@
 
   return {
     ORDEM_TAMANHOS: ORDEM_TAMANHOS,
+    TAMANHOS_INFANTIS: TAMANHOS_INFANTIS,
+    ehInfantil: ehInfantil,
     formatarPreco: formatarPreco,
     dataBR: dataBR,
     diasEntre: diasEntre,

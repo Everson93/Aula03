@@ -7,6 +7,7 @@
  *   loja       chave da loja em config.js
  *   temas      ids da lista TEMAS abaixo
  *   genero     'feminino' | 'masculino' | 'unissex'
+ *   publico    'adulto' (padrão) | 'infantil' — infantil usa tamanhos 2 a 14
  *   preco      aluguel do período padrão (3 dias), em reais
  *   diaExtra   cada dia além do período
  *   caucao     valor devolvido na entrega sem dano novo
@@ -320,5 +321,65 @@ window.FANTASIAS = [
     inclui: ['Vestido', 'Gola', 'Coroa', 'Braceletes'],
     kit: [{ id: 'delineador', nome: 'Delineador gráfico', tipo: 'venda', preco: 18 }],
     palavras: ['cleopatra', 'egito', 'farao'], fotos: []
+  },
+  {
+    id: 'IN01', nome: 'Caipirinha de Chita Infantil', loja: 'neia', temas: ['junina'], genero: 'feminino', publico: 'infantil',
+    preco: 70, diaExtra: 15, caucao: 40, reposicao: 240, cor: '#d4462f',
+    descricao: 'Vestido rodado de chita com babado de renda e fita no cabelo.',
+    tamanhos: { '2': [52, 50, 54, 92], '4': [56, 53, 58, 104], '6': [60, 55, 63, 116], '8': [66, 58, 68, 128], '10': [70, 61, 73, 140], '12': [76, 64, 80, 152] },
+    estoque: { '2': 2, '4': 4, '6': 4, '8': 4, '10': 3, '12': 2 },
+    inclui: ['Vestido', 'Fita de cabelo'],
+    kit: [{ id: 'chapeu-inf', nome: 'Chapéu de palha infantil', tipo: 'aluguel', preco: 10, estoque: 6 }, { id: 'sardas-inf', nome: 'Lápis para sardas', tipo: 'venda', preco: 8 }],
+    palavras: ['caipira', 'quadrilha', 'escola', 'sao joao', 'arraia', 'menina'], fotos: []
+  },
+  {
+    id: 'IN02', nome: 'Caipirinha Xadrez com Remendo Infantil', loja: 'neia', temas: ['junina'], genero: 'masculino', publico: 'infantil',
+    preco: 60, diaExtra: 15, caucao: 30, reposicao: 210, cor: '#6b4a1f',
+    descricao: 'Camisa xadrez, calça com remendos e lenço no pescoço.',
+    tamanhos: { '2': [52, 50, 54, 92], '4': [56, 53, 58, 104], '6': [60, 55, 63, 116], '8': [66, 58, 68, 128], '10': [70, 61, 73, 140], '12': [76, 64, 80, 152] },
+    estoque: { '2': 2, '4': 4, '6': 4, '8': 4, '10': 3, '12': 2 },
+    inclui: ['Camisa', 'Calça', 'Lenço'],
+    kit: [{ id: 'chapeu-inf2', nome: 'Chapéu de palha infantil', tipo: 'aluguel', preco: 10, estoque: 6 }, { id: 'bigode-inf', nome: 'Bigode para pintar', tipo: 'venda', preco: 6 }],
+    palavras: ['caipira', 'quadrilha', 'escola', 'sao joao', 'arraia', 'menino'], fotos: []
+  },
+  {
+    id: 'IN03', nome: 'Noivinha da Quadrilha Infantil', loja: 'neia', temas: ['junina'], genero: 'feminino', publico: 'infantil',
+    preco: 95, diaExtra: 20, caucao: 60, reposicao: 330, cor: '#b0175f',
+    descricao: 'Vestido de noiva caipira com renda, véu curto e buquê de flores de tecido.',
+    tamanhos: { '4': [56, 53, 58, 104], '6': [60, 55, 63, 116], '8': [66, 58, 68, 128], '10': [70, 61, 73, 140], '12': [76, 64, 80, 152] },
+    estoque: { '4': 1, '6': 2, '8': 2, '10': 1, '12': 1 },
+    inclui: ['Vestido', 'Véu', 'Buquê'],
+    kit: [],
+    palavras: ['casamento caipira', 'quadrilha', 'escola', 'noiva'], fotos: []
+  },
+  {
+    id: 'IN04', nome: 'Noivinho da Quadrilha Infantil', loja: 'neia', temas: ['junina'], genero: 'masculino', publico: 'infantil',
+    preco: 85, diaExtra: 20, caucao: 50, reposicao: 300, cor: '#7a4a1f',
+    descricao: 'Paletó xadrez com remendo, gravata de chita e chapéu de palha.',
+    tamanhos: { '4': [56, 53, 58, 104], '6': [60, 55, 63, 116], '8': [66, 58, 68, 128], '10': [70, 61, 73, 140], '12': [76, 64, 80, 152] },
+    estoque: { '4': 1, '6': 2, '8': 2, '10': 1, '12': 1 },
+    inclui: ['Paletó', 'Calça', 'Gravata', 'Chapéu'],
+    kit: [],
+    palavras: ['casamento caipira', 'quadrilha', 'escola', 'noivo'], fotos: []
+  },
+  {
+    id: 'IN05', nome: 'Bruxinha Infantil', loja: 'neia', temas: ['halloween'], genero: 'feminino', publico: 'infantil',
+    preco: 70, diaExtra: 20, caucao: 40, reposicao: 240, cor: '#3b2a5a',
+    descricao: 'Vestido preto com saia de tule roxa e chapéu pontudo.',
+    tamanhos: { '4': [56, 53, 58, 104], '6': [60, 55, 63, 116], '8': [66, 58, 68, 128], '10': [70, 61, 73, 140] },
+    estoque: { '4': 1, '6': 2, '8': 2, '10': 1 },
+    inclui: ['Vestido', 'Chapéu'],
+    kit: [{ id: 'vassoura-inf', nome: 'Vassourinha', tipo: 'aluguel', preco: 8, estoque: 3 }],
+    palavras: ['feiticeira', 'halloween', 'menina'], fotos: []
+  },
+  {
+    id: 'IN06', nome: 'Super-herói Infantil de Capa', loja: 'neia', temas: ['herois'], genero: 'unissex', publico: 'infantil',
+    preco: 65, diaExtra: 15, caucao: 40, reposicao: 230, cor: '#1a3a8a',
+    descricao: 'Macacão com peitoral acolchoado, capa e máscara de tecido.',
+    tamanhos: { '4': [56, 53, 58, 104], '6': [60, 55, 63, 116], '8': [66, 58, 68, 128], '10': [70, 61, 73, 140], '12': [76, 64, 80, 152] },
+    estoque: { '4': 1, '6': 2, '8': 2, '10': 2, '12': 1 },
+    inclui: ['Macacão', 'Capa', 'Máscara'],
+    kit: [],
+    palavras: ['heroi', 'aniversario', 'crianca'], fotos: []
   }
 ];

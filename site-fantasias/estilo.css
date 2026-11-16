@@ -165,6 +165,7 @@ a { color: var(--marca-clara); }
 .cartao__info { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 16px; flex: 1; }
 .cartao__temas { font-size: .75rem; color: var(--destaque-escuro); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .cartao__nome { font-weight: 700; font-size: 1.05rem; }
+.cartao__infantil { background: var(--destaque-suave); color: var(--destaque-escuro); padding: 0 .4em; border-radius: 4px; font-weight: 800; }
 .cartao__loja { color: var(--texto-suave); font-size: .85rem; }
 .cartao__rodape { display: flex; justify-content: space-between; align-items: baseline; margin-top: auto; padding-top: 10px; gap: 8px; }
 .cartao__preco { font-weight: 700; color: var(--marca-texto); }

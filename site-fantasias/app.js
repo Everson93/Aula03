@@ -7,7 +7,7 @@
   var FANTASIAS = window.FANTASIAS;
   var TEMAS = window.TEMAS;
 
-  var estado = { texto: '', tema: '', genero: '', tamanho: '', precoMax: '', dataFesta: '', soDisponiveis: false };
+  var estado = { texto: '', tema: '', genero: '', publico: '', tamanho: '', precoMax: '', dataFesta: '', soDisponiveis: false };
 
   function $(id) { return document.getElementById(id); }
 
@@ -74,7 +74,7 @@
     FANTASIAS.forEach(function (f) { Object.keys(f.tamanhos).forEach(function (t) { presentes[t] = 1; }); });
     L.ordenarTamanhos(Object.keys(presentes)).forEach(function (t) { $('filtro-tamanho').add(new Option(t, t)); });
 
-    [['filtro-tema', 'tema'], ['filtro-genero', 'genero'], ['filtro-tamanho', 'tamanho'], ['filtro-preco', 'precoMax']]
+    [['filtro-tema', 'tema'], ['filtro-genero', 'genero'], ['filtro-publico', 'publico'], ['filtro-tamanho', 'tamanho'], ['filtro-preco', 'precoMax']]
       .forEach(function (par) {
         $(par[0]).addEventListener('change', function (e) {
           estado[par[1]] = e.target.value;
@@ -84,10 +84,10 @@
       });
 
     function limpar() {
-      estado.texto = estado.tema = estado.genero = estado.tamanho = estado.precoMax = '';
+      estado.texto = estado.tema = estado.genero = estado.publico = estado.tamanho = estado.precoMax = '';
       estado.soDisponiveis = false;
       $('busca-texto').value = '';
-      ['filtro-tema', 'filtro-genero', 'filtro-tamanho', 'filtro-preco'].forEach(function (id) { $(id).value = ''; });
+      ['filtro-tema', 'filtro-genero', 'filtro-publico', 'filtro-tamanho', 'filtro-preco'].forEach(function (id) { $(id).value = ''; });
       renderizarGrade();
     }
     $('limpar-filtros').addEventListener('click', limpar);
@@ -164,7 +164,7 @@
       return '<li><button type="button" class="cartao' + (comData && !x.livres.length ? ' cartao--esgotado' : '') + '" data-id="' + esc(f.id) + '">' +
         capa(f, 'cartao__capa') +
         '<span class="cartao__info">' +
-          '<span class="cartao__temas">' + f.temas.map(nomeTema).map(esc).join(' · ') + '</span>' +
+          '<span class="cartao__temas">' + (f.publico === 'infantil' ? '<b class="cartao__infantil">Infantil</b> · ' : '') + f.temas.map(nomeTema).map(esc).join(' · ') + '</span>' +
           '<span class="cartao__nome">' + esc(f.nome) + '</span>' +
           (variasLojas() ? '<span class="cartao__loja">' + esc(loja.nome) + (loja.bairro ? ' · ' + esc(loja.bairro) : '') + '</span>' : '') +
           selo +
@@ -241,7 +241,7 @@
       '</tbody></table></div>' +
 
       '<div class="sugestao">' +
-        '<p><strong>Qual tamanho?</strong> Informe sua altura e peso:</p>' +
+        '<p><strong>Qual tamanho?</strong> ' + (f.publico === 'infantil' ? 'Informe a altura e o peso da criança (o tamanho é pela idade, mas criança varia muito):' : 'Informe sua altura e peso:') + '</p>' +
         '<div class="sugestao__campos">' +
           '<label>Altura (cm) <input type="number" id="sug-altura" min="120" max="220" inputmode="numeric"></label>' +
           '<label>Peso (kg) <input type="number" id="sug-peso" min="30" max="200" inputmode="numeric"></label>' +

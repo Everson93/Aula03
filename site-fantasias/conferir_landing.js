@@ -45,6 +45,14 @@ prova('nunca sugere menor que o ideal', r.tamanho === null && r.ideal === 'GG', 
 r = L.sugerirTamanho(150, 45, ['G', 'M']);
 prova('lista fora de ordem: sobe para o menor maior', r.tamanho === 'M', r);
 
+/* ---------- infantil ---------- */
+prova('ordem: infantil antes do adulto', L.ordenarTamanhos(['M', '10', '2', 'PP']).join() === '2,10,PP,M');
+prova('criança de 110 cm e 20 kg veste 6', L.sugerirTamanho(110, 20, ['2', '4', '6', '8']).tamanho === '6');
+prova('criança alta e leve: vale a altura (130 cm, 25 kg → 10)', L.sugerirTamanho(130, 25, ['8', '10', '12']).tamanho === '10');
+prova('criança sem o tamanho ideal sobe (ideal 4 → 6)', L.sugerirTamanho(100, 16, ['6', '8']).tamanho === '6' && !L.sugerirTamanho(100, 16, ['6', '8']).exato);
+prova('peça adulta continua na tabela adulta', L.sugerirTamanho(165, 60, ['P', 'M']).tamanho === 'P');
+prova('filtro por público', L.filtrar([{ id: 'a', nome: 'x', temas: [], genero: 'unissex', preco: 1, tamanhos: {}, publico: 'infantil' }, { id: 'b', nome: 'y', temas: [], genero: 'unissex', preco: 1, tamanhos: {} }], { publico: 'adulto' }).map(x => x.id).join() === 'b');
+
 /* ---------- filtro ---------- */
 const amostra = [
   { id: 'a', nome: 'Bruxa Clássica', descricao: 'vestido', temas: ['halloween'], genero: 'feminino', preco: 140, tamanhos: { P: [], M: [] }, palavras: ['feiticeira'] },
@@ -354,6 +362,7 @@ for (const f of FANTASIAS) {
   const tams = Object.keys(f.tamanhos);
   prova(q + ': tem tamanho', tams.length > 0);
   prova(q + ': tamanhos conhecidos', tams.every(t => L.ORDEM_TAMANHOS.includes(t)), tams);
+  prova(q + ': público e numeração combinam (infantil só 2 a 14, adulto só PP a XG)', (f.publico === 'infantil') === L.ehInfantil(tams) && ['adulto', 'infantil', undefined].includes(f.publico), [f.publico, tams]);
   prova(q + ': 4 medidas por tamanho', tams.every(t => f.tamanhos[t].length === 4 && f.tamanhos[t].every(n => n > 0)));
   const kitIds = (f.kit || []).map(k => k.id);
   prova(q + ': kit com ids únicos', new Set(kitIds).size === kitIds.length);
@@ -366,7 +375,9 @@ for (const f of FANTASIAS) {
   prova(q + ': estoque para cada tamanho, e só para eles', Object.keys(est).sort().join() === tams.slice().sort().join(), [tams, est]);
   prova(q + ': estoque inteiro positivo', Object.values(est).every(n => Number.isInteger(n) && n > 0), est);
 }
-prova('vitrine entre 20 e 30 peças (meta da validação)', FANTASIAS.length >= 20 && FANTASIAS.length <= 30, FANTASIAS.length);
+// A especificação pedia 20 a 30 peças na vitrine de validação; com o infantil, o teto passou a 40.
+prova('vitrine entre 20 e 40 peças', FANTASIAS.length >= 20 && FANTASIAS.length <= 40, FANTASIAS.length);
+prova('acervo infantil com ao menos 4 peças juninas', FANTASIAS.filter(f => f.publico === 'infantil' && f.temas.includes('junina')).length >= 4);
 for (const t of TEMAS) prova('tema ' + t.id + ' tem ao menos uma peça', FANTASIAS.some(f => f.temas.includes(t.id)));
 for (const k of Object.keys(C.lojas)) {
   const lj = C.lojas[k];
