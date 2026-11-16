@@ -167,6 +167,7 @@
     visita: 'Visita', busca: 'Busca', abrir_ficha: 'Abriu fantasia', sugestao_tamanho: 'Usou sugestão de tamanho',
     clique_reservar: 'Clicou em reservar', clique_pedir_outra_data: 'Pediu outra data (esgotada)',
     escolheu_data: 'Escolheu a data da festa', filtro_disponivel: 'Filtrou só disponíveis',
+    clique_lista_espera: 'Pediu aviso (lista de espera)', clique_prova: 'Pediu para agendar prova',
     clique_grupo: 'Pediu orçamento de grupo', clique_falar_atelie: 'Falou com o ateliê', clique_nao_encontrei: 'Não encontrou a fantasia',
     filtro_tema: 'Filtrou por tema', filtro_genero: 'Filtrou por gênero', filtro_tamanho: 'Filtrou por tamanho', filtro_precoMax: 'Filtrou por preço'
   };

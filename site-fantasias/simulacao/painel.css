@@ -77,6 +77,7 @@ body.modo-painel { background: var(--fundo-alt); }
 .sis-acoes .pn-botao { margin-left: 4px; }
 .sis-alerta { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 10px; background: var(--erro-fundo); color: var(--erro); font-weight: 600; }
 .sis-alerta--aviso { background: var(--aviso-fundo); color: var(--aviso); }
+.sis-alerta--ok { background: var(--ok-fundo); color: var(--ok); }
 .sis-barra { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .sis-barra .pn-busca { flex: 1 1 260px; }
 .sis-botoes { display: flex; gap: 6px; flex-wrap: wrap; }

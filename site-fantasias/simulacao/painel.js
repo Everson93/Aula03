@@ -32,6 +32,7 @@
     inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
     retirada: 'M6 8h12l1 12H5zM9 8V6a3 3 0 0 1 6 0v2M9.5 13.5l2 2 3.5-3.5',
     orcamentos: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h6M9 17h4',
+    espera: 'M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
     provas: 'M4 17L17 4l3 3L7 20zM8 13l1.5 1.5M11 10l1.5 1.5M14 7l1.5 1.5',
     venda: 'M4 5h2l2.4 10.2a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.8L21 8H7M10 20a1 1 0 1 0 0 .01M18 20a1 1 0 1 0 0 .01',
     pedidos: 'M8 4h8l1 2h3v15H4V6h3zM8 11h8M8 15h6',
@@ -40,7 +41,7 @@
     caixa: 'M3 7h18v12H3zM3 11h18M7 15h3',
     privacidade: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4'
   };
-  var PAGINAS = [['inicio', 'Início'], ['venda', 'Nova venda'], ['orcamentos', 'Orçamentos'], ['retirada', 'Retirada'], ['provas', 'Provas'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
+  var PAGINAS = [['inicio', 'Início'], ['venda', 'Nova venda'], ['orcamentos', 'Orçamentos'], ['retirada', 'Retirada'], ['provas', 'Provas'], ['espera', 'Lista de espera'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'],
     ['acervo', 'Acervo'], ['caixa', 'Caixa'], ['privacidade', 'Privacidade']];
 
   function $(id) { return document.getElementById(id); }
@@ -162,6 +163,7 @@
     var rs = LOJA.todos();
     contar('inicio', rs.filter(function (p) { return p.status === 'pendente'; }).length + rs.filter(function (p) { return visivel(p) === 'atrasada'; }).length);
     contar('retirada', rs.filter(function (p) { return (p.status === 'confirmada' || p.status === 'pendente') && (p.itens || []).length && p.retirada <= dia(); }).length);
+    contar('espera', LOJA.espera().filter(function (w) { return w.liberou && w.status === 'aguardando'; }).length);
     contar('provas', LOJA.provas(dia()).filter(function (x) { return x.status === 'marcada'; }).length);
     contar('privacidade', LOJA.solicitacoes().filter(function (s) { return s.status === 'aberta'; }).length);
     var av = LOJA.aviso();
@@ -178,6 +180,7 @@
     else if (pagina === 'retirada') { corpo.innerHTML = htmlRetirada(); ligarRetirada(); }
     else if (pagina === 'provas') corpo.innerHTML = htmlProvas();
     else if (pagina === 'orcamentos') corpo.innerHTML = htmlOrcamentos();
+    else if (pagina === 'espera') corpo.innerHTML = htmlEspera();
     else if (pagina === 'pedidos') { corpo.innerHTML = htmlPedidos(); ligarBusca('sis-busca-ped', function (v) { buscaPedidos = v; }); }
     else if (pagina === 'clientes') { corpo.innerHTML = htmlClientes(); ligarBusca('sis-busca-cli', function (v) { buscaClientes = v; }); }
     else if (pagina === 'acervo') corpo.innerHTML = htmlAcervo();
@@ -212,6 +215,8 @@
     else if (a === 'mais') { limite += 40; render(); }
     else if (a === 'ir') irPara(b.dataset.pagina);
     else if (a === 'ver-orcamento') abrirOrcamento(id);
+    else if (a === 'espera-status') LOJA.atualizarEspera(id, b.dataset.status);
+    else if (a === 'espera-nova') abrirNovaEspera();
     else if (a === 'virar-pedido') virarPedido(id);
     else if (a === 'cancelar-orcamento') { LOJA.cancelarOrcamento(id); if (modal.open) modal.close(); }
     else if (a === 'marcar-prova') abrirMarcarProva(b.dataset.hora);
@@ -278,6 +283,9 @@
     else if (!cx) html += '<div class="sis-alerta"><span>O caixa está fechado: sem ele não dá para receber sinal, saldo nem caução.</span>' + botao('ir', '', 'Abrir o caixa', true, ' data-pagina="caixa"') + '</div>';
     if (sols.length) html += '<div class="sis-alerta sis-alerta--aviso"><span>' + sols.length + ' pedido(s) de cliente sobre os dados dele, com prazo de resposta.</span>' + botao('ir', '', 'Ver em Privacidade', false, ' data-pagina="privacidade"') + '</div>';
 
+    var liberaram = LOJA.espera().filter(function (w) { return w.liberou && w.status === 'aguardando'; });
+    if (liberaram.length) html += '<div class="sis-alerta sis-alerta--ok"><span>Lista de espera: ' + liberaram.length + (liberaram.length === 1 ? ' pessoa espera uma peça que liberou' : ' pessoas esperam peças que liberaram') + '. Avise antes que outro cliente pegue.</span>' +
+      botao('ir', '', 'Ver a lista', true, ' data-pagina="espera"') + '</div>';
     var provasHoje = LOJA.provas(d).filter(function (x) { return x.status === 'marcada'; });
     if (provasHoje.length) html += cartao('Provas de hoje', '', '<ul class="sis-provas">' + provasHoje.map(linhaProva).join('') + '</ul>', botao('ir', '', 'Agenda de provas', false, ' data-pagina="provas"'));
     if (pend.length) html += cartao('Pedidos do site aguardando sinal', 'O cliente reservou pelo site e combina o Pix no WhatsApp. A peça fica segura por ' + LOJA.MINUTOS_PENDENTE + ' minutos.',
@@ -1376,6 +1384,65 @@
     carrinho.motivoDesconto = (o.desconto && o.desconto.motivo) || '';
     if (modal.open) modal.close();
     irPara('venda');
+  }
+
+  /* =====================================================================
+   * LISTA DE ESPERA
+   * ===================================================================== */
+  var STATUS_ESPERA = { aguardando: ['Aguardando', 'neutro'], avisado: ['Avisado', 'info'], atendido: ['Virou pedido', 'ok'], desistiu: ['Desistiu', 'neutro'], passou: ['Passou a data', 'neutro'] };
+  function htmlEspera() {
+    var lista = LOJA.espera();
+    var ativos = lista.filter(function (w) { return w.status === 'aguardando' || w.status === 'avisado'; });
+    var outros = lista.filter(function (w) { return ativos.indexOf(w) === -1; });
+    var linhaW = function (w) {
+      var f = LOJA.fantasiaDe(w.fantasia);
+      var st = w.liberou && w.status === 'aguardando' ? ['Liberou!', 'ok'] : STATUS_ESPERA[w.status];
+      var msg = 'Olá, ' + w.nome.split(' ')[0] + '! Aqui é do ' + C.nomeSite + '. Boa notícia: a fantasia ' + f.nome + ' tamanho ' + w.tamanho +
+        ' ficou livre para a sua festa em ' + L.dataBR(w.dataFesta) + '. Quer reservar? O sinal garante a peça.';
+      var acoes = (w.status === 'aguardando' || w.status === 'avisado') ?
+        (w.liberou ? '<a class="botao botao--destaque pn-botao" data-espera-avisar="' + w.id + '" href="' + esc(L.linkWhatsApp(w.whatsapp, msg)) + '" target="_blank" rel="noopener">Avisar no WhatsApp</a>' : '') +
+        botao('espera-status', w.id, 'Virou pedido', false, ' data-status="atendido"') + botao('espera-status', w.id, 'Desistiu', false, ' data-status="desistiu"') : '';
+      return '<tr><td><strong>' + esc(w.nome) + '</strong><div class="sis-mudo">' + esc(formatarFone(w.whatsapp)) + '</div></td>' +
+        '<td>' + esc(f.nome) + ' · ' + esc(w.tamanho) + '</td><td>' + esc(curta(w.dataFesta)) + '</td><td>' + esc(L.dataBR(w.criadoEm)) + '</td>' +
+        '<td><span class="pn-status pn-status--' + st[1] + '">' + st[0] + '</span></td><td class="sis-acoes">' + acoes + '</td></tr>';
+    };
+    var tabela = function (l, vazio) {
+      return l.length ? '<div class="sis-tabela-rolagem"><table class="sis-tabela"><thead><tr><th>Quem</th><th>Peça</th><th>Festa</th><th>Desde</th><th>Situação</th><th></th></tr></thead><tbody>' +
+        l.map(linhaW).join('') + '</tbody></table></div>' : '<div class="pn-vazio"><p>' + vazio + '</p></div>';
+    };
+    return '<div class="sis-barra">' + botao('espera-nova', '', '+ Pôr na lista', true) + '</div>' +
+      '<p class="pn-dica">Quem pediu uma peça esgotada na data (pelo site chega no WhatsApp como "Avise-me se liberar"). O sistema marca "Liberou!" sozinho quando a peça fica livre no período da festa: cancelamento, bloqueio liberado, outra peça devolvida.</p>' +
+      cartao('Esperando', '', tabela(ativos.sort(function (a, b) { return (b.liberou ? 1 : 0) - (a.liberou ? 1 : 0); }), 'Ninguém na lista.')) +
+      (outros.length ? cartao('Encerrados', '', tabela(outros, '')) : '');
+  }
+  raiz.addEventListener('click', function (e) {
+    var a = e.target.closest('[data-espera-avisar]');
+    if (a) LOJA.atualizarEspera(a.dataset.esperaAvisar, 'avisado');
+  });
+  function abrirNovaEspera() {
+    var fantasia = '';
+    abrirModal('Pôr na lista de espera',
+      '<div class="pn-campos"><label>Nome <input id="we-nome"></label><label>WhatsApp com DDD <input id="we-whats" inputmode="tel" placeholder="(91) 98888-7777"></label></div>' +
+      '<p class="pn-rotulo">Peça</p><input type="search" id="we-busca" class="pn-busca" placeholder="Fantasia (nome ou código)"><div id="we-res" class="pn-chips"></div>' +
+      '<div class="pn-campos"><label>Tamanho <select id="we-tam"><option value="">Escolha a fantasia</option></select></label><label>Data da festa <input type="date" id="we-festa" min="' + dia() + '"></label></div>' +
+      '<p class="pn-msg pn-msg--erro" id="we-erro" hidden></p>',
+      '<button type="button" class="botao botao--leve" id="we-voltar">Voltar</button><button type="button" class="botao botao--destaque" id="we-ok">Pôr na lista</button>');
+    $('we-busca').addEventListener('input', function (e) {
+      var l = e.target.value.trim() ? L.filtrar(FANTASIAS, { texto: e.target.value }).slice(0, 8) : [];
+      $('we-res').innerHTML = l.map(function (f) { return '<button type="button" class="pn-chip" aria-pressed="' + (f.id === fantasia) + '" data-we="' + f.id + '">' + esc(f.nome) + '</button>'; }).join('');
+    });
+    $('we-res').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-we]'); if (!b) return;
+      fantasia = b.dataset.we;
+      $('we-res').querySelectorAll('[data-we]').forEach(function (x) { x.setAttribute('aria-pressed', x.dataset.we === fantasia); });
+      $('we-tam').innerHTML = L.ordenarTamanhos(Object.keys(LOJA.fantasiaDe(fantasia).tamanhos)).map(function (t) { return '<option>' + t + '</option>'; }).join('');
+    });
+    $('we-voltar').addEventListener('click', function () { modal.close(); });
+    $('we-ok').addEventListener('click', function () {
+      var r = LOJA.entrarEspera({ nome: $('we-nome').value, whatsapp: $('we-whats').value, fantasia: fantasia, tamanho: $('we-tam').value, dataFesta: $('we-festa').value });
+      if (r.erro) { $('we-erro').textContent = r.erro; $('we-erro').hidden = false; return; }
+      modal.close();
+    });
   }
 
   /* =====================================================================

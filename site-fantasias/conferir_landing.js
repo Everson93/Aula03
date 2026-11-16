@@ -660,6 +660,23 @@ prova('agenda.js do site não tem reserva de exemplo', AGENDA.every(r => !r.simu
   prova('atendente não apaga fotos (LGPD é com a dona)', semPerm2 === 'Sem permissão: apagarFotos');
   S.definirOperador('Néia');
 
+  // lista de espera
+  const fW = jan.FANTASIAS.find(f => f.id === 'HW06'); // Lobisomem: 1 peça M
+  const perW = L.periodoAluguel(L.somarDias(S.dia(), 15), S.dia(), 0, lojaN);
+  const pedW = S.criarPedidoBalcao({ clienteId: 'CE005', periodo: perW, itens: [{ fantasia: 'HW06', tamanho: 'M', unidade: 'HW06-M-1', preco: 180, diaExtra: 45, caucao: 150 }],
+    complementos: [], desconto: { valor: 0 }, recebe: 'sinal', linhas: [{ forma: 'pix', valor: 54, confirmado: true }] });
+  const w = S.entrarEspera({ nome: 'Paulo', whatsapp: '91 94444-3333', fantasia: 'HW06', tamanho: 'M', dataFesta: perW.dataFesta });
+  prova('entra na lista de espera', w.id && S.espera().find(x => x.id === w.id).status === 'aguardando' && !S.espera().find(x => x.id === w.id).liberou);
+  prova('lista de espera pede WhatsApp', /WhatsApp/.test(S.entrarEspera({ nome: 'X', whatsapp: '1', fantasia: 'HW06', tamanho: 'M', dataFesta: perW.dataFesta }).erro || ''));
+  S.cancelar(pedW.id, { forma: 'pix', motivo: 'desistiu' });
+  prova('cancelamento libera e a lista avisa', S.espera().find(x => x.id === w.id).liberou === true);
+  S.atualizarEspera(w.id, 'avisado');
+  prova('avisado continua mostrando que liberou', S.espera().find(x => x.id === w.id).status === 'avisado' && S.espera().find(x => x.id === w.id).liberou);
+  const diaW = S.dia();
+  S.definirDia(L.somarDias(perW.dataFesta, 1));
+  prova('depois da festa a espera se encerra', S.espera().find(x => x.id === w.id).status === 'passou');
+  S.definirDia(diaW);
+
   // LGPD: eliminação respeita a guarda; anonimizar tira os dados e mantém o histórico
   const sit = S.situacaoEliminacao(cli.id);
   prova('cliente com locação recente: guarda até 5 anos depois', !sit.pode && sit.motivo === 'guarda', sit);

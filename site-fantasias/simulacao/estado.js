@@ -82,18 +82,19 @@
 
   /* ---------- estado guardado ---------- */
   function estadoNovo(dia) {
-    return { dia: dia || hojeReal(), operador: ((C.operadores || [])[0] || { nome: 'Atendente' }).nome, seq: { P: 1, C: 1, X: 1, S: 1, M: 1, B: 1, A: 1, O: 1 },
-      pedidos: [], alteracoes: {}, clientes: [], clientesAlt: {}, caixas: [], solicitacoes: [], bloqueios: [], provas: [], orcamentos: [] };
+    return { dia: dia || hojeReal(), operador: ((C.operadores || [])[0] || { nome: 'Atendente' }).nome, seq: { P: 1, C: 1, X: 1, S: 1, M: 1, B: 1, A: 1, O: 1, W: 1 },
+      pedidos: [], alteracoes: {}, clientes: [], clientesAlt: {}, caixas: [], solicitacoes: [], bloqueios: [], provas: [], orcamentos: [], espera: [] };
   }
   var estado;
   try {
     var salvo = JSON.parse(localStorage.getItem(CHAVE)) || {};
     estado = Object.assign(estadoNovo(), salvo);
     estado.seq = Object.assign(estadoNovo().seq, salvo.seq || {});
-    ['B', 'A', 'O'].forEach(function (k) { if (!estado.seq[k]) estado.seq[k] = 1; });
+    ['B', 'A', 'O', 'W'].forEach(function (k) { if (!estado.seq[k]) estado.seq[k] = 1; });
     estado.bloqueios = estado.bloqueios || [];
     estado.provas = estado.provas || [];
     estado.orcamentos = estado.orcamentos || [];
+    estado.espera = estado.espera || [];
   } catch (e) { estado = estadoNovo(); }
   var ouvintes = [];
   var avisoArmazenamento = '';
@@ -568,6 +569,43 @@
     cancelarOrcamento: function (id) {
       var o = estado.orcamentos.find(function (x) { return x.id === id; });
       if (o) { o.status = 'cancelado'; salvar(); publicar(); }
+    },
+
+    /* ---------- lista de espera ----------
+     * Quem quer uma peça esgotada na data. "Liberou" é calculado na hora: o
+     * tamanho tem peça livre no período da festa (cancelamento, bloqueio
+     * liberado, devolução antecipada...). Data da festa passada = encerrada. */
+    espera: function () {
+      return estado.espera.map(function (w) {
+        var x = Object.assign({}, w);
+        if (x.status === 'aguardando' || x.status === 'avisado') {
+          var per = L.periodoAluguel(x.dataFesta, estado.dia, 0, lojaDe(fantasiaDe(x.fantasia)));
+          if (!per) x.status = 'passou';
+          else {
+            var f = fantasiaDe(x.fantasia);
+            var livres = L.disponibilidade(f, agendaBloqueios(), per, margemDe(f))[x.tamanho].livres;
+            x.liberou = livres.length > 0;
+            x.periodo = per;
+          }
+        }
+        return x;
+      }).sort(function (a, b) { return a.dataFesta < b.dataFesta ? -1 : 1; });
+    },
+    entrarEspera: function (d) {
+      var nome = String(d.nome || '').trim(), whats = L.normalizarWhatsApp(d.whatsapp);
+      if (!nome) return { erro: 'Diga o nome.' };
+      if (!L.numeroWhatsAppValido(whats)) return { erro: 'WhatsApp com DDD, para avisar quando liberar.' };
+      var f = fantasiaDe(d.fantasia);
+      if (!f || !f.tamanhos[d.tamanho]) return { erro: 'Escolha a fantasia e o tamanho.' };
+      if (!L.periodoAluguel(d.dataFesta, estado.dia, 0, lojaDe(f))) return { erro: 'A data da festa precisa ser hoje ou depois.' };
+      var w = { id: novoId('W'), nome: nome, whatsapp: whats, fantasia: d.fantasia, tamanho: d.tamanho, dataFesta: d.dataFesta,
+        status: 'aguardando', origem: d.origem || 'balcao', criadoEm: estado.dia, por: estado.operador };
+      estado.espera.push(w); salvar(); publicar();
+      return w;
+    },
+    atualizarEspera: function (id, status) {
+      var w = estado.espera.find(function (x) { return x.id === id; });
+      if (w) { w.status = status; w.atualizadoEm = estado.dia; salvar(); publicar(); }
     },
 
     zerar: function () {

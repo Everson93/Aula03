@@ -279,6 +279,7 @@
         ' <strong>Caução:</strong> devolvida na entrega; só é retida se a vistoria de devolução mostrar dano que não está nas fotos da retirada.' +
         ' <strong>Atraso:</strong> cada dia além da devolução é cobrado como dia extra.</p>' +
       '<a class="botao botao--destaque botao--largo" id="botao-reservar" target="_blank" rel="noopener">Reservar pelo WhatsApp</a>' +
+      '<p class="prova-convite" id="espera-box" hidden><a id="botao-espera" target="_blank" rel="noopener">Avise-me se liberar nessa data</a></p>' +
       '<p class="prova-convite"><a id="botao-prova" target="_blank" rel="noopener">Quer provar antes? Agende uma prova no ateliê</a></p>' +
       '<p class="nota-reserva" id="nota-reserva"></p>';
 
@@ -394,6 +395,10 @@
       });
       botao.href = L.linkWhatsApp(loja.whatsapp, texto);
       botao.removeAttribute('aria-disabled');
+      var be = $('botao-espera');
+      $('espera-box').hidden = !indisponivel;
+      if (indisponivel) be.href = L.linkWhatsApp(loja.whatsapp, 'Olá! Quero entrar na lista de espera: ' + f.nome + ' (cód. ' + f.id + '), tamanho ' + sel.tamanho +
+        ', para a festa em ' + L.dataBR(estado.dataFesta) + '. Me avise se liberar, por favor.');
       nota.textContent = indisponivel
         ? 'A loja pode ter peça voltando antes ou outra parecida.'
         : 'A loja confirma a reserva e envia a chave Pix do sinal.';
@@ -446,6 +451,7 @@
     $('sug-altura').addEventListener('change', sugerir);
     $('sug-peso').addEventListener('change', sugerir);
 
+    $('botao-espera').addEventListener('click', function () { registrar('clique_lista_espera', { id: f.id, tamanho: sel.tamanho || '' }); });
     var bp = $('botao-prova');
     if (whatsOk) {
       bp.href = L.linkWhatsApp(loja.whatsapp, 'Olá! Quero agendar uma prova da fantasia ' + f.nome + ' (cód. ' + f.id + ')' +
