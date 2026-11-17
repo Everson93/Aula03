@@ -167,7 +167,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
         <svg viewBox="0 0 24 24" fill="none" stroke="#3ad7f5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M4 18v-3h16v3"/><path d="M6 15V7h12v8"/><path d="M6 11h12"/><path d="M12 7v8"/></svg>
       </div>
       <div style="min-width:0">
-        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-e (regra Vieira nov, base outubro, projeção do valor)</div>
+        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-f (projeção e regra só no ano atual)</div>
         <h1>Paletes Expedidos</h1>
         <p id="fileInfo">Leitura da planilha EMBARQUE EXPEDIÇÃO: CD, CP2 e FLV por loja, frota própria e terceiros.</p>
       </div>
@@ -1418,14 +1418,20 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
   const forcaVieira = e => e.data >= REGRA_VIEIRA.desde && REGRA_VIEIRA.lojas.includes(e.destino);
   function consolidadoMensal(ano) {
     let lista = DADOS.entregas.filter(e => !e.extra && e.tipo === 'loja' && e.data.slice(0, 4) === ano);
-    // Mês em andamento: corta na última data que todas as abas (CD, CP02, FLV) já têm,
-    // senão uma aba lançada mais à frente distorce a média diária
-    const ultGeral = lista.reduce((a, e) => e.data > a ? e.data : a, '');
-    const mesAtual = ultGeral.slice(0, 7);
-    const maxAba = {};
-    lista.forEach(e => { if (e.data.slice(0, 7) === mesAtual && (!maxAba[e.aba] || e.data > maxAba[e.aba])) maxAba[e.aba] = e.data; });
-    const corte = Object.values(maxAba).reduce((a, d) => d < a ? d : a, ultGeral);
-    lista = lista.filter(e => e.data <= corte);
+    // Mês em andamento = mês da data mais recente da planilha. Só ele é cortado e projetado;
+    // anos anteriores (ex.: 2025) saem com os números reais, sem corte e sem projeção.
+    const ultPlanilha = DADOS.entregas.reduce((a, e) => !e.extra && e.tipo === 'loja' && e.data > a ? e.data : a, '');
+    const anoCorrente = ultPlanilha.slice(0, 4) === ano;
+    let corte = '9999-12-31';
+    if (anoCorrente) {
+      // corta na última data que todas as abas (CD, CP02, FLV) já têm no mês em andamento,
+      // senão uma aba lançada mais à frente distorce a média diária
+      const mesAtual = ultPlanilha.slice(0, 7);
+      const maxAba = {};
+      lista.forEach(e => { if (e.data.slice(0, 7) === mesAtual && (!maxAba[e.aba] || e.data > maxAba[e.aba])) maxAba[e.aba] = e.data; });
+      corte = Object.values(maxAba).reduce((a, d) => d < a ? d : a, ultPlanilha);
+      lista = lista.filter(e => e.data <= corte);
+    }
     const kmDe = d => +cadLoja(d).km || 0;
     const mesRegra = REGRA_VIEIRA.desde.slice(0, 7);
     // Base do mês da regra (novembro): o que a Giassi levou em outubro para as lojas da regra,
@@ -1480,7 +1486,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       const m = meses[mes] || novoMes();
       const fimMes = new Date(Date.UTC(+ano, i, 0)).getUTCDate();
       let proj = null, f = 1;
-      if (mes === mesUlt && +ultimo.slice(8, 10) < fimMes) {
+      if (anoCorrente && mes === mesUlt && +ultimo.slice(8, 10) < fimMes) {
         const dias = +ultimo.slice(8, 10);
         f = fimMes / dias;
         proj = { dias, fimMes, ultimo };
