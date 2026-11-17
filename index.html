@@ -167,7 +167,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
         <svg viewBox="0 0 24 24" fill="none" stroke="#3ad7f5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M4 18v-3h16v3"/><path d="M6 15V7h12v8"/><path d="M6 11h12"/><path d="M12 7v8"/></svg>
       </div>
       <div style="min-width:0">
-        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-c (regra Vieira nov)</div>
+        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-d (regra Vieira nov, base outubro)</div>
         <h1>Paletes Expedidos</h1>
         <p id="fileInfo">Leitura da planilha EMBARQUE EXPEDIÇÃO: CD, CP2 e FLV por loja, frota própria e terceiros.</p>
       </div>
@@ -1426,49 +1426,83 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     lista.forEach(e => { if (e.data.slice(0, 7) === mesAtual && (!maxAba[e.aba] || e.data > maxAba[e.aba])) maxAba[e.aba] = e.data; });
     const corte = Object.values(maxAba).reduce((a, d) => d < a ? d : a, ultGeral);
     lista = lista.filter(e => e.data <= corte);
+    const kmDe = d => +cadLoja(d).km || 0;
+    const mesRegra = REGRA_VIEIRA.desde.slice(0, 7);
+    // Base do mês da regra (novembro): o que a Giassi levou em outubro para as lojas da regra,
+    // pela média por dia de outubro × dias de novembro. Substitui o Giassi lançado nelas em novembro.
+    const dRegra = new Date(REGRA_VIEIRA.desde + 'T12:00:00Z'); dRegra.setUTCMonth(dRegra.getUTCMonth() - 1);
+    const mesBase = dRegra.toISOString().slice(0, 7);
+    const doBase = lista.filter(e => e.data.slice(0, 7) === mesBase);
+    const diasBase = doBase.reduce((a, e) => Math.max(a, +e.data.slice(8, 10)), 0);
+    const diasRegra = new Date(Date.UTC(+mesRegra.slice(0, 4), +mesRegra.slice(5, 7), 0)).getUTCDate();
+    const base = {};   // loja -> paletes Giassi de outubro levados a novembro (média/dia × dias)
+    if (diasBase) {
+      doBase.filter(e => grupoFrota(e) !== 'vv' && REGRA_VIEIRA.lojas.includes(e.destino))
+        .forEach(e => { base[e.destino] = (base[e.destino] || 0) + e.qtd; });
+      Object.keys(base).forEach(d => { base[d] = base[d] / diasBase * diasRegra; });
+    }
     // Viagens = paletes ÷ 28 (carreta cheia). KM por loja = (paletes da loja ÷ 28) × KM ida+volta da loja.
-    // Sem arredondar por dia/loja: entrega pequena não vira uma carreta inteira.
     const meses = {};
     const movido = {};
     const semRegra = {};   // mesmo cálculo, sem a regra Vieira (para o quadro "Efeito da regra")
-    const mesRegra = REGRA_VIEIRA.desde.slice(0, 7);
+    const novoMes = () => ({ G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 }, lojas: {} });
     for (const e of lista) {
-      if (e.data.slice(0, 7) >= mesRegra) {
-        const f0 = grupoFrota(e) === 'vv' ? 'V' : 'G', mm = e.data.slice(0, 7);
-        const sr = semRegra[mm] || (semRegra[mm] = { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 } });
-        sr[f0].pal += e.qtd; sr[f0].km += e.qtd / CAP_MENSAL * (+cadLoja(e.destino).km || 0);
-      }
-      if (grupoFrota(e) !== 'vv' && forcaVieira(e)) movido[e.data.slice(0, 7)] = (movido[e.data.slice(0, 7)] || 0) + e.qtd;
-      const fr = grupoFrota(e) === 'vv' || forcaVieira(e) ? 'V' : 'G';
       const mes = e.data.slice(0, 7);
-      const m = meses[mes] || (meses[mes] = { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 }, lojas: {} });
-      m[fr].pal += e.qtd;
-      const lj = m.lojas[e.destino] || (m.lojas[e.destino] = { G: 0, V: 0 });
-      lj[fr] += e.qtd;
-      m[fr].km += e.qtd / CAP_MENSAL * (+cadLoja(e.destino).km || 0);
+      const fr0 = grupoFrota(e) === 'vv' ? 'V' : 'G';
+      if (mes >= mesRegra) {
+        const sr = semRegra[mes] || (semRegra[mes] = { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 } });
+        sr[fr0].pal += e.qtd; sr[fr0].km += e.qtd / CAP_MENSAL * kmDe(e.destino);
+      }
+      const m = meses[mes] || (meses[mes] = novoMes());
+      const lj = m.lojas[e.destino] || (m.lojas[e.destino] = { G: 0, V: 0, base: 0, regra: false });
+      if (fr0 === 'G' && forcaVieira(e)) {
+        movido[mes] = (movido[mes] || 0) + e.qtd;
+        if (mes === mesRegra) {          // novembro: Giassi dessas lojas sai e é trocado pela base de outubro
+          lj.G += e.qtd; lj.regra = true;
+          continue;
+        }
+        lj.V += e.qtd; m.V.pal += e.qtd; m.V.km += e.qtd / CAP_MENSAL * kmDe(e.destino);   // meses seguintes: passa para a Vieira
+        continue;
+      }
+      if (mes === mesRegra && REGRA_VIEIRA.lojas.includes(e.destino)) lj.regra = true;
+      m[fr0].pal += e.qtd;
+      lj[fr0] += e.qtd;
+      m[fr0].km += e.qtd / CAP_MENSAL * kmDe(e.destino);
     }
     const ultimo = lista.reduce((a, e) => e.data > a ? e.data : a, '');
     const mesUlt = ultimo.slice(0, 7);
     const rows = [];
     for (let i = 1; i <= +(mesUlt.slice(5, 7) || 0); i++) {
       const mes = ano + '-' + String(i).padStart(2, '0');
-      const m = meses[mes] || { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 }, lojas: {} };
+      const m = meses[mes] || novoMes();
       const fimMes = new Date(Date.UTC(+ano, i, 0)).getUTCDate();
       let proj = null, f = 1;
       if (mes === mesUlt && +ultimo.slice(8, 10) < fimMes) {
         const dias = +ultimo.slice(8, 10);
         f = fimMes / dias;
         proj = { dias, fimMes, ultimo };
-        ['G', 'V'].forEach(x => { m[x].pal = Math.round(m[x].pal * f); m[x].km = m[x].km * f; });
       }
-      ['G', 'V'].forEach(x => { m[x].via = Math.ceil(m[x].pal / CAP_MENSAL); m[x].km = Math.round(m[x].km); });
+      ['G', 'V'].forEach(x => { m[x].pal *= f; m[x].km *= f; });
+      let baseTot = 0;
+      if (mes === mesRegra) {
+        REGRA_VIEIRA.lojas.forEach(d => {
+          const bs = base[d] || 0;
+          const lj = m.lojas[d] || (m.lojas[d] = { G: 0, V: 0, base: 0, regra: true });
+          lj.base = bs; lj.regra = true;
+          m.V.pal += bs; m.V.km += bs / CAP_MENSAL * kmDe(d); baseTot += bs;
+        });
+      }
+      ['G', 'V'].forEach(x => { m[x].pal = Math.round(m[x].pal); m[x].via = Math.ceil(m[x].pal / CAP_MENSAL); m[x].km = Math.round(m[x].km); });
       let sr = null;
       if (semRegra[mes]) {
         sr = {};
         ['G', 'V'].forEach(x => { const pal = Math.round(semRegra[mes][x].pal * f); sr[x] = { pal, via: Math.ceil(pal / CAP_MENSAL), km: Math.round(semRegra[mes][x].km * f) }; });
       }
-      const lojas = Object.entries(m.lojas).map(([dest, v]) => ({ dest, G: v.G, V: v.V })).sort((a, b) => ordemLoja(a.dest) - ordemLoja(b.dest));
-      rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj, f, lojas, movido: movido[mes] || 0, sr });
+      const lojas = Object.entries(m.lojas).filter(([, v]) => v.G || v.V || v.base)
+        .map(([dest, v]) => ({ dest, G: v.G, V: v.V, base: v.base || 0, regra: !!v.regra && mes === mesRegra }))
+        .sort((a, b) => ordemLoja(a.dest) - ordemLoja(b.dest));
+      rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj, f, lojas, movido: movido[mes] || 0, sr,
+        base: mes === mesRegra ? { total: Math.round(baseTot), mes: MESES_NOME[+mesBase.slice(5, 7) - 1], dias: diasBase, diasRegra } : null });
     }
     return rows;
   }
@@ -1484,7 +1518,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const fino = { style: 'thin', color: { argb: 'FFB8C2CE' } };
     const borda = { top: fino, left: fino, bottom: fino, right: fino };
     const ESC = 'FF263445';
-    ws.mergeCells('A1:O1');
+    ws.mergeCells('A1:Q1');
     const t = ws.getCell('A1');
     t.value = 'Prova real do KM por loja \u00b7 ' + ano;
     t.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -1500,8 +1534,8 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     cap.font = { name: 'Calibri', size: 11, bold: true };
     cap.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEA' } };
     cap.border = borda; cap.alignment = { horizontal: 'center' };
-    ws.mergeCells('D2:O2');
-    ws.getCell('D2').value = 'Paletes do m\u00eas = paletes reais \u00d7 fator de proje\u00e7\u00e3o \u00b7 Viagens = paletes do m\u00eas \u00f7 C2 \u00b7 KM = viagens \u00d7 KM ida+volta \u00b7 a aba do consolidado soma estas colunas por m\u00eas (SOMASE)';
+    ws.mergeCells('D2:Q2');
+    ws.getCell('D2').value = 'Paletes do m\u00eas = paletes reais \u00d7 fator de proje\u00e7\u00e3o (Vieira + base de outubro) \u00b7 Regra = Sim: Giassi do m\u00eas vira 0 (vai para a Vieira pela base) \u00b7 Viagens = paletes do m\u00eas \u00f7 C2 \u00b7 KM = viagens \u00d7 KM ida+volta \u00b7 a aba do consolidado soma estas colunas por m\u00eas (SOMASE)';
     ws.getCell('D2').font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF5A6675' } };
     ws.getCell('D2').alignment = { vertical: 'middle', wrapText: true };
     ws.getRow(2).height = 28;
@@ -1511,7 +1545,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cor } }; c.alignment = { horizontal: 'center' };
     });
     const cab = ['M\u00eas', 'C\u00f3digo', 'Loja', 'Cidade', 'KM ida+volta', 'Fator proje\u00e7\u00e3o', 'Giassi', 'Vieira',
-      'Paletes do m\u00eas', 'Viagens', 'KM', 'Paletes do m\u00eas', 'Viagens', 'KM', 'KM total'];
+      'Paletes do m\u00eas', 'Viagens', 'KM', 'Paletes do m\u00eas', 'Viagens', 'KM', 'KM total', 'Base outubro \u2192 Vieira', 'Regra Vieira'];
     cab.forEach((v, j) => {
       const c = ws.getCell(4, j + 1);
       c.value = v;
@@ -1522,9 +1556,10 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       c.border = { bottom: { style: 'medium', color: { argb: ESC } } };
     });
     ws.getRow(4).height = 30;
-    const FMT = { E: '#,##0', F: '0.0000', G: '#,##0', H: '#,##0', I: '#,##0.0', J: '#,##0.00', K: '#,##0', L: '#,##0.0', M: '#,##0.00', N: '#,##0', O: '#,##0' };
+    const FMT = { E: '#,##0', F: '0.0000', G: '#,##0', H: '#,##0', I: '#,##0.0', J: '#,##0.00', K: '#,##0', L: '#,##0.0', M: '#,##0.00', N: '#,##0', O: '#,##0', P: '#,##0.0' };
     const conta = (l, r) => {
-      const km = +cadLoja(l.dest).km || 0, I = l.G * r.f, L = l.V * r.f;
+      // Regra = Sim: o Giassi lançado no mês não conta (a base de outubro entra na Vieira)
+      const km = +cadLoja(l.dest).km || 0, I = l.regra ? 0 : l.G * r.f, L = l.V * r.f + (l.base || 0);
       return { E: km, G: l.G, H: l.V, I, J: I / CAP_MENSAL, K: I / CAP_MENSAL * km, L, M: L / CAP_MENSAL, N: L / CAP_MENSAL * km, O: (I + L) / CAP_MENSAL * km };
     };
     let n = 5;
@@ -1533,9 +1568,9 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       r.lojas.forEach((l, i) => {
         const c = cadLoja(l.dest), x = conta(l, r);
         const vals = { A: r.nome, B: codLoja(l.dest), C: nome(l.dest), D: c.cidade, E: x.E, F: r.f, G: l.G, H: l.V,
-          I: { formula: `G${n}*F${n}`, result: x.I }, J: { formula: `I${n}/$C$2`, result: x.J }, K: { formula: `J${n}*E${n}`, result: x.K },
-          L: { formula: `H${n}*F${n}`, result: x.L }, M: { formula: `L${n}/$C$2`, result: x.M }, N: { formula: `M${n}*E${n}`, result: x.N },
-          O: { formula: `K${n}+N${n}`, result: x.O } };
+          I: { formula: `IF(Q${n}="Sim",0,G${n}*F${n})`, result: x.I }, J: { formula: `I${n}/$C$2`, result: x.J }, K: { formula: `J${n}*E${n}`, result: x.K },
+          L: { formula: `H${n}*F${n}+P${n}`, result: x.L }, M: { formula: `L${n}/$C$2`, result: x.M }, N: { formula: `M${n}*E${n}`, result: x.N },
+          O: { formula: `K${n}+N${n}`, result: x.O }, P: l.base || 0, Q: l.regra ? 'Sim' : '' };
         Object.entries(vals).forEach(([col, v]) => {
           const cell = ws.getCell(col + n);
           cell.value = v;
@@ -1550,11 +1585,11 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       });
       // Subtotal do mês (rótulo diferente do mês, para não entrar no SOMASE da aba principal)
       const fim = n - 1;
-      ['A', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O'].forEach(col => {
+      ['A', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'].forEach(col => {
         const cell = ws.getCell(col + n);
         if (col === 'A') cell.value = 'Total ' + r.nome + (r.proj ? ' (proje\u00e7\u00e3o: ' + r.proj.fimMes + ' \u00f7 ' + r.proj.dias + ' dias)' : '');
         else {
-          const res = r.lojas.reduce((a, l) => a + conta(l, r)[col], 0);
+          const res = r.lojas.reduce((a, l) => a + (col === 'P' ? (l.base || 0) : conta(l, r)[col]), 0);
           cell.value = fim >= ini ? { formula: `SUM(${col}${ini}:${col}${fim})`, result: res } : 0;
           cell.numFmt = FMT[col];
         }
@@ -1565,7 +1600,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       ws.mergeCells('A' + n + ':F' + n);
       n += 2;
     });
-    [10, 8, 10, 16, 10, 9, 9, 9, 10, 9, 11, 10, 9, 11, 12].forEach((w, j) => { ws.getColumn(j + 1).width = w; });
+    [10, 8, 10, 16, 10, 9, 9, 9, 10, 9, 11, 10, 9, 11, 12, 12, 9].forEach((w, j) => { ws.getColumn(j + 1).width = w; });
   }
 
   async function montarMensal(ano) {
@@ -1576,7 +1611,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const nota = 'Todos os CDs (CD + CP02 + FLV), todas as lojas \u00b7 Giassi = frota pr\u00f3pria (inclui placa em branco), Vieira = terceiros \u00b7 Viagens = paletes do m\u00eas \u00f7 ' + CAP_MENSAL + ' (carreta cheia), arredondado para cima \u00b7 KM = soma, por loja, de (paletes da loja \u00f7 ' + CAP_MENSAL + ') \u00d7 KM ida+volta da loja' +
       (proj ? ' \u00b7 * ' + proj.nome + ': proje\u00e7\u00e3o = m\u00e9dia por dia de 01 a ' + br(proj.proj.ultimo) + ' (' + proj.proj.dias + ' dias) \u00d7 ' + proj.proj.fimMes + ' dias' : '') +
       (rows.some(r => r.mes >= REGRA_VIEIRA.desde.slice(0, 7)) ? ' \u00b7 Regra: a partir de ' + br(REGRA_VIEIRA.desde) + ', L08, L09, L14 e L15 s\u00e3o 100% Vieira (CD, FLV e CP02), sem viagens Giassi' +
-        rows.filter(r => r.mes >= REGRA_VIEIRA.desde.slice(0, 7)).map(r => ' \u00b7 ' + r.nome + ': ' + fmt(r.movido) + ' paletes dessas lojas estavam lan\u00e7ados como Giassi e foram para a Vieira' + (r.proj ? ' (antes da proje\u00e7\u00e3o)' : '')).join('') : '');
+        rows.filter(r => r.base).map(r => ' \u00b7 ' + r.nome + ': base = paletes Giassi de ' + r.base.mes + ' nessas lojas (m\u00e9dia de ' + r.base.dias + ' dias \u00d7 ' + r.base.diasRegra + ' dias) = ' + fmt(r.base.total) + ' paletes somados \u00e0 Vieira; o Giassi lan\u00e7ado nelas no m\u00eas (' + fmt(r.movido) + ' paletes) n\u00e3o conta').join('') : '');
     if (!ExcelJS) {
       const aoa = [['M\u00eases', 'Giassi', '', '', '', 'Vieira', '', '', '', 'Totais', ''], ['', 'Palete', 'Viagens', 'KM', 'Valor', 'Palete', 'Viagens', 'KM', 'Valor', 'Total KM', 'Total Valor']];
       rows.forEach(r => aoa.push([r.nome + (r.proj ? '*' : ''), r.G.pal, r.G.via, r.G.km, null, r.V.pal, r.V.via, r.V.km, null, r.G.km + r.V.km, null]));
@@ -1683,7 +1718,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const dados = await montarMensal(ano);
     await salvarXlsx('Consolidado_Mensal_' + ano + '.xlsx', dados);
     const regra = consolidadoMensal(ano).filter(r => r.mes >= REGRA_VIEIRA.desde.slice(0, 7));
-    if (regra.length) setTimeout(() => toast('Regra Vieira (L08, L09, L14, L15): ' + regra.map(r => r.nome + ' ' + fmt(r.movido) + ' paletes Giassi \u2192 Vieira').join(' \u00b7 ')), 2400);
+    if (regra.length) setTimeout(() => toast('Regra Vieira (L08, L09, L14, L15): ' + regra.filter(r => r.base).map(r => r.nome + ' +' + fmt(r.base.total) + ' paletes na Vieira (base ' + r.base.mes + ')').join(' \u00b7 ')), 2400);
   });
 
   // Exporta o período selecionado no topo (De / Até)
