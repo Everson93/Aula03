@@ -1412,6 +1412,10 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
   // Viagens: carreta cheia de 28 paletes (paletes do mês ÷ 28, arredondado para cima).
   // KM: viagens × KM ida+volta da loja (cadastro). Mês em andamento: média por dia corrido × dias do mês.
   const CAP_MENSAL = 28;
+  // Regra do consolidado: a partir de 01/11/2026 as lojas L08, L09, L14 e L15 são atendidas só pela
+  // Vieira (CD, FLV e CP02); o que vier lançado como Giassi nessas lojas conta como Vieira.
+  const REGRA_VIEIRA = { desde: '2026-11-01', lojas: ['LJ8', 'LJ9', 'LJ14', 'LJ15'] };
+  const forcaVieira = e => e.data >= REGRA_VIEIRA.desde && REGRA_VIEIRA.lojas.includes(e.destino);
   function consolidadoMensal(ano) {
     let lista = DADOS.entregas.filter(e => !e.extra && e.tipo === 'loja' && e.data.slice(0, 4) === ano);
     // Mês em andamento: corta na última data que todas as abas (CD, CP02, FLV) já têm,
@@ -1426,7 +1430,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     // Sem arredondar por dia/loja: entrega pequena não vira uma carreta inteira.
     const meses = {};
     for (const e of lista) {
-      const fr = grupoFrota(e) === 'vv' ? 'V' : 'G';
+      const fr = grupoFrota(e) === 'vv' || forcaVieira(e) ? 'V' : 'G';
       const mes = e.data.slice(0, 7);
       const m = meses[mes] || (meses[mes] = { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 }, lojas: {} });
       m[fr].pal += e.qtd;
@@ -1556,7 +1560,8 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     let ExcelJS = null;
     try { ExcelJS = await carregarExcelJS(); } catch (e) { ExcelJS = null; }
     const nota = 'Todos os CDs (CD + CP02 + FLV), todas as lojas \u00b7 Giassi = frota pr\u00f3pria (inclui placa em branco), Vieira = terceiros \u00b7 Viagens = paletes do m\u00eas \u00f7 ' + CAP_MENSAL + ' (carreta cheia), arredondado para cima \u00b7 KM = soma, por loja, de (paletes da loja \u00f7 ' + CAP_MENSAL + ') \u00d7 KM ida+volta da loja' +
-      (proj ? ' \u00b7 * ' + proj.nome + ': proje\u00e7\u00e3o = m\u00e9dia por dia de 01 a ' + br(proj.proj.ultimo) + ' (' + proj.proj.dias + ' dias) \u00d7 ' + proj.proj.fimMes + ' dias' : '');
+      (proj ? ' \u00b7 * ' + proj.nome + ': proje\u00e7\u00e3o = m\u00e9dia por dia de 01 a ' + br(proj.proj.ultimo) + ' (' + proj.proj.dias + ' dias) \u00d7 ' + proj.proj.fimMes + ' dias' : '') +
+      (rows.some(r => r.mes >= REGRA_VIEIRA.desde.slice(0, 7)) ? ' \u00b7 Regra: a partir de ' + br(REGRA_VIEIRA.desde) + ', L08, L09, L14 e L15 s\u00e3o 100% Vieira (CD, FLV e CP02), sem viagens Giassi' : '');
     if (!ExcelJS) {
       const aoa = [['M\u00eases', 'Giassi', '', '', '', 'Vieira', '', '', '', 'Totais', ''], ['', 'Palete', 'Viagens', 'KM', 'Valor', 'Palete', 'Viagens', 'KM', 'Valor', 'Total KM', 'Total Valor']];
       rows.forEach(r => aoa.push([r.nome + (r.proj ? '*' : ''), r.G.pal, r.G.via, r.G.km, null, r.V.pal, r.V.via, r.V.km, null, r.G.km + r.V.km, null]));
