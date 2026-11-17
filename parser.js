@@ -68,11 +68,38 @@
     });
     const aMot = nomes.find(n => norm(n).includes('MOTORISTA'));
     const mot = aMot ? rowsPorAba[aMot].map(r => r && r[0]).filter(Boolean) : MOTORISTAS_PADRAO;
-    return lista.length ? { lista, motoristas: mot } : null;
+    const km = lerKm(rowsPorAba);
+    return lista.length ? { lista, motoristas: mot, km } : null;
   }
 
   // Meses em que a carga seca (CARGAS GERAL) sem placa e sem motorista conta como terceiro
   const TERCEIRO_SEM_PLACA_MESES = ['2026-08'];
+
+  // Dist\u00e2ncia ida+volta e cidade por loja (aba "KM Loja": LOJA nn e COMBO nn = CBn)
+  const KM_PADRAO = {
+    LJ1: [6, 'I\u00e7ara'], LJ2: [68, 'Ararangu\u00e1'], LJ3: [72, 'Ararangu\u00e1'], LJ4: [120, 'Sombrio'], LJ5: [22, 'Crici\u00fama'],
+    LJ6: [108, 'Tubar\u00e3o'], LJ7: [360, 'S\u00e3o Jos\u00e9'], LJ8: [680, 'Joinville'], LJ9: [644, 'Blumenau'], LJ10: [348, 'Palho\u00e7a'],
+    LJ11: [31, 'Crici\u00fama'], LJ12: [368, 'S\u00e3o Jos\u00e9'], LJ13: [100, 'Tubar\u00e3o'], LJ14: [683, 'Joinville'], LJ15: [720, 'Jaragu\u00e1 do Sul'],
+    LJ16: [500, 'Itaja\u00ed'], LJ17: [40, 'Morro da Fuma\u00e7a'], LJ18: [392, 'Florian\u00f3polis'], LJ19: [200, 'Imbituba'],
+    CB1: [67, 'Ararangu\u00e1'], CB2: [350, 'Palho\u00e7a'], CB3: [7, 'I\u00e7ara'], CB4: [360, 'S\u00e3o Jos\u00e9'], CB5: [104, 'Tubar\u00e3o'],
+    CB6: [120, 'Sombrio'], CB7: [31, 'Crici\u00fama'], CB8: [66, 'Forquilhinha'], CB9: [170, 'Bra\u00e7o do Norte'], CB10: [5, 'I\u00e7ara']
+  };
+  // Tipo de ve\u00edculo que atende cada loja (cadastro do usu\u00e1rio); as demais s\u00e3o Carreta
+  const TRUCK_PADRAO = ['LJ2', 'LJ5', 'LJ6', 'LJ13', 'LJ17', 'LJ19'];
+
+  /* L\u00ea a aba "KM Loja": Destino (LOJA 01 / COMBO 01), Distancia, Cidade. */
+  function lerKm(rowsPorAba) {
+    const nome = Object.keys(rowsPorAba).find(n => /KM\s*LOJA/i.test(n));
+    if (!nome) return null;
+    const km = {};
+    rowsPorAba[nome].forEach(r => {
+      if (!r) return;
+      const m = String(r[0] || '').trim().toUpperCase().match(/^(LOJA|COMBO)\s*0*(\d{1,2})$/);
+      if (!m || typeof r[1] !== 'number') return;
+      km[(m[1] === 'LOJA' ? 'LJ' : 'CB') + (+m[2])] = [r[1], String(r[2] || '').trim()];
+    });
+    return Object.keys(km).length ? km : null;
+  }
 
   const RE_PLACA = /^[A-Z]{3}\s*-?\s*\d[A-Z0-9]\d{2}/i;
 
@@ -115,7 +142,7 @@
     const t = tok.toUpperCase().replace(/\s+/g, '').replace(/\.$/, '');
     if (!t) return null;
     let m;
-    if ((m = t.match(/^(?:CB|BC|C\.B)0?(\d)$/))) return 'CB' + m[1];
+    if ((m = t.match(/^(?:CB|BC|C\.B)0?(\d{1,2})$/)) && +m[1] >= 1 && +m[1] <= 10) return 'CB' + (+m[1]);
     if (t === 'CBI') return 'CB1';
     if ((m = t.match(/^(?:LJ|L)?0?(\d{1,2})$/))) {
       const n = +m[1];
@@ -540,7 +567,7 @@
     return { entregas, alertas, codigos, resumoAbas, veiculos: FROTA.veiculos, frotaCarregada: !!frotaCfg, abas: { abaGeral, abaCp2, abaCp2Ant, abaFlv, abaApoio } };
   }
 
-  const api = { processar, escolherAbas, lerFrota, chavePlaca, splitDestinos, splitQtd, normDestino, nomeDestino, tipoDestino, ehTerceiro, distribuir, excelDate, excelTime };
+  const api = { processar, escolherAbas, lerFrota, lerKm, KM_PADRAO, TRUCK_PADRAO, chavePlaca, splitDestinos, splitQtd, normDestino, nomeDestino, tipoDestino, ehTerceiro, distribuir, excelDate, excelTime };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Expedicao = api;
 })(typeof window !== 'undefined' ? window : this);

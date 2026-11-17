@@ -145,6 +145,12 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
 .lojas-lista input { accent-color: var(--accent); }
 @media (max-width: 480px) { .lojas-lista { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bottom: 1px solid var(--line-2); }
+.cad input, .cad select { font: inherit; font-family: var(--f-mono); font-size: .82rem; padding: 4px 6px; border-radius: 5px; border: 1px solid var(--line-2); background: var(--bg-2); color: var(--ink); width: 100%; min-width: 0; }
+.cad input[type=number] { text-align: right; }
+.cad td { padding: 4px 8px; }
+.caps { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.caps label { display: inline-flex; gap: 8px; align-items: center; font-size: .85rem; color: var(--muted); }
+.caps input { width: 70px; font: inherit; font-family: var(--f-mono); padding: 4px 6px; border-radius: 5px; border: 1px solid var(--line-2); background: var(--bg-2); color: var(--ink); text-align: right; }
 .legend { display: flex; gap: 12px; flex-wrap: wrap; font-family: var(--f-mono); font-size: .72rem; color: var(--muted); }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
 @media (prefers-reduced-motion: no-preference) {
@@ -245,6 +251,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     <button role="tab" data-t="dia" aria-selected="false">Por dia</button>
     <button role="tab" data-t="diaLoja" aria-selected="false">Dia × loja</button>
     <button role="tab" data-t="viagens" aria-selected="false">Viagens <span class="count" id="cViagens">0</span></button>
+    <button role="tab" data-t="km" aria-selected="false">KM e viagens</button>
     <button role="tab" data-t="frota" aria-selected="false">Frota</button>
     <button role="tab" data-t="conferir" aria-selected="false">Para conferir <span class="count warn" id="cAlertas">0</span></button>
     <button role="tab" data-t="regras" aria-selected="false">Como a planilha é lida</button>
@@ -254,6 +261,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
   <section class="panel" id="pDia" hidden></section>
   <section class="panel" id="pDiaLoja" hidden></section>
   <section class="panel" id="pViagens" hidden></section>
+  <section class="panel" id="pKm" hidden></section>
   <section class="panel" id="pFrota" hidden></section>
   <section class="panel" id="pConferir" hidden></section>
 
@@ -371,6 +379,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
             const F = E.lerFrota(rows);
             if (!F) { prog.textContent = 'Achei a aba Frota Detalhada, mas nenhuma placa com capacidade.'; toast('Nenhuma placa encontrada na planilha de frota.'); return; }
             FROTA_CFG = Object.assign(F, { arquivo: file.name });
+            if (F.km) { Object.entries(F.km).forEach(([d, [km, cid]]) => { const c = CAD.lojas[d] || (CAD.lojas[d] = { tipo: 'Carreta' }); c.km = km; c.cidade = cid; }); salvarCad(); }
             FROTA_ORIGEM = file.name;
             try { localStorage.setItem('paletes-frota', JSON.stringify(FROTA_CFG)); } catch (e) { /* lembra só nesta sessão */ }
             prog.textContent = 'Frota atualizada: ' + F.lista.length + ' veículos. Agora abra a planilha de embarque.';
@@ -519,6 +528,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     renderDiaLoja(P);
     renderViagens(P);
     renderFrota(P);
+    renderKm(P);
     renderConferir();
   }
 
@@ -651,6 +661,97 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       </tbody></table></div>` : '<div class="empty">Nenhum palete no período e filtros escolhidos.</div>'}`;
     ligarOrdem(el, 'dia');
   }
+
+  // ---------- KM e viagens pelo tipo de veículo ----------
+  // Cadastro por loja: KM ida+volta, cidade e tipo de veículo (Carreta / Truck) + capacidade de cada tipo.
+  // Fica salvo no navegador; o padrão vem da planilha de frota (aba KM Loja) e do cadastro informado.
+  const CAP_PADRAO = { Carreta: 28, Truck: 18 };
+  const CODIGOS_KM = [...Array(19)].map((_, i) => 'LJ' + (i + 1)).concat([...Array(10)].map((_, i) => 'CB' + (i + 1)));
+  const codLoja = d => d.startsWith('LJ') ? 'L' + d.slice(2).padStart(2, '0') : d.startsWith('CB') ? 'CB' + d.slice(2).padStart(2, '0') : d;
+  function cadastroPadrao(km) {
+    const base = km || E.KM_PADRAO, c = {};
+    CODIGOS_KM.forEach(d => { const k = base[d] || E.KM_PADRAO[d] || [0, '']; c[d] = { km: k[0], cidade: k[1], tipo: E.TRUCK_PADRAO.includes(d) ? 'Truck' : 'Carreta' }; });
+    return { lojas: c, cap: Object.assign({}, CAP_PADRAO) };
+  }
+  let CAD = null;
+  try { CAD = JSON.parse(localStorage.getItem('paletes-km') || 'null'); } catch (e) { CAD = null; }
+  if (!CAD || !CAD.lojas) CAD = cadastroPadrao(FROTA_CFG && FROTA_CFG.km);
+  function salvarCad() { try { localStorage.setItem('paletes-km', JSON.stringify(CAD)); } catch (e) { /* só nesta sessão */ } }
+  const cadLoja = d => CAD.lojas[d] || { km: 0, cidade: '', tipo: 'Carreta' };
+  const capLoja = d => Math.max(1, +CAD.cap[cadLoja(d).tipo] || 28);
+
+  /* Viagens pelo tipo de veículo: em cada dia, origem (CD, CP02, FLV) e frota (própria / Vieira),
+     paletes da loja ÷ capacidade do veículo da loja, arredondado para cima. KM = viagens × KM ida+volta. */
+  function calcKm(lista) {
+    const grupos = new Map();
+    for (const e of lista) {
+      if (e.extra || e.tipo !== 'loja') continue;
+      const k = e.destino + '|' + e.data + '|' + e.origem + '|' + grupoFrota(e);
+      grupos.set(k, (grupos.get(k) || 0) + e.qtd);
+    }
+    const m = new Map();
+    const reais = new Map(linhasViagensLoja(lista).map(r => [r.dest, r]));
+    for (const [k, pal] of grupos) {
+      const [dest, , , fr] = k.split('|');
+      let r = m.get(dest);
+      if (!r) {
+        const c = cadLoja(dest), rr = reais.get(dest) || { nvp: 0, nvv: 0 };
+        r = { dest, nome: nome(dest), cod: codLoja(dest), cidade: c.cidade, tipo: c.tipo, cap: capLoja(dest), kmIV: +c.km || 0, palP: 0, palV: 0, vtP: 0, vtV: 0, nvp: rr.nvp, nvv: rr.nvv };
+        m.set(dest, r);
+      }
+      const v = Math.ceil(pal / r.cap);
+      if (fr === 'vv') { r.palV += pal; r.vtV += v; } else { r.palP += pal; r.vtP += v; }
+    }
+    return [...m.values()].map(r => Object.assign(r, { vt: r.vtP + r.vtV, kmP: r.vtP * r.kmIV, kmV: r.vtV * r.kmIV, km: (r.vtP + r.vtV) * r.kmIV, pal: r.palP + r.palV }))
+      .sort((a, b) => ordemLoja(a.dest) - ordemLoja(b.dest));
+  }
+
+  let tabelaKm = [];
+  function renderKm(P) {
+    const rows = calcKm(P);
+    tabelaKm = rows;
+    const T = rows.reduce((t, r) => { ['palP', 'palV', 'pal', 'vtP', 'vtV', 'vt', 'kmP', 'kmV', 'km'].forEach(c => { t[c] = (t[c] || 0) + r[c]; }); return t; }, {});
+    // Viagens contadas no total: caminhão que atende duas lojas conta uma vez (igual ao resto do sistema)
+    const PL = P.filter(e => e.tipo === 'loja');
+    T.nvp = viagens(PL.filter(e => grupoFrota(e) === 'vp')); T.nvv = viagens(PL.filter(e => grupoFrota(e) === 'vv'));
+    const semKm = rows.filter(r => !r.kmIV).map(r => r.nome);
+    const cad = CODIGOS_KM.map(d => { const c = cadLoja(d); return `<tr><td class="l mono">${codLoja(d)}</td>
+      <td class="l"><input data-cad="cidade" data-d="${d}" value="${esc(c.cidade)}" aria-label="Cidade ${codLoja(d)}"></td>
+      <td><input type="number" min="0" step="1" data-cad="km" data-d="${d}" value="${+c.km || 0}" aria-label="KM ${codLoja(d)}"></td>
+      <td class="l"><select data-cad="tipo" data-d="${d}" aria-label="Veículo ${codLoja(d)}"><option${c.tipo === 'Carreta' ? ' selected' : ''}>Carreta</option><option${c.tipo === 'Truck' ? ' selected' : ''}>Truck</option></select></td></tr>`; }).join('');
+    $('pKm').innerHTML = `<div class="panel-head"><h2>KM e viagens por loja</h2>
+      <span class="fgroup"><span class="hint">Viagens pelo veículo = paletes do dia ÷ capacidade (por origem e frota, arredondado para cima) · KM = viagens × KM ida+volta</span>${copiarBtn('km')}</span></div>
+      ${rows.length ? `<div class="tscroll"><table><thead>
+        <tr><th class="l" scope="col" rowspan="2">Loja</th><th class="l" scope="col" rowspan="2">Cidade</th><th class="l" scope="col" rowspan="2">Veículo</th><th scope="col" rowspan="2">KM ida+volta</th>
+          <th scope="colgroup" colspan="2">Paletes</th><th scope="colgroup" colspan="2">Viagens contadas</th><th scope="colgroup" colspan="3">Viagens pelo veículo</th><th scope="colgroup" colspan="3">KM rodado</th></tr>
+        <tr><th scope="col">Própria</th><th scope="col">Vieira</th><th scope="col">Própria</th><th scope="col">Vieira</th><th scope="col">Própria</th><th scope="col">Vieira</th><th scope="col">Total</th><th scope="col">Própria</th><th scope="col">Vieira</th><th scope="col">Total</th></tr>
+      </thead><tbody>
+      ${rows.map(r => `<tr><td class="l">${r.nome} <span class="muted mono">${r.cod}</span></td><td class="l muted">${esc(r.cidade) || '—'}</td><td class="l">${r.tipo} <span class="muted mono">${r.cap}</span></td><td>${r.kmIV ? fmt(r.kmIV) : '<span class="warn-tag">sem KM</span>'}</td>
+        ${cel(r.palP)}${cel(r.palV, 'num-terc')}${cel(r.nvp, 'muted')}${cel(r.nvv, 'muted')}${cel(r.vtP)}${cel(r.vtV, 'num-terc')}<td><strong>${fmt(r.vt)}</strong></td>${cel(r.kmP)}${cel(r.kmV, 'num-terc')}<td><strong>${fmt(r.km)}</strong></td></tr>`).join('')}
+      </tbody><tfoot><tr><td class="l" colspan="4">Total</td>${cel(T.palP)}${cel(T.palV, 'num-terc')}${cel(T.nvp)}${cel(T.nvv, 'num-terc')}${cel(T.vtP)}${cel(T.vtV, 'num-terc')}<td>${fmt(T.vt)}</td>${cel(T.kmP)}${cel(T.kmV, 'num-terc')}<td>${fmt(T.km)}</td></tr></tfoot></table></div>
+      ${semKm.length ? `<div class="more"><span class="warn-tag">Sem KM cadastrado: ${semKm.join(', ')}</span> Preencha no cadastro abaixo.</div>` : ''}`
+      : '<div class="empty">Nenhum palete no período, lojas e filtros escolhidos.</div>'}
+      <div class="panel-head"><h2>Cadastro de distâncias e veículos</h2><span class="fgroup"><span class="hint">Salvo neste navegador · KM e cidade vêm da aba KM Loja da planilha de frota</span><button type="button" id="cadPadrao">Restaurar padrão</button></span></div>
+      <div class="caps"><span class="flabel">Capacidade (paletes)</span>
+        <label>Carreta <input type="number" min="1" step="1" data-cap="Carreta" value="${CAD.cap.Carreta}" aria-label="Capacidade Carreta"></label>
+        <label>Truck <input type="number" min="1" step="1" data-cap="Truck" value="${CAD.cap.Truck}" aria-label="Capacidade Truck"></label></div>
+      <div class="tscroll"><table class="cad"><thead><tr><th class="l" scope="col">Código</th><th class="l" scope="col">Destino / cidade</th><th scope="col">KM (ida+volta)</th><th class="l" scope="col">Tipo de veículo</th></tr></thead><tbody>${cad}</tbody></table></div>`;
+  }
+  // Edição do cadastro (delegação: o painel é redesenhado a cada render)
+  document.addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset.cad) {
+      const c = CAD.lojas[t.dataset.d] || (CAD.lojas[t.dataset.d] = { km: 0, cidade: '', tipo: 'Carreta' });
+      c[t.dataset.cad] = t.dataset.cad === 'km' ? Math.max(0, +t.value || 0) : t.value;
+      salvarCad(); render();
+    } else if (t.dataset.cap) {
+      CAD.cap[t.dataset.cap] = Math.max(1, +t.value || CAP_PADRAO[t.dataset.cap]);
+      salvarCad(); render();
+    }
+  });
+  document.addEventListener('click', e => {
+    if (e.target.id === 'cadPadrao') { CAD = cadastroPadrao(FROTA_CFG && FROTA_CFG.km); salvarCad(); render(); toast('Cadastro de KM e veículos restaurado.'); }
+  });
 
   // ---------- Dia × loja: paletes por origem e viagens própria / Vieira ----------
   let tabelaDiaLoja = [];
@@ -823,6 +924,9 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     if (b.dataset.copy === 'loja') {
       linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens própria', 'Viagens Vieira', 'Viagens', 'Compl. no FLV (já no CD)']]
         .concat(tabelaLoja.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.nvp, r.nvv, r.viagens, r.COMP]));
+    } else if (b.dataset.copy === 'km') {
+      linhas = [['Código', 'Loja', 'Cidade', 'Veículo', 'Capacidade', 'KM ida+volta', 'Paletes própria', 'Paletes Vieira', 'Viagens contadas própria', 'Viagens contadas Vieira', 'Viagens pelo veículo própria', 'Viagens pelo veículo Vieira', 'Viagens pelo veículo total', 'KM própria', 'KM Vieira', 'KM total']]
+        .concat(tabelaKm.map(r => [r.cod, r.nome, r.cidade, r.tipo, r.cap, r.kmIV, r.palP, r.palV, r.nvp, r.nvv, r.vtP, r.vtV, r.vt, r.kmP, r.kmV, r.km]));
     } else if (b.dataset.copy === 'diaLoja') {
       linhas = [['Data', 'Loja', 'Código', 'CD', 'CP02', 'FLV', 'Total', 'Viagens própria', 'Viagens Vieira']]
         .concat(tabelaDiaLoja.map(r => [br(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv]));
@@ -929,11 +1033,10 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     });
     {
       const L = entregasExport(ini, fim);
-      const dl = linhasDiaLoja(L), vl = linhasViagensLoja(L);
+      const dl = linhasDiaLoja(L);
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Data', 'Loja', 'Código', 'CD', 'CP02', 'FLV', 'Total', 'Viagens própria', 'Viagens Vieira']]
         .concat(dl.map(r => [br(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv]))), 'Dia e loja');
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Loja', 'Código', 'CD', 'CP02', 'FLV', 'Paletes própria', 'Paletes Vieira', 'Paletes total', 'Viagens própria', 'Viagens Vieira', 'Viagens total']]
-        .concat(vl.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.palP, r.palV, r.total, r.nvp, r.nvv, r.nv]))), 'Viagens por loja');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([CAB_VIAGENS].concat(linhasExportViagens(L))), 'Viagens por loja');
     }
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   }
@@ -1154,20 +1257,32 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
         corCol: { 3: 'FF1F4E79', 4: 'FF5B3A8E', 5: 'FF1E6B45', 8: 'FFB45309' }, destaque: i => primeiraDoDia.has(i) && i > 0 });
   }
 
-  // Aba "Viagens por loja": paletes e viagens da frota própria e da Vieira em cada loja
+  // Aba "Viagens por loja": paletes, viagens (contadas e pelo tipo de veículo) e KM rodado em cada loja
+  function linhasExportViagens(L) {
+    const km = new Map(calcKm(L).map(r => [r.dest, r]));
+    return linhasViagensLoja(L).map(r => {
+      const k = km.get(r.dest) || { cidade: '', tipo: '', kmIV: 0, vtP: 0, vtV: 0, vt: 0, kmP: 0, kmV: 0, km: 0 };
+      return [r.nome, codLoja(r.dest), k.cidade, k.tipo, k.kmIV, r.CD, r.CP2, r.FLV, r.palP, r.palV, r.total, r.nvp, r.nvv, r.nv, k.vtP, k.vtV, k.vt, k.kmP, k.kmV, k.km];
+    });
+  }
+  const CAB_VIAGENS = ['Loja', 'C\u00f3digo', 'Cidade', 'Ve\u00edculo', 'KM ida+volta', 'CD', 'CP02', 'FLV', 'Paletes pr\u00f3pria', 'Paletes Vieira', 'Paletes total',
+    'Viagens contadas pr\u00f3pria', 'Viagens contadas Vieira', 'Viagens contadas total', 'Viagens pelo ve\u00edculo pr\u00f3pria', 'Viagens pelo ve\u00edculo Vieira', 'Viagens pelo ve\u00edculo total',
+    'KM pr\u00f3pria', 'KM Vieira', 'KM total'];
+
   function abaViagensLoja(wb, ini, fim, rotPer) {
     const L = entregasExport(ini, fim);
-    const rows = linhasViagensLoja(L);
+    const linhas = linhasExportViagens(L);
     const ws = wb.addWorksheet('Viagens por loja', { properties: { tabColor: { argb: 'FF263445' } }, pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1, paperSize: 9 } });
     const tv = f => new Set(L.filter(e => !e.semViagem && f(e)).map(e => e.viagem)).size;
-    const tot = [null, null, ...['CD', 'CP2', 'FLV', 'palP', 'palV', 'total'].map(c => rows.reduce((a, r) => a + r[c], 0)),
-      tv(e => grupoFrota(e) === 'vp'), tv(e => grupoFrota(e) === 'vv'), tv(() => true)];
-    tabelaExcel(ws, 'Viagens e paletes por loja \u00b7 ' + rotPer + (mesInteiro(ini, fim) ? '/' + ini.slice(0, 4) : ''),
-      textoLojasSel() + ' \u00b7 Vieira = terceiros; placa em branco conta como pr\u00f3pria \u00b7 no TOTAL, caminh\u00e3o que atende duas lojas conta uma vez',
-      ['Loja', 'C\u00f3digo', 'CD', 'CP02', 'FLV', 'Paletes pr\u00f3pria', 'Paletes Vieira', 'Paletes total', 'Viagens pr\u00f3pria', 'Viagens Vieira', 'Viagens total'],
-      rows.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.palP, r.palV, r.total, r.nvp, r.nvv, r.nv]),
-      { cor: 'FF263445', texto: 2, larguras: [12, 9, 9, 9, 9, 12, 12, 12, 12, 12, 12], negrito: [7, 10], totais: tot,
-        corCol: { 2: 'FF1F4E79', 3: 'FF5B3A8E', 4: 'FF1E6B45', 6: 'FFB45309', 9: 'FFB45309' } });
+    const soma = j => linhas.reduce((a, l) => a + (+l[j] || 0), 0);
+    // TOTAL: viagens contadas sem repetir caminhão que atende duas lojas; o resto é soma
+    const tot = [null, null, null, null, null, soma(5), soma(6), soma(7), soma(8), soma(9), soma(10),
+      tv(e => grupoFrota(e) === 'vp'), tv(e => grupoFrota(e) === 'vv'), tv(() => true), soma(14), soma(15), soma(16), soma(17), soma(18), soma(19)];
+    tabelaExcel(ws, 'Viagens, paletes e KM por loja \u00b7 ' + rotPer + (mesInteiro(ini, fim) ? '/' + ini.slice(0, 4) : ''),
+      textoLojasSel() + ' \u00b7 Vieira = terceiros; placa em branco conta como pr\u00f3pria \u00b7 viagens pelo ve\u00edculo = paletes do dia \u00f7 capacidade (Carreta ' + CAD.cap.Carreta + ', Truck ' + CAD.cap.Truck + '), por origem e frota, arredondado para cima \u00b7 KM = viagens pelo ve\u00edculo \u00d7 KM ida+volta',
+      CAB_VIAGENS, linhas,
+      { cor: 'FF263445', texto: 4, larguras: [10, 8, 16, 9, 9, 8, 8, 8, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 12], negrito: [10, 16, 19], totais: tot,
+        corCol: { 5: 'FF1F4E79', 6: 'FF5B3A8E', 7: 'FF1E6B45', 9: 'FFB45309', 12: 'FFB45309', 15: 'FFB45309', 18: 'FFB45309' } });
   }
 
   function abaPorDia(wb, ini, fim, nomeMes, nomeAba, soTerceiro, rotulo, corAba) {
@@ -1300,7 +1415,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
   });
 
   // ---------- Abas ----------
-  const PAINEIS = { loja: 'pLoja', dia: 'pDia', diaLoja: 'pDiaLoja', viagens: 'pViagens', frota: 'pFrota', conferir: 'pConferir', regras: 'pRegras' };
+  const PAINEIS = { loja: 'pLoja', dia: 'pDia', diaLoja: 'pDiaLoja', viagens: 'pViagens', km: 'pKm', frota: 'pFrota', conferir: 'pConferir', regras: 'pRegras' };
   function mostrarAba(t) {
     estado.aba = t;
     document.querySelectorAll('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
