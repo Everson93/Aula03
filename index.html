@@ -167,7 +167,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
         <svg viewBox="0 0 24 24" fill="none" stroke="#3ad7f5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M4 18v-3h16v3"/><path d="M6 15V7h12v8"/><path d="M6 11h12"/><path d="M12 7v8"/></svg>
       </div>
       <div style="min-width:0">
-        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-b (regra Vieira nov)</div>
+        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-c (regra Vieira nov)</div>
         <h1>Paletes Expedidos</h1>
         <p id="fileInfo">Leitura da planilha EMBARQUE EXPEDIÇÃO: CD, CP2 e FLV por loja, frota própria e terceiros.</p>
       </div>
@@ -1430,7 +1430,14 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     // Sem arredondar por dia/loja: entrega pequena não vira uma carreta inteira.
     const meses = {};
     const movido = {};
+    const semRegra = {};   // mesmo cálculo, sem a regra Vieira (para o quadro "Efeito da regra")
+    const mesRegra = REGRA_VIEIRA.desde.slice(0, 7);
     for (const e of lista) {
+      if (e.data.slice(0, 7) >= mesRegra) {
+        const f0 = grupoFrota(e) === 'vv' ? 'V' : 'G', mm = e.data.slice(0, 7);
+        const sr = semRegra[mm] || (semRegra[mm] = { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 } });
+        sr[f0].pal += e.qtd; sr[f0].km += e.qtd / CAP_MENSAL * (+cadLoja(e.destino).km || 0);
+      }
       if (grupoFrota(e) !== 'vv' && forcaVieira(e)) movido[e.data.slice(0, 7)] = (movido[e.data.slice(0, 7)] || 0) + e.qtd;
       const fr = grupoFrota(e) === 'vv' || forcaVieira(e) ? 'V' : 'G';
       const mes = e.data.slice(0, 7);
@@ -1455,8 +1462,13 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
         ['G', 'V'].forEach(x => { m[x].pal = Math.round(m[x].pal * f); m[x].km = m[x].km * f; });
       }
       ['G', 'V'].forEach(x => { m[x].via = Math.ceil(m[x].pal / CAP_MENSAL); m[x].km = Math.round(m[x].km); });
+      let sr = null;
+      if (semRegra[mes]) {
+        sr = {};
+        ['G', 'V'].forEach(x => { const pal = Math.round(semRegra[mes][x].pal * f); sr[x] = { pal, via: Math.ceil(pal / CAP_MENSAL), km: Math.round(semRegra[mes][x].km * f) }; });
+      }
       const lojas = Object.entries(m.lojas).map(([dest, v]) => ({ dest, G: v.G, V: v.V })).sort((a, b) => ordemLoja(a.dest) - ordemLoja(b.dest));
-      rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj, f, lojas, movido: movido[mes] || 0 });
+      rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj, f, lojas, movido: movido[mes] || 0, sr });
     }
     return rows;
   }
@@ -1633,6 +1645,33 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const cv = ws.getCell(nT + 3, 1);
     cv.value = 'Colunas Valor (fundo amarelo) para preencher; Total Valor soma Giassi + Vieira automaticamente.';
     cv.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF8A6D00' } };
+    // Quadro "Efeito da regra": mês sem a regra × com a regra (valores, para comparar)
+    let q = nT + 5;
+    rows.filter(r => r.sr).forEach(r => {
+      ws.mergeCells(q, 1, q, 11);
+      const h = ws.getCell(q, 1);
+      h.value = 'Efeito da regra Vieira em ' + r.nome + (r.proj ? ' (proje\u00e7\u00e3o)' : '') + ': L08, L09, L14 e L15 passam da Giassi para a Vieira';
+      h.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      h.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.V } };
+      h.alignment = { vertical: 'middle', indent: 1 };
+      q++;
+      const linhas = [['Sem a regra', r.sr.G, r.sr.V], ['Com a regra', r.G, r.V],
+        ['Diferen\u00e7a', { pal: r.G.pal - r.sr.G.pal, via: r.G.via - r.sr.G.via, km: r.G.km - r.sr.G.km }, { pal: r.V.pal - r.sr.V.pal, via: r.V.via - r.sr.V.via, km: r.V.km - r.sr.V.km }]];
+      linhas.forEach(([rot, G, V], k) => {
+        const vals = [rot, G.pal, G.via, G.km, null, V.pal, V.via, V.km, null, G.km + V.km, null];
+        vals.forEach((v, j) => {
+          const c = ws.getCell(q, j + 1);
+          c.value = v;
+          c.border = borda;
+          c.font = { name: 'Calibri', size: 10, bold: j === 0 || k === 2, color: { argb: k === 2 && typeof v === 'number' ? (v < 0 ? 'FFB42318' : 'FF1E6B45') : 'FF1B2430' } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: k === 2 ? 'FFFCE8D4' : k ? 'FFFFFFFF' : 'FFF6F8FB' } };
+          c.alignment = { horizontal: j === 0 ? 'left' : 'right', vertical: 'middle' };
+          if (j) c.numFmt = '+#,##0;-#,##0;"-"'.replace(/^\+/, k === 2 ? '+' : '');
+        });
+        q++;
+      });
+      q++;
+    });
     [12, 10, 10, 12, 14, 10, 10, 12, 14, 13, 15].forEach((w, j) => { ws.getColumn(j + 1).width = w; });
     abaCalculoLoja(wb, rows, ano);
     return new Uint8Array(await wb.xlsx.writeBuffer());
