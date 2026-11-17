@@ -167,7 +167,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
         <svg viewBox="0 0 24 24" fill="none" stroke="#3ad7f5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M4 18v-3h16v3"/><path d="M6 15V7h12v8"/><path d="M6 11h12"/><path d="M12 7v8"/></svg>
       </div>
       <div style="min-width:0">
-        <div class="eyebrow">Centro de controle · Expedição · versão 17/11 (regra Vieira nov)</div>
+        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-b (regra Vieira nov)</div>
         <h1>Paletes Expedidos</h1>
         <p id="fileInfo">Leitura da planilha EMBARQUE EXPEDIÇÃO: CD, CP2 e FLV por loja, frota própria e terceiros.</p>
       </div>
@@ -1429,7 +1429,9 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     // Viagens = paletes ÷ 28 (carreta cheia). KM por loja = (paletes da loja ÷ 28) × KM ida+volta da loja.
     // Sem arredondar por dia/loja: entrega pequena não vira uma carreta inteira.
     const meses = {};
+    const movido = {};
     for (const e of lista) {
+      if (grupoFrota(e) !== 'vv' && forcaVieira(e)) movido[e.data.slice(0, 7)] = (movido[e.data.slice(0, 7)] || 0) + e.qtd;
       const fr = grupoFrota(e) === 'vv' || forcaVieira(e) ? 'V' : 'G';
       const mes = e.data.slice(0, 7);
       const m = meses[mes] || (meses[mes] = { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 }, lojas: {} });
@@ -1454,7 +1456,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       }
       ['G', 'V'].forEach(x => { m[x].via = Math.ceil(m[x].pal / CAP_MENSAL); m[x].km = Math.round(m[x].km); });
       const lojas = Object.entries(m.lojas).map(([dest, v]) => ({ dest, G: v.G, V: v.V })).sort((a, b) => ordemLoja(a.dest) - ordemLoja(b.dest));
-      rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj, f, lojas });
+      rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj, f, lojas, movido: movido[mes] || 0 });
     }
     return rows;
   }
@@ -1561,7 +1563,8 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     try { ExcelJS = await carregarExcelJS(); } catch (e) { ExcelJS = null; }
     const nota = 'Todos os CDs (CD + CP02 + FLV), todas as lojas \u00b7 Giassi = frota pr\u00f3pria (inclui placa em branco), Vieira = terceiros \u00b7 Viagens = paletes do m\u00eas \u00f7 ' + CAP_MENSAL + ' (carreta cheia), arredondado para cima \u00b7 KM = soma, por loja, de (paletes da loja \u00f7 ' + CAP_MENSAL + ') \u00d7 KM ida+volta da loja' +
       (proj ? ' \u00b7 * ' + proj.nome + ': proje\u00e7\u00e3o = m\u00e9dia por dia de 01 a ' + br(proj.proj.ultimo) + ' (' + proj.proj.dias + ' dias) \u00d7 ' + proj.proj.fimMes + ' dias' : '') +
-      (rows.some(r => r.mes >= REGRA_VIEIRA.desde.slice(0, 7)) ? ' \u00b7 Regra: a partir de ' + br(REGRA_VIEIRA.desde) + ', L08, L09, L14 e L15 s\u00e3o 100% Vieira (CD, FLV e CP02), sem viagens Giassi' : '');
+      (rows.some(r => r.mes >= REGRA_VIEIRA.desde.slice(0, 7)) ? ' \u00b7 Regra: a partir de ' + br(REGRA_VIEIRA.desde) + ', L08, L09, L14 e L15 s\u00e3o 100% Vieira (CD, FLV e CP02), sem viagens Giassi' +
+        rows.filter(r => r.mes >= REGRA_VIEIRA.desde.slice(0, 7)).map(r => ' \u00b7 ' + r.nome + ': ' + fmt(r.movido) + ' paletes dessas lojas estavam lan\u00e7ados como Giassi e foram para a Vieira' + (r.proj ? ' (antes da proje\u00e7\u00e3o)' : '')).join('') : '');
     if (!ExcelJS) {
       const aoa = [['M\u00eases', 'Giassi', '', '', '', 'Vieira', '', '', '', 'Totais', ''], ['', 'Palete', 'Viagens', 'KM', 'Valor', 'Palete', 'Viagens', 'KM', 'Valor', 'Total KM', 'Total Valor']];
       rows.forEach(r => aoa.push([r.nome + (r.proj ? '*' : ''), r.G.pal, r.G.via, r.G.km, null, r.V.pal, r.V.via, r.V.km, null, r.G.km + r.V.km, null]));
@@ -1640,6 +1643,8 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const ano = ($('dFim').value || DADOS.max).slice(0, 4);
     const dados = await montarMensal(ano);
     await salvarXlsx('Consolidado_Mensal_' + ano + '.xlsx', dados);
+    const regra = consolidadoMensal(ano).filter(r => r.mes >= REGRA_VIEIRA.desde.slice(0, 7));
+    if (regra.length) setTimeout(() => toast('Regra Vieira (L08, L09, L14, L15): ' + regra.map(r => r.nome + ' ' + fmt(r.movido) + ' paletes Giassi \u2192 Vieira').join(' \u00b7 ')), 2400);
   });
 
   // Exporta o período selecionado no topo (De / Até)
