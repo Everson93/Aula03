@@ -1775,6 +1775,78 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       ws.getRow(q).height = 30;
       q += 2;
     }
+    // Quadro "Projeção sazonal": % de cada mês no ano anterior (paletes) aplicada ao realizado do ano
+    const prev = iProj >= 0 ? consolidadoMensal(String(+ano - 1)) : [];
+    if (iProj >= 0 && prev.length === 12) {
+      q++;
+      ws.mergeCells(q, 1, q, 11);
+      const h = ws.getCell(q, 1);
+      h.value = 'Proje\u00e7\u00e3o sazonal de paletes (base ' + (+ano - 1) + ') \u00b7 m\u00eas que falta = real de ' + ano + ' \u00f7 soma da % ' + (+ano - 1) + ' dos mesmos meses \u00d7 % do m\u00eas';
+      h.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      h.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.T } };
+      h.alignment = { vertical: 'middle', indent: 1 };
+      q++;
+      const cabS = ['M\u00eas', 'Giassi ' + (+ano - 1), 'Vieira ' + (+ano - 1), '% Giassi ' + (+ano - 1), '% Vieira ' + (+ano - 1),
+        'Giassi ' + ano + ' real', 'Vieira ' + ano + ' real', 'Giassi ' + ano + ' proje\u00e7\u00e3o', 'Vieira ' + ano + ' proje\u00e7\u00e3o', 'Viagens Giassi (\u00f7' + CAP_MENSAL + ')', 'Viagens Vieira (\u00f7' + CAP_MENSAL + ')'];
+      cabS.forEach((v, j) => {
+        const c = ws.getCell(q, j + 1);
+        c.value = v;
+        c.font = { name: 'Calibri', size: 9, bold: true, color: { argb: j >= 7 ? 'FF1E6B45' : j === 2 || j === 4 || j === 6 ? COR.V : j ? COR.G : COR.T } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CLARO.T } };
+        c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        c.border = borda;
+      });
+      ws.getRow(q).height = 32;
+      q++;
+      const ini = q, fim = q + 11;
+      const somaPrevG = prev.reduce((a, r) => a + r.G.pal, 0), somaPrevV = prev.reduce((a, r) => a + r.V.pal, 0);
+      // resultado (cache) da projeção, igual à fórmula
+      const completos = rows.slice(0, iProj);
+      const realG = completos.reduce((a, r) => a + r.G.pal, 0), realV = completos.reduce((a, r) => a + r.V.pal, 0);
+      const pctG = prev.slice(0, iProj).reduce((a, r) => a + r.G.pal, 0) / (somaPrevG || 1);
+      const pctV = prev.slice(0, iProj).reduce((a, r) => a + r.V.pal, 0) / (somaPrevV || 1);
+      for (let k = 0; k < 12; k++) {
+        const n = q + k, pr = prev[k], cur = k < iProj ? rows[k] : null;
+        const pG = pr.G.pal / (somaPrevG || 1), pV = pr.V.pal / (somaPrevV || 1);
+        const projG = cur ? cur.G.pal : realG / (pctG || 1) * pG, projV = cur ? cur.V.pal : realV / (pctV || 1) * pV;
+        const vals = [MESES_NOME[k], pr.G.pal, pr.V.pal,
+          { formula: `B${n}/SUM($B$${ini}:$B$${fim})`, result: pG }, { formula: `C${n}/SUM($C$${ini}:$C$${fim})`, result: pV },
+          cur ? cur.G.pal : null, cur ? cur.V.pal : null,
+          { formula: `IF(F${n}<>"",F${n},SUM($F$${ini}:$F$${fim})/SUMPRODUCT(($F$${ini}:$F$${fim}<>"")*$D$${ini}:$D$${fim})*D${n})`, result: projG },
+          { formula: `IF(G${n}<>"",G${n},SUM($G$${ini}:$G$${fim})/SUMPRODUCT(($G$${ini}:$G$${fim}<>"")*$E$${ini}:$E$${fim})*E${n})`, result: projV },
+          { formula: `ROUNDUP(H${n}/${CALC}!$C$2,0)`, result: Math.ceil(projG / CAP_MENSAL) },
+          { formula: `ROUNDUP(I${n}/${CALC}!$C$2,0)`, result: Math.ceil(projV / CAP_MENSAL) }];
+        vals.forEach((v, j) => {
+          const c = ws.getCell(n, j + 1);
+          c.value = v;
+          c.border = borda;
+          const projetado = !cur && j >= 7;
+          c.font = { name: 'Calibri', size: 10, bold: j === 0 || projetado, italic: projetado, color: { argb: projetado ? 'FF1E6B45' : 'FF1B2430' } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: projetado ? 'FFE2EFDA' : k % 2 ? 'FFF6F8FB' : 'FFFFFFFF' } };
+          c.alignment = { horizontal: j === 0 ? 'left' : 'right', vertical: 'middle' };
+          if (j === 3 || j === 4) c.numFmt = '0.0%';
+          else if (j) c.numFmt = '#,##0;-#,##0;"-"';
+        });
+      }
+      q = fim + 1;
+      ['TOTAL', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'].forEach((L, j) => {
+        const c = ws.getCell(q, j + 1);
+        c.value = j === 0 ? 'TOTAL' : { formula: `SUM(${L}${ini}:${L}${fim})` };
+        c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.T } };
+        c.alignment = { horizontal: j === 0 ? 'left' : 'right', vertical: 'middle' };
+        if (j) c.numFmt = j === 3 || j === 4 ? '0.0%' : '#,##0';
+      });
+      q++;
+      ws.mergeCells(q, 1, q, 11);
+      const ns = ws.getCell(q, 1);
+      ns.value = 'Meses completos de ' + ano + ' entram com o real; ' + rows[iProj].nome + ' e os seguintes s\u00e3o projetados pela participa\u00e7\u00e3o de ' + (+ano - 1) +
+        ' (fundo verde). Compare a proje\u00e7\u00e3o sazonal de ' + rows[iProj].nome + ' com a linha ' + rows[iProj].nome + ' * da tabela (m\u00e9dia di\u00e1ria) e escolha. Observa\u00e7\u00e3o: em ' + (+ano - 1) + ' n\u00e3o h\u00e1 CP02 na planilha, e a regra Vieira de ' + rows[iProj].nome + ' muda a divis\u00e3o Giassi \u00d7 Vieira.';
+      ns.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF5A6675' } };
+      ns.alignment = { wrapText: true, vertical: 'top' };
+      ws.getRow(q).height = 30;
+      q += 2;
+    }
     [12, 10, 10, 12, 14, 10, 10, 12, 14, 13, 15].forEach((w, j) => { ws.getColumn(j + 1).width = w; });
     abaCalculoLoja(wb, rows, ano);
     return new Uint8Array(await wb.xlsx.writeBuffer());
