@@ -271,6 +271,11 @@
     const abaCp2Ant = null;
 
     const codigos = lerApoio(abaApoio && rowsPorAba[abaApoio]);
+    // C\u00f3digo de loja digitado no lugar do n\u00famero (ex.: "27" = c\u00f3digo da Loja 2).
+    // S\u00f3 vale para c\u00f3digos acima de 19, que n\u00e3o se confundem com o n\u00famero de uma loja.
+    const porCodigo = {};
+    Object.entries(codigos).forEach(([d, cod]) => { if (+cod > 19 && /^(LJ|CB)\d+$/.test(d)) porCodigo['LJ' + cod] = d; });
+    const lojaReal = d => (/^LJ\d+$/.test(d) && !codigos[d] && porCodigo[d]) || d;
     // Linha com a c\u00e9lula LOJA pintada de vermelho n\u00e3o conta (em todas as abas)
     const vermelha = (aba, i) => !!(cores && cores[aba] && ehVermelho(cores[aba][i]));
     // Regra fixa: n\u00e3o vai para "Para conferir"
@@ -297,6 +302,7 @@
         lista.forEach(o => {
           // CP1 n\u00e3o \u00e9 considerado
           if (o.destino === 'CP1') return;
+          o = Object.assign({}, o, { destino: lojaReal(o.destino) });
           const origem = o.origem || origemPadrao;
           if (!o.extra) algum = true;
           entregas.push({ extra: !!o.extra,

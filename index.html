@@ -56,7 +56,7 @@ main { padding-block: 20px 48px; display: grid; gap: 16px; }
 .drop p { margin: 0; color: var(--muted); max-width: 62ch; }
 .progress { font-family: var(--f-mono); font-size: .82rem; color: var(--accent); }
 
-.filters { background: rgba(15,22,30,.85); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 12px; backdrop-filter: blur(4px); }
+.filters { position: relative; z-index: 20; background: rgba(15,22,30,.85); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 12px; backdrop-filter: blur(4px); }
 .frow { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
 .fgroup { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .flabel { font-family: var(--f-mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .14em; color: var(--dim); font-weight: 500; margin-right: 4px; }
@@ -133,6 +133,18 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
 .ex b { font-weight: 600; color: var(--accent); }
 .toast { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--surface-3); color: var(--ink); border: 1px solid var(--accent); box-shadow: 0 0 20px var(--glow); padding: 8px 14px; border-radius: 6px; font-size: .88rem; font-family: var(--f-mono); z-index: 20; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.lojas-pick { position: relative; }
+#btnLojas { font-size: .84rem; background: var(--bg-2); min-width: 170px; text-align: left; }
+#btnLojas::after { content: " \25BE"; color: var(--accent); }
+.lojas-pop { position: absolute; z-index: 15; top: calc(100% + 6px); left: 0; width: min(440px, calc(100vw - 32px)); background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 12px; box-shadow: 0 18px 40px rgba(0,0,0,.45), 0 0 0 1px rgba(58,215,245,.08); display: grid; gap: 10px; }
+.lojas-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
+.lojas-acoes button { font-size: .78rem; padding: 4px 10px; }
+.lojas-lista { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; max-height: 260px; overflow: auto; }
+.lojas-lista label { display: flex; align-items: center; gap: 6px; font-size: .82rem; padding: 4px 6px; border-radius: 6px; cursor: pointer; color: var(--muted); }
+.lojas-lista label:has(input:checked) { color: var(--ink); background: rgba(58,215,245,.08); }
+.lojas-lista input { accent-color: var(--accent); }
+@media (max-width: 480px) { .lojas-lista { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bottom: 1px solid var(--line-2); }
 .legend { display: flex; gap: 12px; flex-wrap: wrap; font-family: var(--f-mono); font-size: .72rem; color: var(--muted); }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
 @media (prefers-reduced-motion: no-preference) {
@@ -206,7 +218,19 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
         <label class="chip"><input type="checkbox" id="dOutros"><span class="dot"></span>Outros (clientes, cestas)</label>
       </div>
       <div class="fgroup">
-        <input type="search" id="busca" placeholder="Filtrar loja: 7, CB2…" aria-label="Filtrar loja">
+        <span class="flabel">Lojas</span>
+        <div class="lojas-pick">
+          <button type="button" id="btnLojas" aria-expanded="false" aria-controls="lojasPop">Todas</button>
+          <div class="lojas-pop" id="lojasPop" hidden>
+            <div class="lojas-acoes">
+              <button type="button" data-l="todas">Todas</button>
+              <button type="button" data-l="nenhuma">Nenhuma</button>
+              <button type="button" data-l="lj">Só lojas (L)</button>
+              <button type="button" data-l="cb">Só CB</button>
+            </div>
+            <div class="lojas-lista" id="lojasLista"></div>
+          </div>
+        </div>
       </div>
       <div class="fgroup" style="margin-left:auto">
         <button type="button" class="btn-primary" id="btnExportar" title="Gera o .xlsx do período selecionado (De / Até) no modelo Base Importação: CD, FLV e CP02, frota própria e Vieira Transportes, mais as abas por dia">Exportar período</button>
@@ -219,6 +243,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
   <nav class="tabs" id="tabs" role="tablist" hidden>
     <button role="tab" data-t="loja" aria-selected="true">Por loja</button>
     <button role="tab" data-t="dia" aria-selected="false">Por dia</button>
+    <button role="tab" data-t="diaLoja" aria-selected="false">Dia × loja</button>
     <button role="tab" data-t="viagens" aria-selected="false">Viagens <span class="count" id="cViagens">0</span></button>
     <button role="tab" data-t="frota" aria-selected="false">Frota</button>
     <button role="tab" data-t="conferir" aria-selected="false">Para conferir <span class="count warn" id="cAlertas">0</span></button>
@@ -227,6 +252,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
 
   <section class="panel" id="pLoja" hidden></section>
   <section class="panel" id="pDia" hidden></section>
+  <section class="panel" id="pDiaLoja" hidden></section>
   <section class="panel" id="pViagens" hidden></section>
   <section class="panel" id="pFrota" hidden></section>
   <section class="panel" id="pConferir" hidden></section>
@@ -285,7 +311,8 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
   const ORIGENS = ['CD', 'CP2', 'FLV'];
   const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 's\u00e1b'];
   let DADOS = null;
-  let estado = { frota: 'todas', aba: 'loja', ordem: { loja: ['total', -1], dia: ['data', 1] }, limiteViagens: 300 };
+  let estado = { frota: 'todas', aba: 'loja', ordem: { loja: ['total', -1], dia: ['data', 1] }, limiteViagens: 300, limiteDiaLoja: 600 };
+  let LOJAS_SEL = null;   // null = todas as lojas; senão Set com as escolhidas
 
   function lerPrefs() {
     try { const p = JSON.parse(localStorage.getItem('paletes-prefs') || '{}'); Object.assign(estado, p.estado || {}); return p; } catch (e) { return {}; }
@@ -397,6 +424,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     $('btnFile').textContent = 'Trocar planilha';
     drop.hidden = true;
     ['filters', 'kpis', 'tabs'].forEach(id => { $(id).hidden = false; });
+    montarListaLojas();
     if (primeira || !$('dIni').value) { aplicarPreset('7'); mostrarAba(estado.aba || 'loja'); } else render();
     return true;
   }
@@ -422,7 +450,6 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     document.querySelectorAll('#presets .preset').forEach(b => b.setAttribute('aria-pressed', 'false')); render();
   }));
   ['oCD', 'oCP2', 'oFLV', 'dTransf', 'dOutros'].forEach(id => $(id).addEventListener('change', () => { salvarPrefs(); render(); }));
-  $('busca').addEventListener('input', () => render());
   document.querySelectorAll('#frota button').forEach(b => b.addEventListener('click', () => {
     estado.frota = b.dataset.v; salvarPrefs(); render();
   }));
@@ -435,20 +462,49 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     if (dest.includes('+')) return '';
     const c = DADOS.codigos[dest]; return c ? String(c) : '';
   }
-  function casaBusca(dest, q) {
-    if (!q) return true;
-    const alvos = q.toUpperCase().split(/[\s,;]+/).filter(Boolean).map(t => E.normDestino(t) || t);
-    const partes = dest.split('+');
-    return alvos.some(a => partes.includes(a) || nome(dest).toUpperCase().includes(a) || codigo(dest) === a);
+  // Ordem natural: Loja 1..19, depois CB1..CB9, depois o resto
+  function ordemLoja(d) { const p = d.split('+')[0]; const n = parseInt(p.replace(/\D/g, ''), 10) || 0; return (p.startsWith('LJ') ? 0 : p.startsWith('CB') ? 100 : 200) + n; }
+  function lojaSelecionada(dest) { return !LOJAS_SEL || LOJAS_SEL.has(dest); }
+
+  // ---------- Filtro de lojas ----------
+  function montarListaLojas() {
+    const todas = [...new Set(DADOS.entregas.filter(e => e.tipo === 'loja').map(e => e.destino))].sort((a, b) => ordemLoja(a) - ordemLoja(b));
+    DADOS.lojas = todas;
+    if (LOJAS_SEL) LOJAS_SEL = new Set([...LOJAS_SEL].filter(d => todas.includes(d)));
+    $('lojasLista').innerHTML = todas.map(d => `<label><input type="checkbox" value="${d}" ${lojaSelecionada(d) ? 'checked' : ''}>${nome(d)}</label>`).join('');
+    rotuloLojas();
   }
+  function rotuloLojas() {
+    const tot = (DADOS && DADOS.lojas || []).length;
+    const n = LOJAS_SEL ? LOJAS_SEL.size : tot;
+    $('btnLojas').textContent = !LOJAS_SEL || n === tot ? 'Todas (' + tot + ')' : n === 0 ? 'Nenhuma' : n <= 3 ? [...LOJAS_SEL].sort((a, b) => ordemLoja(a) - ordemLoja(b)).map(nome).join(', ') : n + ' de ' + tot;
+  }
+  function aplicarSelecaoLojas(lista) {
+    LOJAS_SEL = lista.length === DADOS.lojas.length ? null : new Set(lista);
+    $('lojasLista').querySelectorAll('input').forEach(i => { i.checked = lojaSelecionada(i.value); });
+    rotuloLojas(); render();
+  }
+  $('btnLojas').addEventListener('click', () => {
+    const pop = $('lojasPop'); pop.hidden = !pop.hidden; $('btnLojas').setAttribute('aria-expanded', String(!pop.hidden));
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.lojas-pick')) { $('lojasPop').hidden = true; $('btnLojas').setAttribute('aria-expanded', 'false'); }
+  });
+  $('lojasLista').addEventListener('change', () => {
+    aplicarSelecaoLojas([...$('lojasLista').querySelectorAll('input:checked')].map(i => i.value));
+  });
+  document.querySelectorAll('.lojas-acoes button').forEach(b => b.addEventListener('click', () => {
+    const t = DADOS.lojas;
+    const l = b.dataset.l === 'todas' ? t : b.dataset.l === 'nenhuma' ? [] : t.filter(d => d.startsWith(b.dataset.l === 'lj' ? 'LJ' : 'CB'));
+    aplicarSelecaoLojas(l);
+  }));
   function filtrar() {
     const ini = $('dIni').value, fim = $('dFim').value;
     const orig = { CD: $('oCD').checked, CP2: $('oCP2').checked, FLV: $('oFLV').checked, COMP: $('oFLV').checked };
     const tipos = { loja: true, transferencia: $('dTransf').checked, outros: $('dOutros').checked };
-    const q = $('busca').value.trim();
     return DADOS.entregas.filter(e =>
       e.data >= ini && e.data <= fim && orig[e.origem] && tipos[e.tipo] &&
-      (estado.frota === 'todas' || e.frota === estado.frota) && casaBusca(e.destino, q));
+      (estado.frota === 'todas' || e.frota === estado.frota) && (e.tipo !== 'loja' || lojaSelecionada(e.destino)));
   }
 
   // ---------- Render ----------
@@ -460,6 +516,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     renderKpis(P);
     renderLoja(L);
     renderDia(P);
+    renderDiaLoja(P);
     renderViagens(P);
     renderFrota(P);
     renderConferir();
@@ -500,6 +557,39 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     const w = v => (max ? v * 120 / max : 0).toFixed(1) + 'px';
     return `<div class="bar" aria-hidden="true"><span class="b-cd" style="width:${w(r.CD)}"></span><span class="b-cp2" style="width:${w(r.CP2)}"></span><span class="b-flv" style="width:${w(r.FLV)}"></span></div>`;
   }
+  // Viagens separadas por frota: placa em branco conta junto com a própria (como na exportação)
+  const grupoFrota = e => e.frota === 'terceiro' ? 'vv' : 'vp';
+
+  // Uma linha por dia e loja: paletes por origem e viagens da frota própria e da Vieira
+  function linhasDiaLoja(lista) {
+    const m = new Map();
+    for (const e of lista) {
+      if (e.extra) continue;
+      const k = e.data + '|' + e.destino;
+      let r = m.get(k);
+      if (!r) { r = { data: e.data, dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), CD: 0, CP2: 0, FLV: 0, vp: new Set(), vv: new Set() }; m.set(k, r); }
+      r[e.origem] += e.qtd;
+      if (!e.semViagem) r[grupoFrota(e)].add(e.viagem);
+    }
+    return [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, nvp: r.vp.size, nvv: r.vv.size }))
+      .sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : ordemLoja(a.dest) - ordemLoja(b.dest));
+  }
+
+  // Uma linha por loja: paletes e viagens da frota própria e da Vieira
+  function linhasViagensLoja(lista) {
+    const m = new Map();
+    for (const e of lista) {
+      if (e.extra) continue;
+      let r = m.get(e.destino);
+      if (!r) { r = { dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), palP: 0, palV: 0, CD: 0, CP2: 0, FLV: 0, vp: new Set(), vv: new Set() }; m.set(e.destino, r); }
+      r[e.origem] += e.qtd;
+      if (grupoFrota(e) === 'vv') r.palV += e.qtd; else r.palP += e.qtd;
+      if (!e.semViagem) r[grupoFrota(e)].add(e.viagem);
+    }
+    return [...m.values()].map(r => Object.assign(r, { total: r.palP + r.palV, nvp: r.vp.size, nvv: r.vv.size, nv: r.vp.size + r.vv.size }))
+      .sort((a, b) => ordemLoja(a.dest) - ordemLoja(b.dest));
+  }
+
   function copiarBtn(id) { return `<button type="button" data-copy="${id}">Copiar para Excel</button>`; }
 
   let tabelaLoja = [], tabelaDia = [];
@@ -508,30 +598,31 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     const m = new Map();
     for (const e of L) {
       let r = m.get(e.destino);
-      if (!r) { r = { dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), est: 0, CD: 0, CP2: 0, FLV: 0, S: 0, PM: 0, COMP: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set() }; m.set(e.destino, r); }
+      if (!r) { r = { dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), est: 0, CD: 0, CP2: 0, FLV: 0, S: 0, PM: 0, COMP: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set(), vp: new Set(), vv: new Set() }; m.set(e.destino, r); }
       r[e.origem] += e.qtd;
-      if (!e.extra) { r[e.frota] += e.qtd; if (!e.semViagem) r.v.add(e.viagem); if (e.estimado) r.est += e.qtd; }
+      if (!e.extra) { r[e.frota] += e.qtd; if (!e.semViagem) { r.v.add(e.viagem); r[grupoFrota(e)].add(e.viagem); } if (e.estimado) r.est += e.qtd; }
     }
-    const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size }));
-    const ordemNatural = d => { const p = d.split('+')[0]; const n = parseInt(p.replace(/\D/g, ''), 10) || 0; return (p.startsWith('LJ') ? 0 : p.startsWith('CB') ? 100 : 200) + n; };
+    const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size, nvp: r.vp.size, nvv: r.vv.size }));
+    const ordemNatural = ordemLoja;
     const [k, dir] = estado.ordem.loja;
     rows.sort((a, b) => k === 'nome' ? (ordemNatural(a.dest) - ordemNatural(b.dest)) * dir : ((a[k] || 0) - (b[k] || 0)) * dir || ordemNatural(a.dest) - ordemNatural(b.dest));
     tabelaLoja = rows;
     const max = Math.max(0, ...rows.map(r => r.total));
     const T = rows.reduce((t, r) => { ['CD', 'CP2', 'FLV', 'total', 'propria', 'terceiro', 'nao_inf', 'COMP'].forEach(c => { t[c] = (t[c] || 0) + r[c]; }); return t; }, {});
     const tv = viagens(L.filter(e => !e.extra));
+    const tvp = viagens(L.filter(e => !e.extra && grupoFrota(e) === 'vp')), tvv = viagens(L.filter(e => !e.extra && grupoFrota(e) === 'vv'));
     const temComp = T.COMP > 0;
     const el = $('pLoja');
     el.innerHTML = `<div class="panel-head"><h2>Paletes por loja</h2>
       <div class="fgroup"><span class="legend"><span><i style="background:var(--cd)"></i>CD</span><span><i style="background:var(--cp2)"></i>CP2</span><span><i style="background:var(--flv)"></i>FLV</span></span>${copiarBtn('loja')}</div></div>
       ${rows.length ? `<div class="tscroll"><table><thead><tr>
         ${th('nome', 'Loja', 'loja', 'l')}<th class="l" scope="col">Código</th>${th('CD', 'CD', 'loja')}${th('CP2', 'CP2', 'loja')}${th('FLV', 'FLV', 'loja')}${th('total', 'Total', 'loja')}<th class="l" scope="col"><span class="sr">Composição</span></th>
-        ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${T.nao_inf ? th('nao_inf', 'Placa em branco', 'loja') : ''}${th('viagens', 'Viagens', 'loja')}${temComp ? th('COMP', 'Compl. no FLV', 'loja') : ''}
+        ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${T.nao_inf ? th('nao_inf', 'Placa em branco', 'loja') : ''}${th('nvp', 'Viag. própria', 'loja')}${th('nvv', 'Viag. Vieira', 'loja')}${th('viagens', 'Viagens', 'loja')}${temComp ? th('COMP', 'Compl. no FLV', 'loja') : ''}
       </tr></thead><tbody>
       ${rows.map(r => `<tr><td class="l">${r.nome}${r.est ? ` <span class="warn-tag" title="Paletes de viagens com duas lojas e um número só, divididos igualmente">${r.est} estimado</span>` : ''}</td><td class="l mono muted">${r.cod}</td>
         ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td><td class="l">${barra(r, max)}</td>
-        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${T.nao_inf ? cel(r.nao_inf) : ''}${cel(r.viagens)}${temComp ? cel(r.COMP, 'muted') : ''}</tr>`).join('')}
-      </tbody><tfoot><tr><td class="l">Total</td><td></td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td></td>${cel(T.propria)}${cel(T.terceiro, 'num-terc')}${T.nao_inf ? cel(T.nao_inf) : ''}<td>${fmt(tv)}</td>${temComp ? cel(T.COMP) : ''}</tr></tfoot>
+        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${T.nao_inf ? cel(r.nao_inf) : ''}${cel(r.nvp)}${cel(r.nvv, 'num-terc')}${cel(r.viagens)}${temComp ? cel(r.COMP, 'muted') : ''}</tr>`).join('')}
+      </tbody><tfoot><tr><td class="l">Total</td><td></td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td></td>${cel(T.propria)}${cel(T.terceiro, 'num-terc')}${T.nao_inf ? cel(T.nao_inf) : ''}<td>${fmt(tvp)}</td><td class="num-terc">${fmt(tvv)}</td><td>${fmt(tv)}</td>${temComp ? cel(T.COMP) : ''}</tr></tfoot>
       </table></div>` : '<div class="empty">Nenhum palete no período e filtros escolhidos.</div>'}`;
     ligarOrdem(el, 'loja');
   }
@@ -559,6 +650,41 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
         ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${cel(r.viagens)}${cel(r.vterc, 'num-terc')}</tr>`).join('')}
       </tbody></table></div>` : '<div class="empty">Nenhum palete no período e filtros escolhidos.</div>'}`;
     ligarOrdem(el, 'dia');
+  }
+
+  // ---------- Dia × loja: paletes por origem e viagens própria / Vieira ----------
+  let tabelaDiaLoja = [];
+  function renderDiaLoja(P) {
+    const rows = linhasDiaLoja(P);
+    tabelaDiaLoja = rows;
+    // Totais: um caminhão que atende duas lojas conta uma vez só
+    const T = { CD: 0, CP2: 0, FLV: 0, total: 0, vp: new Set(), vv: new Set() };
+    const porDia = {};
+    rows.forEach(r => {
+      ['CD', 'CP2', 'FLV', 'total'].forEach(c => { T[c] += r[c]; });
+      const d = porDia[r.data] || (porDia[r.data] = { total: 0, vp: new Set(), vv: new Set() });
+      d.total += r.total;
+      r.vp.forEach(v => { d.vp.add(v); T.vp.add(v); }); r.vv.forEach(v => { d.vv.add(v); T.vv.add(v); });
+    });
+    T.nvp = T.vp.size; T.nvv = T.vv.size;
+    Object.values(porDia).forEach(d => { d.nvp = d.vp.size; d.nvv = d.vv.size; });
+    const mostrar = rows.slice(0, estado.limiteDiaLoja);
+    let diaAnt = '';
+    const corpo = mostrar.map(r => {
+      const novo = r.data !== diaAnt; diaAnt = r.data;
+      const cab = novo ? `<tr class="dia-tot"><td class="l" colspan="3">${br(r.data)} <span class="muted">${diaSemana(r.data)}</span></td><td colspan="3"></td><td>${fmt(porDia[r.data].total)}</td><td>${fmt(porDia[r.data].nvp)}</td><td class="num-terc">${fmt(porDia[r.data].nvv)}</td></tr>` : '';
+      return cab + `<tr><td class="l muted">${br(r.data)}</td><td class="l">${r.nome}</td><td class="l mono muted">${r.cod}</td>
+        ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td>${cel(r.nvp)}${cel(r.nvv, 'num-terc')}</tr>`;
+    }).join('');
+    $('pDiaLoja').innerHTML = `<div class="panel-head"><h2>Paletes por dia e loja</h2>
+      <span class="fgroup"><span class="hint">Uma linha por dia e loja · viagens da frota própria e da Vieira (placa em branco conta como própria)</span>${copiarBtn('diaLoja')}</span></div>
+      ${rows.length ? `<div class="tscroll"><table><thead><tr>
+        <th class="l" scope="col">Data</th><th class="l" scope="col">Loja</th><th class="l" scope="col">Código</th><th scope="col">CD</th><th scope="col">CP02</th><th scope="col">FLV</th><th scope="col">Total</th><th scope="col">Viag. própria</th><th scope="col">Viag. Vieira</th>
+      </tr></thead><tbody>${corpo}</tbody>
+      <tfoot><tr><td class="l" colspan="3">Total do período</td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td>${fmt(T.nvp)}</td><td class="num-terc">${fmt(T.nvv)}</td></tr></tfoot></table></div>
+      ${rows.length > mostrar.length ? `<div class="more">Mostrando ${fmt(mostrar.length)} de ${fmt(rows.length)} linhas (o botão Copiar e a exportação levam todas). <button type="button" id="maisDiaLoja">Mostrar mais 600</button></div>` : ''}`
+      : '<div class="empty">Nenhum palete no período, lojas e filtros escolhidos.</div>'}`;
+    const b = $('maisDiaLoja'); if (b) b.addEventListener('click', () => { estado.limiteDiaLoja += 600; render(); });
   }
 
   const ABA_CURTA = n => /FLV/i.test(n) ? 'CARGA FLV' : /MEXER/i.test(n) ? 'CP2 (hist.)' : /CP2/i.test(n) ? 'CP2 CARGA-N' : 'CARGAS GERAL';
@@ -695,8 +821,11 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     const b = e.target.closest('[data-copy]'); if (!b) return;
     let linhas;
     if (b.dataset.copy === 'loja') {
-      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'Compl. no FLV (já no CD)']]
-        .concat(tabelaLoja.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.viagens, r.COMP]));
+      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens própria', 'Viagens Vieira', 'Viagens', 'Compl. no FLV (já no CD)']]
+        .concat(tabelaLoja.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.nvp, r.nvv, r.viagens, r.COMP]));
+    } else if (b.dataset.copy === 'diaLoja') {
+      linhas = [['Data', 'Loja', 'Código', 'CD', 'CP02', 'FLV', 'Total', 'Viagens própria', 'Viagens Vieira']]
+        .concat(tabelaDiaLoja.map(r => [br(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv]));
     } else if (b.dataset.copy === 'branco') {
       linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Viagens', 'Dias', 'De', 'Até']]
         .concat(tabelaBranco.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.v.size, r.dias.size, br(r.ini), br(r.fim)]));
@@ -790,7 +919,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       QUADROS_DIA.forEach(([origem, titulo]) => {
         aoa2.push([rotulo + ' - ' + titulo]);
         aoa2.push(['Loja'].concat(dias.map(d => +d.slice(8, 10)), ['Total']));
-        LOJAS_MODELO.forEach(([rot, chave]) => {
+        lojasExport().forEach(([rot, chave]) => {
           const vals = dias.map(d => soma[origem + '|' + chave + '|' + d] || 0);
           aoa2.push([rot].concat(vals, [vals.reduce((a, b) => a + b, 0)]));
         });
@@ -798,6 +927,14 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa2), nomeAba);
     });
+    {
+      const L = entregasExport(ini, fim);
+      const dl = linhasDiaLoja(L), vl = linhasViagensLoja(L);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Data', 'Loja', 'Código', 'CD', 'CP02', 'FLV', 'Total', 'Viagens própria', 'Viagens Vieira']]
+        .concat(dl.map(r => [br(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv]))), 'Dia e loja');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Loja', 'Código', 'CD', 'CP02', 'FLV', 'Paletes própria', 'Paletes Vieira', 'Paletes total', 'Viagens própria', 'Viagens Vieira', 'Viagens total']]
+        .concat(vl.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.palP, r.palV, r.total, r.nvp, r.nvv, r.nv]))), 'Viagens por loja');
+    }
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   }
 
@@ -896,6 +1033,8 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     for (let r = 3; r < rTot; r++) ws.getRow(r).height = 16;
     ws.getRow(rTot).height = 20;
     ABAS_DIA.forEach(([nomeAba, soTerceiro, rotulo, cor]) => abaPorDia(wb, ini, fim, nomeMes, nomeAba, soTerceiro, rotulo, cor));
+    abaDiaLoja(wb, ini, fim, nomeMes);
+    abaViagensLoja(wb, ini, fim, nomeMes);
     return new Uint8Array(await wb.xlsx.writeBuffer());
   }
 
@@ -928,6 +1067,108 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
     ['Terceiros por dia', true, 'Terceiros (Vieira Transportes)', 'FFE07B00'],
     ['Consolidado por dia', false, 'Consolidado (pr\u00f3pria + terceiros)', 'FF263445']
   ];
+
+  // Lojas que entram nas abas por dia/loja da exportação (filtro de lojas da tela)
+  function lojasExport() { return LOJAS_MODELO.filter(([, chave]) => lojaSelecionada(chave)); }
+  // Entregas do período para as abas novas: todas as origens e frotas, só lojas escolhidas
+  function entregasExport(ini, fim) {
+    return DADOS.entregas.filter(e => !e.extra && e.tipo === 'loja' && e.data >= ini && e.data <= fim && lojaSelecionada(e.destino));
+  }
+  function textoLojasSel() {
+    return !LOJAS_SEL ? 'Todas as lojas' : [...LOJAS_SEL].sort((a, b) => ordemLoja(a) - ordemLoja(b)).map(nome).join(', ');
+  }
+
+  // Estilo comum das tabelas simples (cabeçalho escuro, zebra, bordas finas)
+  function tabelaExcel(ws, titulo, sub, cab, linhas, opts) {
+    const fino = { style: 'thin', color: { argb: 'FFD0D7E1' } };
+    const borda = { top: fino, left: fino, bottom: fino, right: fino };
+    const n = cab.length;
+    ws.mergeCells(1, 1, 1, n);
+    const t = ws.getCell(1, 1);
+    t.value = titulo;
+    t.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+    t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opts.cor } };
+    t.alignment = { vertical: 'middle', indent: 1 };
+    ws.getRow(1).height = 24;
+    ws.mergeCells(2, 1, 2, n);
+    const st = ws.getCell(2, 1);
+    st.value = sub;
+    st.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF5A6675' } };
+    st.alignment = { vertical: 'middle', indent: 1, wrapText: true };
+    ws.getRow(2).height = 18;
+    cab.forEach((v, j) => {
+      const c = ws.getCell(3, j + 1);
+      c.value = v;
+      c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: opts.cor } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE3E8EF' } };
+      c.alignment = { horizontal: j < opts.texto ? 'left' : 'center', vertical: 'middle', wrapText: true };
+      c.border = { bottom: { style: 'medium', color: { argb: opts.cor } } };
+    });
+    ws.getRow(3).height = 30;
+    linhas.forEach((l, i) => {
+      const r = 4 + i;
+      const destaque = opts.destaque && opts.destaque(i);
+      l.forEach((v, j) => {
+        const c = ws.getCell(r, j + 1);
+        c.value = v;
+        c.border = borda;
+        c.alignment = { horizontal: j < opts.texto ? 'left' : 'right', vertical: 'middle' };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: destaque ? 'FFEEF2F7' : i % 2 ? 'FFF6F8FB' : 'FFFFFFFF' } };
+        c.font = { name: 'Calibri', size: 10, bold: !!(opts.negrito && opts.negrito.includes(j)), color: { argb: opts.corCol && opts.corCol[j] || 'FF1B2430' } };
+        if (j >= opts.texto) c.numFmt = '#,##0;-#,##0;"-"';
+      });
+    });
+    const rT = 4 + linhas.length;
+    for (let j = 1; j <= n; j++) {
+      const c = ws.getCell(rT, j);
+      if (j === 1) c.value = 'TOTAL';
+      else if (j > opts.texto) {
+        const L = ws.getColumn(j).letter;
+        const res = opts.totais ? opts.totais[j - 1] : linhas.reduce((a, l) => a + (+l[j - 1] || 0), 0);
+        c.value = opts.totais ? res : { formula: `SUM(${L}4:${L}${rT - 1})`, result: res };
+        c.numFmt = '#,##0';
+      }
+      c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opts.cor } };
+      c.alignment = { horizontal: j <= opts.texto ? 'left' : 'right', vertical: 'middle' };
+    }
+    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 3, showGridLines: false }];
+    if (linhas.length) ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + linhas.length, column: n } };
+    opts.larguras.forEach((w, j) => { ws.getColumn(j + 1).width = w; });
+  }
+
+  // Aba "Dia e loja": uma linha por dia e loja, paletes CD/CP02/FLV e viagens própria/Vieira
+  function abaDiaLoja(wb, ini, fim, rotPer) {
+    const rows = linhasDiaLoja(entregasExport(ini, fim));
+    const ws = wb.addWorksheet('Dia e loja', { properties: { tabColor: { argb: 'FF3AD7F5' } }, pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } });
+    const datas = [...new Set(rows.map(r => r.data))];
+    const primeiraDoDia = new Set(rows.map((r, i) => i === 0 || rows[i - 1].data !== r.data ? i : -1));
+    // Totais de viagens contam cada caminhão uma vez só
+    const vp = new Set(), vv = new Set(); rows.forEach(r => { r.vp.forEach(v => vp.add(v)); r.vv.forEach(v => vv.add(v)); });
+    const tot = [null, null, null, ...['CD', 'CP2', 'FLV', 'total'].map(c => rows.reduce((a, r) => a + r[c], 0)), vp.size, vv.size];
+    tabelaExcel(ws, 'Paletes entregues por dia e loja \u00b7 ' + rotPer + (mesInteiro(ini, fim) ? '/' + ini.slice(0, 4) : ''),
+      textoLojasSel() + ' \u00b7 ' + datas.length + ' dia(s) \u00b7 viagens: placa em branco conta como pr\u00f3pria; total de viagens conta cada caminh\u00e3o uma vez',
+      ['Data', 'Loja', 'C\u00f3digo', 'CD', 'CP02', 'FLV', 'Total', 'Viagens pr\u00f3pria', 'Viagens Vieira'],
+      rows.map(r => [br(r.data) + ' ' + diaSemana(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv]),
+      { cor: 'FF263445', texto: 3, larguras: [14, 12, 9, 9, 9, 9, 10, 12, 12], negrito: [6], totais: tot,
+        corCol: { 3: 'FF1F4E79', 4: 'FF5B3A8E', 5: 'FF1E6B45', 8: 'FFB45309' }, destaque: i => primeiraDoDia.has(i) && i > 0 });
+  }
+
+  // Aba "Viagens por loja": paletes e viagens da frota própria e da Vieira em cada loja
+  function abaViagensLoja(wb, ini, fim, rotPer) {
+    const L = entregasExport(ini, fim);
+    const rows = linhasViagensLoja(L);
+    const ws = wb.addWorksheet('Viagens por loja', { properties: { tabColor: { argb: 'FF263445' } }, pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1, paperSize: 9 } });
+    const tv = f => new Set(L.filter(e => !e.semViagem && f(e)).map(e => e.viagem)).size;
+    const tot = [null, null, ...['CD', 'CP2', 'FLV', 'palP', 'palV', 'total'].map(c => rows.reduce((a, r) => a + r[c], 0)),
+      tv(e => grupoFrota(e) === 'vp'), tv(e => grupoFrota(e) === 'vv'), tv(() => true)];
+    tabelaExcel(ws, 'Viagens e paletes por loja \u00b7 ' + rotPer + (mesInteiro(ini, fim) ? '/' + ini.slice(0, 4) : ''),
+      textoLojasSel() + ' \u00b7 Vieira = terceiros; placa em branco conta como pr\u00f3pria \u00b7 no TOTAL, caminh\u00e3o que atende duas lojas conta uma vez',
+      ['Loja', 'C\u00f3digo', 'CD', 'CP02', 'FLV', 'Paletes pr\u00f3pria', 'Paletes Vieira', 'Paletes total', 'Viagens pr\u00f3pria', 'Viagens Vieira', 'Viagens total'],
+      rows.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.palP, r.palV, r.total, r.nvp, r.nvv, r.nv]),
+      { cor: 'FF263445', texto: 2, larguras: [12, 9, 9, 9, 9, 12, 12, 12, 12, 12, 12], negrito: [7, 10], totais: tot,
+        corCol: { 2: 'FF1F4E79', 3: 'FF5B3A8E', 4: 'FF1E6B45', 6: 'FFB45309', 9: 'FFB45309' } });
+  }
 
   function abaPorDia(wb, ini, fim, nomeMes, nomeAba, soTerceiro, rotulo, corAba) {
     const dias = diasDoPeriodo(ini, fim);
@@ -969,7 +1210,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
       ws.getRow(r).height = 28;
       const rIni = r + 1;
       r++;
-      LOJAS_MODELO.forEach(([rot, chave], i) => {
+      lojasExport().forEach(([rot, chave], i) => {
         const zebra = i % 2 ? 'FFF6F8FB' : 'FFFFFFFF';
         let tot = 0;
         const cl = ws.getCell(r, 1);
@@ -1059,7 +1300,7 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--accent); border-bottom:
   });
 
   // ---------- Abas ----------
-  const PAINEIS = { loja: 'pLoja', dia: 'pDia', viagens: 'pViagens', frota: 'pFrota', conferir: 'pConferir', regras: 'pRegras' };
+  const PAINEIS = { loja: 'pLoja', dia: 'pDia', diaLoja: 'pDiaLoja', viagens: 'pViagens', frota: 'pFrota', conferir: 'pConferir', regras: 'pRegras' };
   function mostrarAba(t) {
     estado.aba = t;
     document.querySelectorAll('#tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
