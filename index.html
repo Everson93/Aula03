@@ -1409,7 +1409,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
   }
 
   // ---------- Consolidado mensal (todos os CDs): Giassi x Vieira ----------
-  // Viagens: Carreta com capacidade fixa 28 (paletes do dia ÷ 28 por loja, origem e frota, arredondado para cima).
+  // Viagens: carreta cheia de 28 paletes (paletes do mês ÷ 28, arredondado para cima).
   // KM: viagens × KM ida+volta da loja (cadastro). Mês em andamento: média por dia corrido × dias do mês.
   const CAP_MENSAL = 28;
   function consolidadoMensal(ano) {
@@ -1422,33 +1422,31 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     lista.forEach(e => { if (e.data.slice(0, 7) === mesAtual && (!maxAba[e.aba] || e.data > maxAba[e.aba])) maxAba[e.aba] = e.data; });
     const corte = Object.values(maxAba).reduce((a, d) => d < a ? d : a, ultGeral);
     lista = lista.filter(e => e.data <= corte);
-    const grupos = new Map();
+    // Viagens = paletes ÷ 28 (carreta cheia). KM por loja = (paletes da loja ÷ 28) × KM ida+volta da loja.
+    // Sem arredondar por dia/loja: entrega pequena não vira uma carreta inteira.
+    const meses = {};
     for (const e of lista) {
       const fr = grupoFrota(e) === 'vv' ? 'V' : 'G';
-      const k = e.data.slice(0, 7) + '|' + fr + '|' + e.destino + '|' + e.data + '|' + e.origem;
-      grupos.set(k, (grupos.get(k) || 0) + e.qtd);
-    }
-    const meses = {};
-    for (const [k, pal] of grupos) {
-      const [mes, fr, dest] = k.split('|');
-      const m = meses[mes] || (meses[mes] = { G: { pal: 0, via: 0, km: 0 }, V: { pal: 0, via: 0, km: 0 } });
-      const v = Math.ceil(pal / CAP_MENSAL);
-      m[fr].pal += pal; m[fr].via += v; m[fr].km += v * (+cadLoja(dest).km || 0);
+      const mes = e.data.slice(0, 7);
+      const m = meses[mes] || (meses[mes] = { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 } });
+      m[fr].pal += e.qtd;
+      m[fr].km += e.qtd / CAP_MENSAL * (+cadLoja(e.destino).km || 0);
     }
     const ultimo = lista.reduce((a, e) => e.data > a ? e.data : a, '');
     const mesUlt = ultimo.slice(0, 7);
     const rows = [];
     for (let i = 1; i <= +(mesUlt.slice(5, 7) || 0); i++) {
       const mes = ano + '-' + String(i).padStart(2, '0');
-      const m = meses[mes] || { G: { pal: 0, via: 0, km: 0 }, V: { pal: 0, via: 0, km: 0 } };
+      const m = meses[mes] || { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 } };
       const fimMes = new Date(Date.UTC(+ano, i, 0)).getUTCDate();
       let proj = null;
       if (mes === mesUlt && +ultimo.slice(8, 10) < fimMes) {
         const dias = +ultimo.slice(8, 10);
         const f = fimMes / dias;
         proj = { dias, fimMes, ultimo };
-        ['G', 'V'].forEach(x => { ['pal', 'via', 'km'].forEach(c => { m[x][c] = Math.round(m[x][c] * f); }); });
+        ['G', 'V'].forEach(x => { m[x].pal = Math.round(m[x].pal * f); m[x].km = m[x].km * f; });
       }
+      ['G', 'V'].forEach(x => { m[x].via = Math.ceil(m[x].pal / CAP_MENSAL); m[x].km = Math.round(m[x].km); });
       rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj });
     }
     return rows;
@@ -1459,7 +1457,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const proj = rows.find(r => r.proj);
     let ExcelJS = null;
     try { ExcelJS = await carregarExcelJS(); } catch (e) { ExcelJS = null; }
-    const nota = 'Todos os CDs (CD + CP02 + FLV), todas as lojas \u00b7 Giassi = frota pr\u00f3pria (inclui placa em branco), Vieira = terceiros \u00b7 Viagens = paletes do dia \u00f7 ' + CAP_MENSAL + ' (carreta) por loja, origem e frota, arredondado para cima \u00b7 KM = viagens \u00d7 KM ida+volta da loja' +
+    const nota = 'Todos os CDs (CD + CP02 + FLV), todas as lojas \u00b7 Giassi = frota pr\u00f3pria (inclui placa em branco), Vieira = terceiros \u00b7 Viagens = paletes do m\u00eas \u00f7 ' + CAP_MENSAL + ' (carreta cheia), arredondado para cima \u00b7 KM = soma, por loja, de (paletes da loja \u00f7 ' + CAP_MENSAL + ') \u00d7 KM ida+volta da loja' +
       (proj ? ' \u00b7 * ' + proj.nome + ': proje\u00e7\u00e3o = m\u00e9dia por dia de 01 a ' + br(proj.proj.ultimo) + ' (' + proj.proj.dias + ' dias) \u00d7 ' + proj.proj.fimMes + ' dias' : '');
     if (!ExcelJS) {
       const aoa = [['M\u00eases', 'Giassi', '', '', '', 'Vieira', '', '', '', 'Totais', ''], ['', 'Palete', 'Viagens', 'KM', 'Valor', 'Palete', 'Viagens', 'KM', 'Valor', 'Total KM', 'Total Valor']];
