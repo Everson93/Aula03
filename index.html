@@ -167,7 +167,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
         <svg viewBox="0 0 24 24" fill="none" stroke="#3ad7f5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M4 18v-3h16v3"/><path d="M6 15V7h12v8"/><path d="M6 11h12"/><path d="M12 7v8"/></svg>
       </div>
       <div style="min-width:0">
-        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-i (CP02 pelo Quant. P. Fat.)</div>
+        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-j (entregas por loja)</div>
         <h1>Paletes Expedidos</h1>
         <p id="fileInfo">Leitura da planilha EMBARQUE EXPEDIÇÃO: CD, CP2 e FLV por loja, frota própria e terceiros.</p>
       </div>
@@ -536,6 +536,13 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
   function soma(lista, f) { let s = 0; for (const e of lista) if (!f || f(e)) s += e.qtd; return s; }
   // Complemento FLV lançado na CARGAS GERAL soma paletes, mas não é viagem (vai no caminhão do FLV)
   function viagens(lista) { return new Set(lista.filter(e => !e.semViagem).map(e => e.viagem)).size; }
+  // Entrega = parada de um caminh\u00e3o numa loja (carga mista "7+CB2" = 2 entregas na mesma viagem).
+  // Complemento e linha sem viagem n\u00e3o contam.
+  function entregasN(lista) { return new Set(lista.filter(e => !e.semViagem && !e.extra).map(e => e.viagem + '|' + e.destino)).size; }
+  // Conjuntos de entregas por origem dentro de uma linha (loja ou dia+loja: a viagem j\u00e1 identifica a parada)
+  const novoEnt = () => ({ eCD: new Set(), eCP2: new Set(), eFLV: new Set() });
+  function addEnt(r, e) { if (!e.semViagem && !e.extra && r['e' + e.origem]) r['e' + e.origem].add(e.viagem); }
+  function fechaEnt(r) { r.neCD = r.eCD.size; r.neCP2 = r.eCP2.size; r.neFLV = r.eFLV.size; r.ne = r.neCD + r.neCP2 + r.neFLV; return r; }
 
   function renderKpis(P) {
     const tot = soma(P), terc = soma(P, e => e.frota === 'terceiro');
@@ -548,6 +555,8 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       card('CP2', fmt(soma(P, e => e.origem === 'CP2')), pct(soma(P, e => e.origem === 'CP2')), 'var(--cp2)') +
       card('FLV', fmt(soma(P, e => e.origem === 'FLV')), 'Norte ' + fmt(soma(P, e => e.origem === 'FLV' && e.regiao === 'norte')) + ' · Sul ' + fmt(soma(P, e => e.origem === 'FLV' && e.regiao !== 'norte')), 'var(--flv)') +
       card('Viagens', fmt(viagens(P)), fmt(viagens(P.filter(e => e.frota === 'terceiro'))) + ' de terceiros') +
+      (() => { const c2 = P.filter(e => e.origem === 'CP2'), ne2 = entregasN(c2), v2 = viagens(c2);
+        return card('Entregas', fmt(entregasN(P)), 'CP02 ' + fmt(ne2) + (v2 ? ' \u00b7 ' + (ne2 / v2).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' lojas/viagem' : ''), 'var(--cp2)'); })() +
       card('Terceiros', fmt(terc), pct(terc), 'var(--terc)');
   }
 
@@ -578,11 +587,12 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       if (e.extra) continue;
       const k = e.data + '|' + e.destino;
       let r = m.get(k);
-      if (!r) { r = { data: e.data, dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), CD: 0, CP2: 0, FLV: 0, vp: new Set(), vv: new Set() }; m.set(k, r); }
+      if (!r) { r = Object.assign({ data: e.data, dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), CD: 0, CP2: 0, FLV: 0, vp: new Set(), vv: new Set() }, novoEnt()); m.set(k, r); }
       r[e.origem] += e.qtd;
       if (!e.semViagem) r[grupoFrota(e)].add(e.viagem);
+      addEnt(r, e);
     }
-    return [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, nvp: r.vp.size, nvv: r.vv.size }))
+    return [...m.values()].map(r => fechaEnt(Object.assign(r, { total: r.CD + r.CP2 + r.FLV, nvp: r.vp.size, nvv: r.vv.size })))
       .sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : ordemLoja(a.dest) - ordemLoja(b.dest));
   }
 
@@ -592,12 +602,13 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     for (const e of lista) {
       if (e.extra) continue;
       let r = m.get(e.destino);
-      if (!r) { r = { dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), palP: 0, palV: 0, CD: 0, CP2: 0, FLV: 0, vp: new Set(), vv: new Set() }; m.set(e.destino, r); }
+      if (!r) { r = Object.assign({ dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), palP: 0, palV: 0, CD: 0, CP2: 0, FLV: 0, vp: new Set(), vv: new Set() }, novoEnt()); m.set(e.destino, r); }
       r[e.origem] += e.qtd;
       if (grupoFrota(e) === 'vv') r.palV += e.qtd; else r.palP += e.qtd;
       if (!e.semViagem) r[grupoFrota(e)].add(e.viagem);
+      addEnt(r, e);
     }
-    return [...m.values()].map(r => Object.assign(r, { total: r.palP + r.palV, nvp: r.vp.size, nvv: r.vv.size, nv: r.vp.size + r.vv.size }))
+    return [...m.values()].map(r => fechaEnt(Object.assign(r, { total: r.palP + r.palV, nvp: r.vp.size, nvv: r.vv.size, nv: r.vp.size + r.vv.size })))
       .sort((a, b) => ordemLoja(a.dest) - ordemLoja(b.dest));
   }
 
@@ -609,17 +620,18 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const m = new Map();
     for (const e of L) {
       let r = m.get(e.destino);
-      if (!r) { r = { dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), est: 0, CD: 0, CP2: 0, FLV: 0, S: 0, PM: 0, COMP: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set(), vp: new Set(), vv: new Set() }; m.set(e.destino, r); }
+      if (!r) { r = Object.assign({ dest: e.destino, nome: nome(e.destino), cod: codigo(e.destino), est: 0, CD: 0, CP2: 0, FLV: 0, S: 0, PM: 0, COMP: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set(), vp: new Set(), vv: new Set() }, novoEnt()); m.set(e.destino, r); }
       r[e.origem] += e.qtd;
       if (!e.extra) { r[e.frota] += e.qtd; if (!e.semViagem) { r.v.add(e.viagem); r[grupoFrota(e)].add(e.viagem); } if (e.estimado) r.est += e.qtd; }
+      addEnt(r, e);
     }
-    const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size, nvp: r.vp.size, nvv: r.vv.size }));
+    const rows = [...m.values()].map(r => fechaEnt(Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size, nvp: r.vp.size, nvv: r.vv.size })));
     const ordemNatural = ordemLoja;
     const [k, dir] = estado.ordem.loja;
     rows.sort((a, b) => k === 'nome' ? (ordemNatural(a.dest) - ordemNatural(b.dest)) * dir : ((a[k] || 0) - (b[k] || 0)) * dir || ordemNatural(a.dest) - ordemNatural(b.dest));
     tabelaLoja = rows;
     const max = Math.max(0, ...rows.map(r => r.total));
-    const T = rows.reduce((t, r) => { ['CD', 'CP2', 'FLV', 'total', 'propria', 'terceiro', 'nao_inf', 'COMP'].forEach(c => { t[c] = (t[c] || 0) + r[c]; }); return t; }, {});
+    const T = rows.reduce((t, r) => { ['CD', 'CP2', 'FLV', 'total', 'propria', 'terceiro', 'nao_inf', 'COMP', 'neCD', 'neCP2', 'neFLV', 'ne'].forEach(c => { t[c] = (t[c] || 0) + r[c]; }); return t; }, {});
     const tv = viagens(L.filter(e => !e.extra));
     const tvp = viagens(L.filter(e => !e.extra && grupoFrota(e) === 'vp')), tvv = viagens(L.filter(e => !e.extra && grupoFrota(e) === 'vv'));
     const temComp = T.COMP > 0;
@@ -628,12 +640,12 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       <div class="fgroup"><span class="legend"><span><i style="background:var(--cd)"></i>CD</span><span><i style="background:var(--cp2)"></i>CP2</span><span><i style="background:var(--flv)"></i>FLV</span></span>${copiarBtn('loja')}</div></div>
       ${rows.length ? `<div class="tscroll"><table><thead><tr>
         ${th('nome', 'Loja', 'loja', 'l')}<th class="l" scope="col">Código</th>${th('CD', 'CD', 'loja')}${th('CP2', 'CP2', 'loja')}${th('FLV', 'FLV', 'loja')}${th('total', 'Total', 'loja')}<th class="l" scope="col"><span class="sr">Composição</span></th>
-        ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${T.nao_inf ? th('nao_inf', 'Placa em branco', 'loja') : ''}${th('nvp', 'Viag. própria', 'loja')}${th('nvv', 'Viag. Vieira', 'loja')}${th('viagens', 'Viagens', 'loja')}${temComp ? th('COMP', 'Compl. no FLV', 'loja') : ''}
+        ${th('propria', 'Própria', 'loja')}${th('terceiro', 'Terceiro', 'loja')}${T.nao_inf ? th('nao_inf', 'Placa em branco', 'loja') : ''}${th('nvp', 'Viag. própria', 'loja')}${th('nvv', 'Viag. Vieira', 'loja')}${th('viagens', 'Viagens', 'loja')}${th('neCD', 'Entr. CD', 'loja')}${th('neCP2', 'Entr. CP02', 'loja')}${th('neFLV', 'Entr. FLV', 'loja')}${th('ne', 'Entregas', 'loja')}${temComp ? th('COMP', 'Compl. no FLV', 'loja') : ''}
       </tr></thead><tbody>
       ${rows.map(r => `<tr><td class="l">${r.nome}${r.est ? ` <span class="warn-tag" title="Paletes de viagens com duas lojas e um número só, divididos igualmente">${r.est} estimado</span>` : ''}</td><td class="l mono muted">${r.cod}</td>
         ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td><td class="l">${barra(r, max)}</td>
-        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${T.nao_inf ? cel(r.nao_inf) : ''}${cel(r.nvp)}${cel(r.nvv, 'num-terc')}${cel(r.viagens)}${temComp ? cel(r.COMP, 'muted') : ''}</tr>`).join('')}
-      </tbody><tfoot><tr><td class="l">Total</td><td></td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td></td>${cel(T.propria)}${cel(T.terceiro, 'num-terc')}${T.nao_inf ? cel(T.nao_inf) : ''}<td>${fmt(tvp)}</td><td class="num-terc">${fmt(tvv)}</td><td>${fmt(tv)}</td>${temComp ? cel(T.COMP) : ''}</tr></tfoot>
+        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${T.nao_inf ? cel(r.nao_inf) : ''}${cel(r.nvp)}${cel(r.nvv, 'num-terc')}${cel(r.viagens)}${cel(r.neCD, 'num-cd')}${cel(r.neCP2, 'num-cp2')}${cel(r.neFLV, 'num-flv')}<td><strong>${fmt(r.ne)}</strong></td>${temComp ? cel(r.COMP, 'muted') : ''}</tr>`).join('')}
+      </tbody><tfoot><tr><td class="l">Total</td><td></td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td></td>${cel(T.propria)}${cel(T.terceiro, 'num-terc')}${T.nao_inf ? cel(T.nao_inf) : ''}<td>${fmt(tvp)}</td><td class="num-terc">${fmt(tvv)}</td><td>${fmt(tv)}</td>${cel(T.neCD, 'num-cd')}${cel(T.neCP2, 'num-cp2')}${cel(T.neFLV, 'num-flv')}<td>${fmt(T.ne)}</td>${temComp ? cel(T.COMP) : ''}</tr></tfoot>
       </table></div>` : '<div class="empty">Nenhum palete no período e filtros escolhidos.</div>'}`;
     ligarOrdem(el, 'loja');
   }
@@ -642,10 +654,11 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const m = new Map();
     for (const e of P) {
       let r = m.get(e.data);
-      if (!r) { r = { data: e.data, CD: 0, CP2: 0, FLV: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set(), vt: new Set() }; m.set(e.data, r); }
+      if (!r) { r = { data: e.data, CD: 0, CP2: 0, FLV: 0, propria: 0, terceiro: 0, nao_inf: 0, v: new Set(), vt: new Set(), en: new Set(), en2: new Set() }; m.set(e.data, r); }
       r[e.origem] += e.qtd; r[e.frota] += e.qtd; if (!e.semViagem) { r.v.add(e.viagem); if (e.frota === 'terceiro') r.vt.add(e.viagem); }
+      if (!e.semViagem && !e.extra) { r.en.add(e.viagem + '|' + e.destino); if (e.origem === 'CP2') r.en2.add(e.viagem + '|' + e.destino); }
     }
-    const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size, vterc: r.vt.size }));
+    const rows = [...m.values()].map(r => Object.assign(r, { total: r.CD + r.CP2 + r.FLV, viagens: r.v.size, vterc: r.vt.size, ne: r.en.size, neCP2: r.en2.size }));
     const [k, dir] = estado.ordem.dia;
     rows.sort((a, b) => k === 'data' ? (a.data < b.data ? -1 : 1) * dir : ((a[k] || 0) - (b[k] || 0)) * dir);
     tabelaDia = rows;
@@ -654,11 +667,11 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     el.innerHTML = `<div class="panel-head"><h2>Paletes por dia</h2>${copiarBtn('dia')}</div>
       ${rows.length ? `<div class="tscroll"><table><thead><tr>
         ${th('data', 'Data', 'dia', 'l')}${th('CD', 'CD', 'dia')}${th('CP2', 'CP2', 'dia')}${th('FLV', 'FLV', 'dia')}${th('total', 'Total', 'dia')}<th class="l" scope="col"></th>
-        ${th('propria', 'Própria', 'dia')}${th('terceiro', 'Terceiro', 'dia')}${th('viagens', 'Viagens', 'dia')}${th('vterc', 'Viag. terc.', 'dia')}
+        ${th('propria', 'Própria', 'dia')}${th('terceiro', 'Terceiro', 'dia')}${th('viagens', 'Viagens', 'dia')}${th('vterc', 'Viag. terc.', 'dia')}${th('ne', 'Entregas', 'dia')}${th('neCP2', 'Entr. CP02', 'dia')}
       </tr></thead><tbody>
       ${rows.map(r => `<tr><td class="l">${br(r.data)} <span class="muted">${diaSemana(r.data)}</span></td>
         ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td><td class="l">${barra(r, max)}</td>
-        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${cel(r.viagens)}${cel(r.vterc, 'num-terc')}</tr>`).join('')}
+        ${cel(r.propria)}${cel(r.terceiro, 'num-terc')}${cel(r.viagens)}${cel(r.vterc, 'num-terc')}${cel(r.ne)}${cel(r.neCP2, 'num-cp2')}</tr>`).join('')}
       </tbody></table></div>` : '<div class="empty">Nenhum palete no período e filtros escolhidos.</div>'}`;
     ligarOrdem(el, 'dia');
   }
@@ -760,12 +773,12 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const rows = linhasDiaLoja(P);
     tabelaDiaLoja = rows;
     // Totais: um caminhão que atende duas lojas conta uma vez só
-    const T = { CD: 0, CP2: 0, FLV: 0, total: 0, vp: new Set(), vv: new Set() };
+    const T = { CD: 0, CP2: 0, FLV: 0, total: 0, neCD: 0, neCP2: 0, neFLV: 0, ne: 0, vp: new Set(), vv: new Set() };
     const porDia = {};
     rows.forEach(r => {
-      ['CD', 'CP2', 'FLV', 'total'].forEach(c => { T[c] += r[c]; });
-      const d = porDia[r.data] || (porDia[r.data] = { total: 0, vp: new Set(), vv: new Set() });
-      d.total += r.total;
+      ['CD', 'CP2', 'FLV', 'total', 'neCD', 'neCP2', 'neFLV', 'ne'].forEach(c => { T[c] += r[c]; });
+      const d = porDia[r.data] || (porDia[r.data] = { total: 0, ne: 0, vp: new Set(), vv: new Set() });
+      d.total += r.total; d.ne += r.ne;
       r.vp.forEach(v => { d.vp.add(v); T.vp.add(v); }); r.vv.forEach(v => { d.vv.add(v); T.vv.add(v); });
     });
     T.nvp = T.vp.size; T.nvv = T.vv.size;
@@ -774,16 +787,16 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     let diaAnt = '';
     const corpo = mostrar.map(r => {
       const novo = r.data !== diaAnt; diaAnt = r.data;
-      const cab = novo ? `<tr class="dia-tot"><td class="l" colspan="3">${br(r.data)} <span class="muted">${diaSemana(r.data)}</span></td><td colspan="3"></td><td>${fmt(porDia[r.data].total)}</td><td>${fmt(porDia[r.data].nvp)}</td><td class="num-terc">${fmt(porDia[r.data].nvv)}</td></tr>` : '';
+      const cab = novo ? `<tr class="dia-tot"><td class="l" colspan="3">${br(r.data)} <span class="muted">${diaSemana(r.data)}</span></td><td colspan="3"></td><td>${fmt(porDia[r.data].total)}</td><td>${fmt(porDia[r.data].nvp)}</td><td class="num-terc">${fmt(porDia[r.data].nvv)}</td><td colspan="3"></td><td>${fmt(porDia[r.data].ne)}</td></tr>` : '';
       return cab + `<tr><td class="l muted">${br(r.data)}</td><td class="l">${r.nome}</td><td class="l mono muted">${r.cod}</td>
-        ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td>${cel(r.nvp)}${cel(r.nvv, 'num-terc')}</tr>`;
+        ${cel(r.CD, 'num-cd')}${cel(r.CP2, 'num-cp2')}${cel(r.FLV, 'num-flv')}<td><strong>${fmt(r.total)}</strong></td>${cel(r.nvp)}${cel(r.nvv, 'num-terc')}${cel(r.neCD, 'num-cd')}${cel(r.neCP2, 'num-cp2')}${cel(r.neFLV, 'num-flv')}<td><strong>${fmt(r.ne)}</strong></td></tr>`;
     }).join('');
     $('pDiaLoja').innerHTML = `<div class="panel-head"><h2>Paletes por dia e loja</h2>
-      <span class="fgroup"><span class="hint">Uma linha por dia e loja · viagens da frota própria e da Vieira (placa em branco conta como própria)</span>${copiarBtn('diaLoja')}</span></div>
+      <span class="fgroup"><span class="hint">Uma linha por dia e loja · viagens da frota própria e da Vieira (placa em branco conta como própria) · entrega = parada do caminhão na loja</span>${copiarBtn('diaLoja')}</span></div>
       ${rows.length ? `<div class="tscroll"><table><thead><tr>
-        <th class="l" scope="col">Data</th><th class="l" scope="col">Loja</th><th class="l" scope="col">Código</th><th scope="col">CD</th><th scope="col">CP02</th><th scope="col">FLV</th><th scope="col">Total</th><th scope="col">Viag. própria</th><th scope="col">Viag. Vieira</th>
+        <th class="l" scope="col">Data</th><th class="l" scope="col">Loja</th><th class="l" scope="col">Código</th><th scope="col">CD</th><th scope="col">CP02</th><th scope="col">FLV</th><th scope="col">Total</th><th scope="col">Viag. própria</th><th scope="col">Viag. Vieira</th><th scope="col">Entr. CD</th><th scope="col">Entr. CP02</th><th scope="col">Entr. FLV</th><th scope="col">Entregas</th>
       </tr></thead><tbody>${corpo}</tbody>
-      <tfoot><tr><td class="l" colspan="3">Total do período</td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td>${fmt(T.nvp)}</td><td class="num-terc">${fmt(T.nvv)}</td></tr></tfoot></table></div>
+      <tfoot><tr><td class="l" colspan="3">Total do período</td>${cel(T.CD, 'num-cd')}${cel(T.CP2, 'num-cp2')}${cel(T.FLV, 'num-flv')}<td>${fmt(T.total)}</td><td>${fmt(T.nvp)}</td><td class="num-terc">${fmt(T.nvv)}</td>${cel(T.neCD, 'num-cd')}${cel(T.neCP2, 'num-cp2')}${cel(T.neFLV, 'num-flv')}<td>${fmt(T.ne)}</td></tr></tfoot></table></div>
       ${rows.length > mostrar.length ? `<div class="more">Mostrando ${fmt(mostrar.length)} de ${fmt(rows.length)} linhas (o botão Copiar e a exportação levam todas). <button type="button" id="maisDiaLoja">Mostrar mais 600</button></div>` : ''}`
       : '<div class="empty">Nenhum palete no período, lojas e filtros escolhidos.</div>'}`;
     const b = $('maisDiaLoja'); if (b) b.addEventListener('click', () => { estado.limiteDiaLoja += 600; render(); });
@@ -923,20 +936,20 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const b = e.target.closest('[data-copy]'); if (!b) return;
     let linhas;
     if (b.dataset.copy === 'loja') {
-      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens própria', 'Viagens Vieira', 'Viagens', 'Compl. no FLV (já no CD)']]
-        .concat(tabelaLoja.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.nvp, r.nvv, r.viagens, r.COMP]));
+      linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens própria', 'Viagens Vieira', 'Viagens', 'Entregas CD', 'Entregas CP02', 'Entregas FLV', 'Entregas', 'Compl. no FLV (já no CD)']]
+        .concat(tabelaLoja.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.nvp, r.nvv, r.viagens, r.neCD, r.neCP2, r.neFLV, r.ne, r.COMP]));
     } else if (b.dataset.copy === 'km') {
       linhas = [['Código', 'Loja', 'Cidade', 'Veículo', 'Capacidade', 'KM ida+volta', 'Paletes própria', 'Paletes Vieira', 'Viagens contadas própria', 'Viagens contadas Vieira', 'Viagens pelo veículo própria', 'Viagens pelo veículo Vieira', 'Viagens pelo veículo total', 'KM própria', 'KM Vieira', 'KM total']]
         .concat(tabelaKm.map(r => [r.cod, r.nome, r.cidade, r.tipo, r.cap, r.kmIV, r.palP, r.palV, r.nvp, r.nvv, r.vtP, r.vtV, r.vt, r.kmP, r.kmV, r.km]));
     } else if (b.dataset.copy === 'diaLoja') {
-      linhas = [['Data', 'Loja', 'Código', 'CD', 'CP02', 'FLV', 'Total', 'Viagens própria', 'Viagens Vieira']]
-        .concat(tabelaDiaLoja.map(r => [br(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv]));
+      linhas = [['Data', 'Loja', 'Código', 'CD', 'CP02', 'FLV', 'Total', 'Viagens própria', 'Viagens Vieira', 'Entregas CD', 'Entregas CP02', 'Entregas FLV', 'Entregas']]
+        .concat(tabelaDiaLoja.map(r => [br(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv, r.neCD, r.neCP2, r.neFLV, r.ne]));
     } else if (b.dataset.copy === 'branco') {
       linhas = [['Loja', 'Código', 'CD', 'CP2', 'FLV', 'Total', 'Viagens', 'Dias', 'De', 'Até']]
         .concat(tabelaBranco.map(r => [r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.v.size, r.dias.size, br(r.ini), br(r.fim)]));
     } else {
-      linhas = [['Data', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'Viagens terceiro']]
-        .concat(tabelaDia.map(r => [br(r.data), r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.viagens, r.vterc]));
+      linhas = [['Data', 'CD', 'CP2', 'FLV', 'Total', 'Própria', 'Terceiro', 'Viagens', 'Viagens terceiro', 'Entregas', 'Entregas CP02']]
+        .concat(tabelaDia.map(r => [br(r.data), r.CD, r.CP2, r.FLV, r.total, r.propria, r.terceiro, r.viagens, r.vterc, r.ne, r.neCP2]));
     }
     const tsv = 'Período ' + br($('dIni').value) + ' a ' + br($('dFim').value) + '\n' + linhas.map(l => l.join('\t')).join('\n');
     const ok = () => toast('Tabela copiada. Cole no Excel com Ctrl+V.');
@@ -1035,8 +1048,8 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     {
       const L = entregasExport(ini, fim);
       const dl = linhasDiaLoja(L);
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Data', 'Loja', 'Código', 'CD', 'CP02', 'FLV', 'Total', 'Viagens própria', 'Viagens Vieira']]
-        .concat(dl.map(r => [br(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv]))), 'Dia e loja');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Data', 'Loja', 'Código', 'CD', 'CP02', 'FLV', 'Total', 'Viagens própria', 'Viagens Vieira', 'Entregas CD', 'Entregas CP02', 'Entregas FLV', 'Entregas']]
+        .concat(dl.map(r => [br(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv, r.neCD, r.neCP2, r.neFLV, r.ne]))), 'Dia e loja');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([CAB_VIAGENS].concat(linhasExportViagens(L))), 'Viagens por loja');
     }
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -1249,13 +1262,14 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const primeiraDoDia = new Set(rows.map((r, i) => i === 0 || rows[i - 1].data !== r.data ? i : -1));
     // Totais de viagens contam cada caminhão uma vez só
     const vp = new Set(), vv = new Set(); rows.forEach(r => { r.vp.forEach(v => vp.add(v)); r.vv.forEach(v => vv.add(v)); });
-    const tot = [null, null, null, ...['CD', 'CP2', 'FLV', 'total'].map(c => rows.reduce((a, r) => a + r[c], 0)), vp.size, vv.size];
+    const sr = c => rows.reduce((a, r) => a + r[c], 0);
+    const tot = [null, null, null, ...['CD', 'CP2', 'FLV', 'total'].map(sr), vp.size, vv.size, ...['neCD', 'neCP2', 'neFLV', 'ne'].map(sr)];
     tabelaExcel(ws, 'Paletes entregues por dia e loja \u00b7 ' + rotPer + (mesInteiro(ini, fim) ? '/' + ini.slice(0, 4) : ''),
-      textoLojasSel() + ' \u00b7 ' + datas.length + ' dia(s) \u00b7 viagens: placa em branco conta como pr\u00f3pria; total de viagens conta cada caminh\u00e3o uma vez',
-      ['Data', 'Loja', 'C\u00f3digo', 'CD', 'CP02', 'FLV', 'Total', 'Viagens pr\u00f3pria', 'Viagens Vieira'],
-      rows.map(r => [br(r.data) + ' ' + diaSemana(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv]),
-      { cor: 'FF263445', texto: 3, larguras: [14, 12, 9, 9, 9, 9, 10, 12, 12], negrito: [6], totais: tot,
-        corCol: { 3: 'FF1F4E79', 4: 'FF5B3A8E', 5: 'FF1E6B45', 8: 'FFB45309' }, destaque: i => primeiraDoDia.has(i) && i > 0 });
+      textoLojasSel() + ' \u00b7 ' + datas.length + ' dia(s) \u00b7 viagens: placa em branco conta como pr\u00f3pria; total de viagens conta cada caminh\u00e3o uma vez \u00b7 entrega = parada do caminh\u00e3o na loja (carga mista 7+CB2 = 2 entregas)',
+      ['Data', 'Loja', 'C\u00f3digo', 'CD', 'CP02', 'FLV', 'Total', 'Viagens pr\u00f3pria', 'Viagens Vieira', 'Entregas CD', 'Entregas CP02', 'Entregas FLV', 'Entregas'],
+      rows.map(r => [br(r.data) + ' ' + diaSemana(r.data), r.nome, r.cod, r.CD, r.CP2, r.FLV, r.total, r.nvp, r.nvv, r.neCD, r.neCP2, r.neFLV, r.ne]),
+      { cor: 'FF263445', texto: 3, larguras: [14, 12, 9, 9, 9, 9, 10, 12, 12, 10, 10, 10, 10], negrito: [6, 12], totais: tot,
+        corCol: { 3: 'FF1F4E79', 4: 'FF5B3A8E', 5: 'FF1E6B45', 8: 'FFB45309', 9: 'FF1F4E79', 10: 'FF5B3A8E', 11: 'FF1E6B45' }, destaque: i => primeiraDoDia.has(i) && i > 0 });
   }
 
   // Aba "Viagens por loja": paletes, viagens (contadas e pelo tipo de veículo) e KM rodado em cada loja
@@ -1263,12 +1277,12 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const km = new Map(calcKm(L).map(r => [r.dest, r]));
     return linhasViagensLoja(L).map(r => {
       const k = km.get(r.dest) || { cidade: '', tipo: '', kmIV: 0, vtP: 0, vtV: 0, vt: 0, kmP: 0, kmV: 0, km: 0 };
-      return [r.nome, codLoja(r.dest), k.cidade, k.tipo, k.kmIV, r.CD, r.CP2, r.FLV, r.palP, r.palV, r.total, r.nvp, r.nvv, r.nv, k.vtP, k.vtV, k.vt, k.kmP, k.kmV, k.km];
+      return [r.nome, codLoja(r.dest), k.cidade, k.tipo, k.kmIV, r.CD, r.CP2, r.FLV, r.palP, r.palV, r.total, r.nvp, r.nvv, r.nv, k.vtP, k.vtV, k.vt, k.kmP, k.kmV, k.km, r.neCD, r.neCP2, r.neFLV, r.ne];
     });
   }
   const CAB_VIAGENS = ['Loja', 'C\u00f3digo', 'Cidade', 'Ve\u00edculo', 'KM ida+volta', 'CD', 'CP02', 'FLV', 'Paletes pr\u00f3pria', 'Paletes Vieira', 'Paletes total',
     'Viagens contadas pr\u00f3pria', 'Viagens contadas Vieira', 'Viagens contadas total', 'Viagens pelo ve\u00edculo pr\u00f3pria', 'Viagens pelo ve\u00edculo Vieira', 'Viagens pelo ve\u00edculo total',
-    'KM pr\u00f3pria', 'KM Vieira', 'KM total'];
+    'KM pr\u00f3pria', 'KM Vieira', 'KM total', 'Entregas CD', 'Entregas CP02', 'Entregas FLV', 'Entregas total'];
 
   function abaViagensLoja(wb, ini, fim, rotPer) {
     const L = entregasExport(ini, fim);
@@ -1278,12 +1292,12 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const soma = j => linhas.reduce((a, l) => a + (+l[j] || 0), 0);
     // TOTAL: viagens contadas sem repetir caminhão que atende duas lojas; o resto é soma
     const tot = [null, null, null, null, null, soma(5), soma(6), soma(7), soma(8), soma(9), soma(10),
-      tv(e => grupoFrota(e) === 'vp'), tv(e => grupoFrota(e) === 'vv'), tv(() => true), soma(14), soma(15), soma(16), soma(17), soma(18), soma(19)];
+      tv(e => grupoFrota(e) === 'vp'), tv(e => grupoFrota(e) === 'vv'), tv(() => true), soma(14), soma(15), soma(16), soma(17), soma(18), soma(19), soma(20), soma(21), soma(22), soma(23)];
     tabelaExcel(ws, 'Viagens, paletes e KM por loja \u00b7 ' + rotPer + (mesInteiro(ini, fim) ? '/' + ini.slice(0, 4) : ''),
       textoLojasSel() + ' \u00b7 Vieira = terceiros; placa em branco conta como pr\u00f3pria \u00b7 viagens pelo ve\u00edculo = paletes do dia \u00f7 capacidade (Carreta ' + CAD.cap.Carreta + ', Truck ' + CAD.cap.Truck + '), por origem e frota, arredondado para cima \u00b7 KM = viagens pelo ve\u00edculo \u00d7 KM ida+volta',
       CAB_VIAGENS, linhas,
-      { cor: 'FF263445', texto: 4, larguras: [10, 8, 16, 9, 9, 8, 8, 8, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 12], negrito: [10, 16, 19], totais: tot,
-        corCol: { 5: 'FF1F4E79', 6: 'FF5B3A8E', 7: 'FF1E6B45', 9: 'FFB45309', 12: 'FFB45309', 15: 'FFB45309', 18: 'FFB45309' } });
+      { cor: 'FF263445', texto: 4, larguras: [10, 8, 16, 9, 9, 8, 8, 8, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 12, 10, 10, 10, 10], negrito: [10, 16, 19, 23], totais: tot,
+        corCol: { 5: 'FF1F4E79', 6: 'FF5B3A8E', 7: 'FF1E6B45', 9: 'FFB45309', 12: 'FFB45309', 15: 'FFB45309', 18: 'FFB45309', 20: 'FF1F4E79', 21: 'FF5B3A8E', 22: 'FF1E6B45' } });
   }
 
   function abaPorDia(wb, ini, fim, nomeMes, nomeAba, soTerceiro, rotulo, corAba) {
@@ -1514,6 +1528,100 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
         base: mes === mesRegra ? { total: Math.round(baseTot), mes: MESES_NOME[+mesBase.slice(5, 7) - 1], dias: diasBase, diasRegra } : null });
     }
     return rows;
+  }
+
+  /* Aba "Entregas": por m\u00eas, entregas (paradas em loja) e viagens reais lan\u00e7adas na planilha,
+     Giassi (pr\u00f3pria + placa em branco) e Vieira, por origem. Mostra o tamanho das cargas mistas
+     (entregas por viagem), principalmente no CP02. N\u00fameros reais: sem proje\u00e7\u00e3o e sem a regra Vieira. */
+  function abaEntregasMensal(wb, ano) {
+    const L = DADOS.entregas.filter(e => !e.extra && !e.semViagem && e.tipo === 'loja' && e.data.slice(0, 4) === ano);
+    const ult = L.reduce((a, e) => e.data > a ? e.data : a, '');
+    const nMes = +(ult.slice(5, 7) || 0);
+    const ORIG = ['CD', 'CP2', 'FLV'];
+    const meses = [];
+    for (let i = 1; i <= nMes; i++) {
+      const mes = ano + '-' + String(i).padStart(2, '0');
+      const r = { nome: MESES_NOME[i - 1] };
+      ['G', 'V'].forEach(fr => ORIG.forEach(o => {
+        const s = L.filter(e => e.data.slice(0, 7) === mes && e.origem === o && (grupoFrota(e) === 'vv' ? 'V' : 'G') === fr);
+        r[fr + o] = { ent: new Set(s.map(e => e.viagem + '|' + e.destino)).size, via: new Set(s.map(e => e.viagem)).size };
+      }));
+      meses.push(r);
+    }
+    const ws = wb.addWorksheet('Entregas', { properties: { tabColor: { argb: 'FF5B3A8E' } }, views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1, paperSize: 9 } });
+    const fino = { style: 'thin', color: { argb: 'FFB8C2CE' } };
+    const borda = { top: fino, left: fino, bottom: fino, right: fino };
+    const COR = { G: 'FF1F4E79', V: 'FFB45309', T: 'FF263445' }, CLARO = { G: 'FFDCE6F2', V: 'FFFCE8D4', T: 'FFE3E8EF' };
+    const NC = 19;   // A + Giassi (9) + Vieira (9)
+    ws.mergeCells(1, 1, 1, NC);
+    const t = ws.getCell(1, 1);
+    t.value = 'Entregas por m\u00eas \u00b7 ' + ano + ' \u00b7 entrega = parada do caminh\u00e3o numa loja (carga mista 7+CB2 = 1 viagem e 2 entregas)';
+    t.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+    t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.T } };
+    t.alignment = { vertical: 'middle', indent: 1 };
+    ws.getRow(1).height = 26;
+    ws.mergeCells(2, 1, 4, 1);
+    ws.mergeCells(2, 2, 2, 10); ws.mergeCells(2, 11, 2, 19);
+    [[2, 1, 'M\u00eases', 'T'], [2, 2, 'Giassi (pr\u00f3pria + placa em branco)', 'G'], [2, 11, 'Vieira (terceiros)', 'V']].forEach(([l, c, v, g]) => {
+      const x = ws.getCell(l, c); x.value = v; x.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR[g] } }; x.alignment = { horizontal: 'center', vertical: 'middle' }; x.border = borda;
+    });
+    // Linha 3: grupos (Entregas / Viagens / Entregas por viagem); linha 4: CD, CP02, FLV
+    const grupos = ['Entregas', 'Viagens', 'Entregas por viagem'];
+    ['G', 'V'].forEach((g, k) => grupos.forEach((nomeG, j) => {
+      const c0 = 2 + k * 9 + j * 3;
+      ws.mergeCells(3, c0, 3, c0 + 2);
+      const x = ws.getCell(3, c0); x.value = nomeG; x.font = { name: 'Calibri', size: 10, bold: true, color: { argb: COR[g] } };
+      x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CLARO[g] } }; x.alignment = { horizontal: 'center' }; x.border = borda;
+      ['CD', 'CP02', 'FLV'].forEach((o, m) => {
+        const y = ws.getCell(4, c0 + m); y.value = o; y.font = { name: 'Calibri', size: 9, bold: true, color: { argb: COR[g] } };
+        y.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CLARO[g] } }; y.alignment = { horizontal: 'center' }; y.border = borda;
+      });
+    }));
+    const col = n => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+    const ini = 5;
+    meses.forEach((r, i) => {
+      const n = ini + i;
+      const vals = [r.nome + (i === meses.length - 1 && ult.slice(8, 10) !== String(new Date(Date.UTC(+ano, i + 1, 0)).getUTCDate()) ? ' (at\u00e9 ' + br(ult).slice(0, 5) + ')' : '')];
+      ['G', 'V'].forEach((g, k) => {
+        ORIG.forEach(o => vals.push(r[g + o].ent));
+        ORIG.forEach(o => vals.push(r[g + o].via));
+        ORIG.forEach((o, m) => {
+          const cE = col(2 + k * 9 + m), cV = col(2 + k * 9 + 3 + m);
+          vals.push({ formula: `IF(${cV}${n}=0,"",${cE}${n}/${cV}${n})`, result: r[g + o].via ? r[g + o].ent / r[g + o].via : '' });
+        });
+      });
+      vals.forEach((v, j) => {
+        const c = ws.getCell(n, j + 1);
+        c.value = v; c.border = borda;
+        const razao = j > 0 && (j - 1) % 9 >= 6;
+        c.font = { name: 'Calibri', size: 10, bold: j === 0 || (razao && (j - 1) % 3 === 1), color: { argb: j === 0 ? 'FF1B2430' : (j - 1) % 3 === 1 ? 'FF5B3A8E' : 'FF1B2430' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: razao ? 'FFF3EEFA' : i % 2 ? 'FFF6F8FB' : 'FFFFFFFF' } };
+        c.alignment = { horizontal: j ? 'right' : 'left', vertical: 'middle' };
+        if (j) c.numFmt = razao ? '0.00;-0.00;"-"' : '#,##0;-#,##0;"-"';
+      });
+    });
+    const nT = ini + meses.length;
+    for (let j = 0; j < NC; j++) {
+      const c = ws.getCell(nT, j + 1);
+      const razao = j > 0 && (j - 1) % 9 >= 6;
+      if (j === 0) c.value = 'TOTAL';
+      else if (razao) { const k = Math.floor((j - 1) / 9), m = (j - 1) % 3, cE = col(2 + k * 9 + m), cV = col(2 + k * 9 + 3 + m); c.value = { formula: `IF(${cV}${nT}=0,"",${cE}${nT}/${cV}${nT})` }; }
+      else c.value = { formula: `SUM(${col(j + 1)}${ini}:${col(j + 1)}${nT - 1})` };
+      c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.T } };
+      c.alignment = { horizontal: j ? 'right' : 'left', vertical: 'middle' };
+      if (j) c.numFmt = razao ? '0.00' : '#,##0';
+    }
+    ws.mergeCells(nT + 2, 1, nT + 2, NC);
+    const nota = ws.getCell(nT + 2, 1);
+    nota.value = 'N\u00fameros reais lan\u00e7ados na planilha (sem proje\u00e7\u00e3o do m\u00eas em andamento e sem a regra Vieira). Entrega = cada loja atendida por uma viagem; viagem = caminh\u00e3o (linha da planilha). Entregas por viagem acima de 1 = carga mista (v\u00e1rias lojas no mesmo caminh\u00e3o). Complemento do FLV e linhas sem viagem n\u00e3o contam. CP02: viagens e lojas do bloco de expedi\u00e7\u00e3o.';
+    nota.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF5A6675' } };
+    nota.alignment = { wrapText: true, vertical: 'top' };
+    ws.getRow(nT + 2).height = 30;
+    ws.getColumn(1).width = 16;
+    for (let j = 2; j <= NC; j++) ws.getColumn(j).width = 8.5;
   }
 
   const CALC_NOME = 'C\u00e1lculo por loja', CALC = "'" + CALC_NOME + "'";
@@ -1848,6 +1956,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       q += 2;
     }
     [12, 10, 10, 12, 14, 10, 10, 12, 14, 13, 15].forEach((w, j) => { ws.getColumn(j + 1).width = w; });
+    abaEntregasMensal(wb, ano);
     abaCalculoLoja(wb, rows, ano);
     return new Uint8Array(await wb.xlsx.writeBuffer());
   }
