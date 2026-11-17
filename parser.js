@@ -447,6 +447,50 @@
       resumoAbas.push({ aba, viagens: n, ignoradas: 0, papel: aba === abaCp2 ? 'Expedi\u00e7\u00e3o CP2 (atual)' : 'Expedi\u00e7\u00e3o CP2 (hist\u00f3rico, s\u00f3 datas que n\u00e3o est\u00e3o na aba atual)' });
     }
     if (abaCp2) lerCp2(abaCp2, 17, 18, 19, 24);
+
+    // CP02: a quantidade de paletes vem da coluna "Quant. P. Fat." (E) do bloco da esquerda
+    // (loja na coluna B). Viagens, placa e frota continuam vindo do bloco de expedição: o
+    // faturado da loja no dia é repartido entre as viagens dela, na proporção do QUANT de
+    // cada uma (inteiros, pelo maior resto). Loja faturada sem viagem: entra como placa em
+    // branco, sem contar viagem. Viagem sem faturado: fica com 0 palete.
+    if (abaCp2) {
+      const fat = new Map();   // data|loja -> paletes faturados
+      rowsPorAba[abaCp2].forEach(r => {
+        const data = excelDate(r[0]);
+        if (!data || typeof r[4] !== 'number' || r[1] === null || r[1] === undefined) return;
+        const d = normDestino(String(r[1]));
+        if (!d || d.startsWith('OUTRO:')) return;   // Total-Pl-Lj, Reg-..., etc.
+        const k = data + '|' + lojaReal(d);
+        fat.set(k, (fat.get(k) || 0) + r[4]);
+      });
+      const grupos = new Map();
+      entregas.forEach(e => {
+        if (e.aba !== abaCp2 || e.origem !== 'CP2' || e.extra) return;
+        const k = e.data + '|' + e.destino;
+        (grupos.get(k) || grupos.set(k, []).get(k)).push(e);
+      });
+      grupos.forEach((lista, k) => {
+        const f = fat.get(k) || 0;
+        const tot = lista.reduce((a, e) => a + e.qtd, 0);
+        const partes = lista.map(e => (tot ? e.qtd / tot : 1 / lista.length) * f);
+        const inteiros = partes.map(Math.floor);
+        let sobra = f - inteiros.reduce((a, b) => a + b, 0);
+        partes.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (sobra > 0) { inteiros[i]++; sobra--; } });
+        lista.forEach((e, i) => {
+          e.qtdExpedicao = e.qtd;
+          e.qtd = inteiros[i];
+          e.obs = [e.obs, 'faturado ' + f + ' (expedi\u00e7\u00e3o ' + tot + ')'].filter(Boolean).join(' \u00b7 ');
+        });
+        fat.delete(k);
+      });
+      fat.forEach((f, k) => {
+        if (!f) return;
+        const [data, dest] = k.split('|');
+        entregas.push({ extra: false, viagem: ++viagemId, data, aba: abaCp2, linha: 0, origem: 'CP2', destino: dest, estimado: false,
+          tipo: tipoDestino(dest), qtd: f, frota: 'nao_inf', veiculo: '', placa: '', motorista: '', lojasTexto: dest, qtdTexto: String(f),
+          obs: 'faturado sem viagem na expedi\u00e7\u00e3o', regiao: '', semViagem: true });
+      });
+    }
     // A aba "Nao mexer CARGA CP2" não é usada: o CP2 vem só da CP2 CARGA-N.
 
     // ---------- CARGA FLV ----------
