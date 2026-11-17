@@ -167,7 +167,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
         <svg viewBox="0 0 24 24" fill="none" stroke="#3ad7f5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M4 18v-3h16v3"/><path d="M6 15V7h12v8"/><path d="M6 11h12"/><path d="M12 7v8"/></svg>
       </div>
       <div style="min-width:0">
-        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-d (regra Vieira nov, base outubro)</div>
+        <div class="eyebrow">Centro de controle · Expedição · versão 17/11-e (regra Vieira nov, base outubro, projeção do valor)</div>
         <h1>Paletes Expedidos</h1>
         <p id="fileInfo">Leitura da planilha EMBARQUE EXPEDIÇÃO: CD, CP2 e FLV por loja, frota própria e terceiros.</p>
       </div>
@@ -1445,10 +1445,13 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const meses = {};
     const movido = {};
     const semRegra = {};   // mesmo cálculo, sem a regra Vieira (para o quadro "Efeito da regra")
+    const real = {};       // realizado como lançado na planilha (sem projeção e sem regra), para a projeção do valor
     const novoMes = () => ({ G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 }, lojas: {} });
     for (const e of lista) {
       const mes = e.data.slice(0, 7);
       const fr0 = grupoFrota(e) === 'vv' ? 'V' : 'G';
+      const rl = real[mes] || (real[mes] = { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 } });
+      rl[fr0].pal += e.qtd; rl[fr0].km += e.qtd / CAP_MENSAL * kmDe(e.destino);
       if (mes >= mesRegra) {
         const sr = semRegra[mes] || (semRegra[mes] = { G: { pal: 0, km: 0 }, V: { pal: 0, km: 0 } });
         sr[fr0].pal += e.qtd; sr[fr0].km += e.qtd / CAP_MENSAL * kmDe(e.destino);
@@ -1501,7 +1504,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       const lojas = Object.entries(m.lojas).filter(([, v]) => v.G || v.V || v.base)
         .map(([dest, v]) => ({ dest, G: v.G, V: v.V, base: v.base || 0, regra: !!v.regra && mes === mesRegra }))
         .sort((a, b) => ordemLoja(a.dest) - ordemLoja(b.dest));
-      rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj, f, lojas, movido: movido[mes] || 0, sr,
+      rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj, f, lojas, movido: movido[mes] || 0, sr, real: real[mes] || null,
         base: mes === mesRegra ? { total: Math.round(baseTot), mes: MESES_NOME[+mesBase.slice(5, 7) - 1], dias: diasBase, diasRegra } : null });
     }
     return rows;
@@ -1707,6 +1710,65 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       });
       q++;
     });
+    // Quadro "Projeção do valor" do mês em andamento: dois modelos, em fórmulas
+    const iProj = rows.findIndex(r => r.proj);
+    if (iProj >= 0) {
+      const r = rows[iProj], nP = 4 + iProj;
+      const ant = rows.slice(Math.max(0, iProj - 3), iProj).map((_, k) => 4 + Math.max(0, iProj - 3) + k);   // linhas dos 3 meses anteriores
+      const de = ant.length ? ant[0] : null, ate = ant.length ? ant[ant.length - 1] : null;
+      const nomesAnt = rows.slice(Math.max(0, iProj - 3), iProj).map(x => x.nome.slice(0, 3).toLowerCase()).join('-');
+      const ultimoTxt = br(r.proj.ultimo).slice(0, 5);
+      q++;
+      ws.mergeCells(q, 1, q, 11);
+      const h = ws.getCell(q, 1);
+      h.value = 'Proje\u00e7\u00e3o do valor de ' + r.nome + ' \u00b7 dois modelos (escolha um e coloque na coluna Valor da linha ' + r.nome + ')';
+      h.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      h.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.T } };
+      h.alignment = { vertical: 'middle', indent: 1 };
+      q++;
+      const cabV = ['', 'Valor realizado at\u00e9 ' + ultimoTxt, 'Dias com dados', 'Dias do m\u00eas', 'KM realizado at\u00e9 ' + ultimoTxt, 'KM projetado',
+        'R$/km realizado', 'R$/km m\u00e9dio ' + (nomesAnt || '3 meses'), 'Modelo 1: por dias', 'Modelo 2: por KM (R$/km realizado)', 'Modelo 2b: por KM (R$/km m\u00e9dio)'];
+      cabV.forEach((v, j) => {
+        const c = ws.getCell(q, j + 1);
+        c.value = v;
+        c.font = { name: 'Calibri', size: 9, bold: true, color: { argb: j >= 8 ? 'FF1E6B45' : COR.T } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CLARO.T } };
+        c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        c.border = borda;
+      });
+      ws.getRow(q).height = 42;
+      q++;
+      [['Giassi', 'G', 'D', 'E'], ['Vieira', 'V', 'H', 'I']].forEach(([rot, fr, colKm, colVal]) => {
+        const n = q;
+        const kmReal = Math.round((r.real && r.real[fr].km) || 0);
+        const vals = [rot, null, r.proj.dias, r.proj.fimMes, kmReal,
+          { formula: `${colKm}${nP}`, result: r[fr].km },
+          { formula: `IF(AND(N(B${n})>0,E${n}>0),B${n}/E${n},"")`, result: '' },
+          de ? { formula: `IFERROR(SUM(${colVal}${de}:${colVal}${ate})/SUM(${colKm}${de}:${colKm}${ate}),"")`, result: '' } : '',
+          { formula: `IF(N(B${n})>0,B${n}/C${n}*D${n},"")`, result: '' },
+          { formula: `IF(G${n}<>"",G${n}*F${n},"")`, result: '' },
+          { formula: `IF(AND(H${n}<>"",N(H${n})>0),H${n}*F${n},"")`, result: '' }];
+        vals.forEach((v, j) => {
+          const c = ws.getCell(n, j + 1);
+          c.value = v;
+          c.border = borda;
+          c.font = { name: 'Calibri', size: 10, bold: j === 0 || j >= 8, color: { argb: j >= 8 ? 'FF1E6B45' : 'FF1B2430' } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: j === 1 ? 'FFFFFBEA' : 'FFFFFFFF' } };
+          c.alignment = { horizontal: j === 0 ? 'left' : 'right', vertical: 'middle' };
+          if (j === 1 || j >= 8) c.numFmt = '"R$" #,##0.00;-"R$" #,##0.00;""';
+          else if (j === 6 || j === 7) c.numFmt = '"R$" #,##0.00;-"R$" #,##0.00;""';
+          else if (j) c.numFmt = '#,##0';
+        });
+        q++;
+      });
+      ws.mergeCells(q, 1, q, 11);
+      const ex = ws.getCell(q, 1);
+      ex.value = 'Modelo 1 = valor realizado \u00f7 dias com dados \u00d7 dias do m\u00eas \u00b7 Modelo 2 = (valor realizado \u00f7 KM realizado) \u00d7 KM projetado \u00b7 Modelo 2b = R$/km m\u00e9dio dos meses anteriores (coluna Valor preenchida) \u00d7 KM projetado \u00b7 KM realizado = como lan\u00e7ado na planilha at\u00e9 ' + br(r.proj.ultimo) + ', sem proje\u00e7\u00e3o e sem a regra';
+      ex.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF5A6675' } };
+      ex.alignment = { wrapText: true, vertical: 'top' };
+      ws.getRow(q).height = 30;
+      q += 2;
+    }
     [12, 10, 10, 12, 14, 10, 10, 12, 14, 13, 15].forEach((w, j) => { ws.getColumn(j + 1).width = w; });
     abaCalculoLoja(wb, rows, ano);
     return new Uint8Array(await wb.xlsx.writeBuffer());
