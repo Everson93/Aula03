@@ -75,7 +75,7 @@
   // Meses em que a carga seca (CARGAS GERAL) sem placa e sem motorista conta como terceiro
   const TERCEIRO_SEM_PLACA_MESES = ['2026-08'];
 
-  // Dist\u00e2ncia ida+volta e cidade por loja (aba "KM Loja": LOJA nn e COMBO nn = CBn)
+  // Distância ida+volta e cidade por loja (aba "KM Loja": LOJA nn e COMBO nn = CBn)
   const KM_PADRAO = {
     LJ1: [6, 'I\u00e7ara'], LJ2: [68, 'Ararangu\u00e1'], LJ3: [72, 'Ararangu\u00e1'], LJ4: [120, 'Sombrio'], LJ5: [22, 'Crici\u00fama'],
     LJ6: [108, 'Tubar\u00e3o'], LJ7: [360, 'S\u00e3o Jos\u00e9'], LJ8: [680, 'Joinville'], LJ9: [644, 'Blumenau'], LJ10: [348, 'Palho\u00e7a'],
@@ -84,7 +84,7 @@
     CB1: [67, 'Ararangu\u00e1'], CB2: [350, 'Palho\u00e7a'], CB3: [7, 'I\u00e7ara'], CB4: [360, 'S\u00e3o Jos\u00e9'], CB5: [104, 'Tubar\u00e3o'],
     CB6: [120, 'Sombrio'], CB7: [31, 'Crici\u00fama'], CB8: [66, 'Forquilhinha'], CB9: [170, 'Bra\u00e7o do Norte'], CB10: [5, 'I\u00e7ara']
   };
-  // Tipo de ve\u00edculo que atende cada loja (cadastro do usu\u00e1rio); as demais s\u00e3o Carreta
+  // Tipo de veículo que atende cada loja (cadastro do usuário); as demais são Carreta
   const TRUCK_PADRAO = ['LJ2', 'LJ5', 'LJ6', 'LJ13', 'LJ17', 'LJ19'];
 
   /* L\u00ea a aba "KM Loja": Destino (LOJA 01 / COMBO 01), Distancia, Cidade. */
@@ -231,8 +231,8 @@
       out.push({ destino: destinos[0], qtd: q.nums[0] });
       alertas.push('s\u00f3 a 1\u00aa loja tem quantidade ("' + q.nums[0] + '+")');
     } else {
-      // A planilha n\u00e3o diz a divis\u00e3o: reparte igualmente entre as lojas (estimativa,
-      // a sobra vai para as primeiras) para cada loja ter seu n\u00famero. Fica em "Para conferir".
+      // A planilha não diz a divisão: reparte igualmente entre as lojas (estimativa,
+      // a sobra vai para as primeiras) para cada loja ter seu número. Fica em "Para conferir".
       const total = q.nums.reduce((a, b) => a + b, 0);
       const base = Math.floor(total / nd);
       destinos.forEach((d, i) => out.push({ destino: d, qtd: base + (i < total % nd ? 1 : 0), estimado: true }));
@@ -244,7 +244,7 @@
 
   function acharAba(wb, testes) {
     const nomes = wb.SheetNames;
-    // Aceita espa\u00e7os a mais, acentos, mai\u00fasculas/min\u00fasculas e "CP02" no lugar de "CP2"
+    // Aceita espaços a mais, acentos, maiúsculas/minúsculas e "CP02" no lugar de "CP2"
     const norm = n => String(n).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
       .replace(/\s+/g, ' ').trim().replace(/\bCP0+2\b/g, 'CP2');
     for (const t of testes) {
@@ -279,7 +279,7 @@
   }
 
   /* rowsPorAba: { nomeDaAba: [[...linha], ...] } (sheet_to_json com header:1, raw:true) */
-  // Cor de preenchimento vermelha (linha marcada como "n\u00e3o carregou")
+  // Cor de preenchimento vermelha (linha marcada como "não carregou")
   function ehVermelho(rgb) {
     const m = /^(?:FF)?([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})$/i.exec(String(rgb || ''));
     if (!m) return false;
@@ -291,21 +291,21 @@
   function processar(rowsPorAba, nomesAbas, frotaCfg, cores) {
     const FROTA = frotaCfg ? montarFrota(frotaCfg.lista, frotaCfg.motoristas) : montarFrota(FROTA_PADRAO, MOTORISTAS_PADRAO);
     const wbLike = { SheetNames: nomesAbas || Object.keys(rowsPorAba) };
-    // S\u00f3 vale a aba que foi de fato carregada (evita "reading 'length'" com nome diferente)
+    // Só vale a aba que foi de fato carregada (evita "reading 'length'" com nome diferente)
     const carregada = n => (n && rowsPorAba[n] ? n : null);
     const ab = escolherAbas(wbLike.SheetNames);
     const abaGeral = carregada(ab.abaGeral), abaCp2 = carregada(ab.abaCp2), abaFlv = carregada(ab.abaFlv), abaApoio = carregada(ab.abaApoio);
     const abaCp2Ant = null;
 
     const codigos = lerApoio(abaApoio && rowsPorAba[abaApoio]);
-    // C\u00f3digo de loja digitado no lugar do n\u00famero (ex.: "27" = c\u00f3digo da Loja 2).
-    // S\u00f3 vale para c\u00f3digos acima de 19, que n\u00e3o se confundem com o n\u00famero de uma loja.
+    // Código de loja digitado no lugar do número (ex.: "27" = código da Loja 2).
+    // Só vale para códigos acima de 19, que não se confundem com o número de uma loja.
     const porCodigo = {};
     Object.entries(codigos).forEach(([d, cod]) => { if (+cod > 19 && /^(LJ|CB)\d+$/.test(d)) porCodigo['LJ' + cod] = d; });
     const lojaReal = d => (/^LJ\d+$/.test(d) && !codigos[d] && porCodigo[d]) || d;
-    // Linha com a c\u00e9lula LOJA pintada de vermelho n\u00e3o conta (em todas as abas)
+    // Linha com a célula LOJA pintada de vermelho não conta (em todas as abas)
     const vermelha = (aba, i) => !!(cores && cores[aba] && ehVermelho(cores[aba][i]));
-    // Regra fixa: n\u00e3o vai para "Para conferir"
+    // Regra fixa: não vai para "Para conferir"
     const descartarVermelha = () => {};
     const entregas = [];
     const alertas = [];
@@ -327,7 +327,7 @@
       lancar(extras || [], null);
       function lancar(lista, origemPadrao) {
         lista.forEach(o => {
-          // CP1 n\u00e3o \u00e9 considerado
+          // CP1 não é considerado
           if (o.destino === 'CP1') return;
           o = Object.assign({}, o, { destino: lojaReal(o.destino) });
           const origem = o.origem || origemPadrao;
@@ -367,7 +367,7 @@
         const data = excelDate(r[0]);
         if (!data) continue;
         // Linha deslocada: placa em LOJAS (I), loja em CD (J), quantidade em CP2 (K) e o resto
-        // uma coluna \u00e0 direita (motorista em S). Ex.: 19/09/2025.
+        // uma coluna à direita (motorista em S). Ex.: 19/09/2025.
         const o = (!txt(r[6]) && RE_PLACA.test(txt(r[8])) && !RE_PLACA.test(txt(r[9])) && splitDestinos(r[9]).valido) ? 1 : 0;
         const c = k => r[k + o];
         let lojasRaw = c(8), placa = o ? txt(r[8]) : txt(r[6]);
@@ -384,7 +384,7 @@
           lojasTexto: txt(lojasRaw), qtdTexto: txt(cdRaw)
         };
         if (o) base.obs = 'linha com colunas deslocadas (lida a partir da coluna J)';
-        // Agosto/2026: carga seca sem placa e sem motorista foi feita por terceiro (informado pelo usu\u00e1rio)
+        // Agosto/2026: carga seca sem placa e sem motorista foi feita por terceiro (informado pelo usuário)
         if (base.frota === 'nao_inf' && TERCEIRO_SEM_PLACA_MESES.includes(data.slice(0, 7))) base.frota = 'terceiro';
         const dest = splitDestinos(lojasRaw);
         const qCD = splitQtd(cdRaw);
@@ -407,8 +407,8 @@
         // então números nas colunas CP2/FLV ficam só como observação.
         if (qCP2.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'CP2 ' + txt(c(10));
         if (qFLV.nums.length) base.obs = (base.obs ? base.obs + ' \u00b7 ' : '') + 'FLV ' + txt(c(11));
-        // "complemento flv": conta como CD aqui, uma vez s\u00f3. A mesma carga aparece na coluna CD
-        // do caminh\u00e3o FLV, que por isso n\u00e3o soma no total.
+        // "complemento flv": conta como CD aqui, uma vez só. A mesma carga aparece na coluna CD
+        // do caminhão FLV, que por isso não soma no total.
         if (/comp.*flv|flv.*comp/i.test(qCP2.texto + ' ' + qFLV.texto)) {
           base.obs = 'complemento FLV (contado aqui como CD)';
           base.semViagem = true;   // vai no caminh\u00e3o do FLV: soma paletes, n\u00e3o conta como viagem
@@ -447,15 +447,15 @@
       resumoAbas.push({ aba, viagens: n, ignoradas: 0, papel: aba === abaCp2 ? 'Expedi\u00e7\u00e3o CP2 (atual)' : 'Expedi\u00e7\u00e3o CP2 (hist\u00f3rico, s\u00f3 datas que n\u00e3o est\u00e3o na aba atual)' });
     }
     if (abaCp2) lerCp2(abaCp2, 17, 18, 19, 24);
-    // A aba "Nao mexer CARGA CP2" n\u00e3o \u00e9 usada: o CP2 vem s\u00f3 da CP2 CARGA-N.
+    // A aba "Nao mexer CARGA CP2" não é usada: o CP2 vem só da CP2 CARGA-N.
 
     // ---------- CARGA FLV ----------
     // Bloco de expedição: L=LOJA, M=FLV, N=CD, Q=PLACA, R=MOT.
     // "6+CD" com "14+4": loja 6 recebe 14 FLV e 4 CD.
     // "13-CD+17" com "8-5+5": loja 13 recebe 8 FLV e 5 CD; loja 17 recebe 5 FLV.
-    // Bloco Norte (sem placa): linhas seguidas da mesma faixa de cor s\u00e3o UM caminh\u00e3o; a linha
-    // com o n\u00famero na coluna T (K) ou o total na coluna PL (P) fecha o caminh\u00e3o.
-    // Linhas pintadas de vermelho na LOJA n\u00e3o foram carregadas e s\u00e3o descartadas.
+    // Bloco Norte (sem placa): linhas seguidas da mesma faixa de cor são UM caminhão; a linha
+    // com o número na coluna T (K) ou o total na coluna PL (P) fecha o caminhão.
+    // Linhas pintadas de vermelho na LOJA não foram carregadas e são descartadas.
     if (abaFlv) {
       const rows = rowsPorAba[abaFlv];
       const corFlv = (cores && cores[abaFlv]) || [];
@@ -475,7 +475,7 @@
         const r = rows[i];
         const data = excelDate(r[0]);
         if (!data) continue;
-        // Cabe\u00e7alho de bloco: "PREVISAO FLV POR PALETES REGIAO NORTE" / "... REGIAO SUL"
+        // Cabeçalho de bloco: "PREVISAO FLV POR PALETES REGIAO NORTE" / "... REGIAO SUL"
         const cab = normNome(txt(r[1]));
         if (/REGIAO\s+NORTE/.test(cab)) { regiao = 'norte'; dataRegiao = data; grupo = null; continue; }
         if (data !== diaAtual) { diaAtual = data; vistoPlaca = false; }
@@ -491,7 +491,7 @@
           continue;
         }
         const flvTxt = txt(r[12]);
-        // Na coluna PLACA do bloco Norte \u00e0s vezes vai uma anota\u00e7\u00e3o ("CARGA DIRETO LOJA")
+        // Na coluna PLACA do bloco Norte às vezes vai uma anotação ("CARGA DIRETO LOJA")
         const placaTxt = txt(r[16]), mot = txt(r[17]);
         const ehPlaca = RE_PLACA.test(placaTxt) || /TERC|-\s*T\s*$|^T\//i.test(placaTxt);
         const placa = ehPlaca ? placaTxt : '';
@@ -524,28 +524,28 @@
         const base = { data, aba: abaFlv, linha: i + 1, placa, motorista: mot, ...frotaDe(placa, mot),
           lojasTexto: lojasTxt, qtdTexto: flvTxt + (txt(r[13]) ? ' | CD ' + txt(r[13]) : '') };
         const semPlaca = !placa && !mot;
-        // In\u00edcio do bloco Sul: primeira linha com placa/motorista ou com letra na coluna K
-        // (no Norte a coluna K s\u00f3 tem o n\u00famero do caminh\u00e3o).
+        // Início do bloco Sul: primeira linha com placa/motorista ou com letra na coluna K
+        // (no Norte a coluna K só tem o número do caminhão).
         if (!semPlaca || (typeof r[10] === 'string' && r[10].trim() && isNaN(+r[10]))) vistoPlaca = true;
-        // Regi\u00e3o: pelo t\u00edtulo do bloco quando existe (a partir de 01/06/2026). Sem t\u00edtulo, o bloco
-        // sem placa que abre o dia \u00e9 o Norte e, da primeira linha com placa em diante, \u00e9 o Sul
-        // (confere com o t\u00edtulo em 923 de 924 linhas de jun-out/2026).
+        // Região: pelo título do bloco quando existe (a partir de 01/06/2026). Sem título, o bloco
+        // sem placa que abre o dia é o Norte e, da primeira linha com placa em diante, é o Sul
+        // (confere com o título em 923 de 924 linhas de jun-out/2026).
         const reg = regiao || (vistoPlaca ? 'sul' : 'norte');
         base.regiao = reg;
-        // Sem placa, a frota sai da regi\u00e3o: Norte \u00e9 terceiro, Sul \u00e9 frota pr\u00f3pria.
+        // Sem placa, a frota sai da região: Norte é terceiro, Sul é frota própria.
         if (reg === 'norte') { base.frota = 'terceiro'; base.veiculo = ''; }
         else if (semPlaca) { base.frota = 'propria'; base.veiculo = ''; }
         if (semPlaca) {
           if (!grupo || grupo.data !== data) { grupo = { id: ++viagemId, data, linhaIni: i + 1, total: 0, lojas: [] }; n++; }
           base.viagem = grupo.id;
         } else grupo = null;
-        // Mais n\u00fameros que lojas (ex.: "CB4" com "7+2"): deixa a regra geral decidir
+        // Mais números que lojas (ex.: "CB4" com "7+2"): deixa a regra geral decidir
         const qF = qtdTokens.length > tokens.length ? splitQtd(flvTxt)
           : { nums: flv.some(x => x > 0) ? flv : [], incompleto: false, texto: '' };
-        // S\u00f3 o volume FLV. Os paletes de CD que v\u00e3o junto ("-CD", coluna CD) j\u00e1 est\u00e3o na CARGAS GERAL.
+        // Só o volume FLV. Os paletes de CD que vão junto ("-CD", coluna CD) já estão na CARGAS GERAL.
         const cdCol = splitQtd(r[13]).nums.reduce((a, x) => a + x, 0) + cdExtra.reduce((a, x) => a + x.qtd, 0);
-        // Coluna CD do caminh\u00e3o FLV = complemento, j\u00e1 contado como CD pela CARGAS GERAL.
-        // No Norte (sem placa) aparece \u00e0 parte (origem COMP, fora do total) s\u00f3 para refer\u00eancia.
+        // Coluna CD do caminhão FLV = complemento, já contado como CD pela CARGAS GERAL.
+        // No Norte (sem placa) aparece à parte (origem COMP, fora do total) só para referência.
         let extras = [];
         if (semPlaca && cdCol) {
           extras = cdExtra.map(x => ({ origem: 'COMP', extra: true, destino: x.destino, qtd: x.qtd, obs: 'complemento (coluna CD)' }));
@@ -560,6 +560,27 @@
         } else if (ok) n++;
       }
       resumoAbas.push({ aba: abaFlv, viagens: n, ignoradas: vermelhas, papel: 'Volume FLV (s\u00f3 a coluna FLV)' });
+    }
+
+    // Placa fora da lista da frota e sem marca de terceiro: só é própria se o motorista for da casa
+    // (lista de motoristas ou quem dirige com frequência os veículos da lista) ou se a placa já foi
+    // dirigida várias vezes por motoristas da casa (frota antiga, placa digitada errada). Senão, terceiro.
+    {
+      const MIN = 3;
+      const viagensPor = (filtro, chave) => {
+        const m = new Map();
+        entregas.forEach(e => { if (!filtro(e)) return; const k = chave(e); if (!k) return; (m.get(k) || m.set(k, new Set()).get(k)).add(e.viagem); });
+        return m;
+      };
+      const casa = new Set(FROTA.motoristas);
+      viagensPor(e => !!e.veiculo, e => normNome(e.motorista)).forEach((v, k) => { if (v.size >= MIN) casa.add(k); });
+      casa.delete('TERCEIRO');
+      const foraLista = e => e.frota === 'propria' && !e.veiculo && RE_PLACA.test(e.placa || '');
+      const placasCasa = new Set();
+      viagensPor(e => foraLista(e) && casa.has(normNome(e.motorista)), e => chavePlaca(e.placa)).forEach((v, k) => { if (v.size >= MIN) placasCasa.add(k); });
+      entregas.forEach(e => {
+        if (foraLista(e) && !casa.has(normNome(e.motorista)) && !placasCasa.has(chavePlaca(e.placa))) e.frota = 'terceiro';
+      });
     }
 
     entregas.sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : a.viagem - b.viagem);
