@@ -240,6 +240,7 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
       </div>
       <div class="fgroup" style="margin-left:auto">
         <button type="button" class="btn-primary" id="btnExportar" title="Gera o .xlsx do período selecionado (De / Até) no modelo Base Importação: CD, FLV e CP02, frota própria e Vieira Transportes, mais as abas por dia">Exportar período</button>
+        <button type="button" id="btnMensal" title="Gera o .xlsx consolidado por mês do ano (CD + CP02 + FLV): Giassi e Vieira com paletes, viagens (Carreta 28) e KM; valor em branco para preencher">Consolidado mensal</button>
       </div>
     </div>
   </section>
@@ -1388,15 +1389,8 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     return dm(ini) + ' a ' + dm(fim);
   }
 
-  // Exporta o período selecionado no topo (De / Até)
-  $('btnExportar').addEventListener('click', async () => {
-    if (!DADOS) return;
-    const ini = $('dIni').value, fim = $('dFim').value;
-    if (!ini || !fim || ini > fim) { toast('Escolha um período válido (De / Até) para exportar.'); return; }
-    const nome = 'Paletes_' + (mesInteiro(ini, fim) ? MESES_NOME[+ini.slice(5, 7) - 1] + '_' + ini.slice(0, 4) : ini + '_a_' + fim) + '.xlsx';
-    let dados;
-    try { dados = await montarModeloFormatado(ini, fim); }
-    catch (err) { console.warn('Exportação sem formatação:', err); dados = montarModelo(ini, fim); }
+  // Entrega o arquivo: recurso de downloads da página publicada ou, fora dela, download direto
+  async function salvarXlsx(nome, dados) {
     let dl = null;
     try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
     if (dl) {
@@ -1412,6 +1406,147 @@ td.dia-tot, tr.dia-tot td { background: var(--bg-2); font-weight: 600; border-bo
     const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
     toast('Planilha gerada: ' + nome);
+  }
+
+  // ---------- Consolidado mensal (todos os CDs): Giassi x Vieira ----------
+  // Viagens: Carreta com capacidade fixa 28 (paletes do dia ÷ 28 por loja, origem e frota, arredondado para cima).
+  // KM: viagens × KM ida+volta da loja (cadastro). Mês em andamento: média por dia corrido × dias do mês.
+  const CAP_MENSAL = 28;
+  function consolidadoMensal(ano) {
+    let lista = DADOS.entregas.filter(e => !e.extra && e.tipo === 'loja' && e.data.slice(0, 4) === ano);
+    // Mês em andamento: corta na última data que todas as abas (CD, CP02, FLV) já têm,
+    // senão uma aba lançada mais à frente distorce a média diária
+    const ultGeral = lista.reduce((a, e) => e.data > a ? e.data : a, '');
+    const mesAtual = ultGeral.slice(0, 7);
+    const maxAba = {};
+    lista.forEach(e => { if (e.data.slice(0, 7) === mesAtual && (!maxAba[e.aba] || e.data > maxAba[e.aba])) maxAba[e.aba] = e.data; });
+    const corte = Object.values(maxAba).reduce((a, d) => d < a ? d : a, ultGeral);
+    lista = lista.filter(e => e.data <= corte);
+    const grupos = new Map();
+    for (const e of lista) {
+      const fr = grupoFrota(e) === 'vv' ? 'V' : 'G';
+      const k = e.data.slice(0, 7) + '|' + fr + '|' + e.destino + '|' + e.data + '|' + e.origem;
+      grupos.set(k, (grupos.get(k) || 0) + e.qtd);
+    }
+    const meses = {};
+    for (const [k, pal] of grupos) {
+      const [mes, fr, dest] = k.split('|');
+      const m = meses[mes] || (meses[mes] = { G: { pal: 0, via: 0, km: 0 }, V: { pal: 0, via: 0, km: 0 } });
+      const v = Math.ceil(pal / CAP_MENSAL);
+      m[fr].pal += pal; m[fr].via += v; m[fr].km += v * (+cadLoja(dest).km || 0);
+    }
+    const ultimo = lista.reduce((a, e) => e.data > a ? e.data : a, '');
+    const mesUlt = ultimo.slice(0, 7);
+    const rows = [];
+    for (let i = 1; i <= +(mesUlt.slice(5, 7) || 0); i++) {
+      const mes = ano + '-' + String(i).padStart(2, '0');
+      const m = meses[mes] || { G: { pal: 0, via: 0, km: 0 }, V: { pal: 0, via: 0, km: 0 } };
+      const fimMes = new Date(Date.UTC(+ano, i, 0)).getUTCDate();
+      let proj = null;
+      if (mes === mesUlt && +ultimo.slice(8, 10) < fimMes) {
+        const dias = +ultimo.slice(8, 10);
+        const f = fimMes / dias;
+        proj = { dias, fimMes, ultimo };
+        ['G', 'V'].forEach(x => { ['pal', 'via', 'km'].forEach(c => { m[x][c] = Math.round(m[x][c] * f); }); });
+      }
+      rows.push({ mes, nome: MESES_NOME[i - 1], G: m.G, V: m.V, proj });
+    }
+    return rows;
+  }
+
+  async function montarMensal(ano) {
+    const rows = consolidadoMensal(ano);
+    const proj = rows.find(r => r.proj);
+    let ExcelJS = null;
+    try { ExcelJS = await carregarExcelJS(); } catch (e) { ExcelJS = null; }
+    const nota = 'Todos os CDs (CD + CP02 + FLV), todas as lojas \u00b7 Giassi = frota pr\u00f3pria (inclui placa em branco), Vieira = terceiros \u00b7 Viagens = paletes do dia \u00f7 ' + CAP_MENSAL + ' (carreta) por loja, origem e frota, arredondado para cima \u00b7 KM = viagens \u00d7 KM ida+volta da loja' +
+      (proj ? ' \u00b7 * ' + proj.nome + ': proje\u00e7\u00e3o = m\u00e9dia por dia de 01 a ' + br(proj.proj.ultimo) + ' (' + proj.proj.dias + ' dias) \u00d7 ' + proj.proj.fimMes + ' dias' : '');
+    if (!ExcelJS) {
+      const aoa = [['M\u00eases', 'Giassi', '', '', '', 'Vieira', '', '', '', 'Totais', ''], ['', 'Palete', 'Viagens', 'KM', 'Valor', 'Palete', 'Viagens', 'KM', 'Valor', 'Total KM', 'Total Valor']];
+      rows.forEach(r => aoa.push([r.nome + (r.proj ? '*' : ''), r.G.pal, r.G.via, r.G.km, null, r.V.pal, r.V.via, r.V.km, null, r.G.km + r.V.km, null]));
+      aoa.push([]); aoa.push([nota]);
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Consolidado ' + ano);
+      return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    }
+    const wb = new ExcelJS.Workbook();
+    wb.calcProperties.fullCalcOnLoad = true;
+    const ws = wb.addWorksheet('Consolidado ' + ano, { views: [{ state: 'frozen', ySplit: 3, showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1, paperSize: 9 } });
+    const fino = { style: 'thin', color: { argb: 'FFB8C2CE' } };
+    const borda = { top: fino, left: fino, bottom: fino, right: fino };
+    const COR = { G: 'FF1F4E79', V: 'FFB45309', T: 'FF263445' };
+    const CLARO = { G: 'FFDCE6F2', V: 'FFFCE8D4', T: 'FFE3E8EF' };
+    // Título
+    ws.mergeCells('A1:K1');
+    Object.assign(ws.getCell('A1'), { value: 'Consolidado mensal de paletes, viagens e KM \u00b7 ' + ano });
+    ws.getCell('A1').font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+    ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.T } };
+    ws.getCell('A1').alignment = { vertical: 'middle', indent: 1 };
+    ws.getRow(1).height = 26;
+    // Cabeçalho em duas linhas, como no modelo
+    ws.mergeCells('A2:A3'); ws.mergeCells('B2:E2'); ws.mergeCells('F2:I2'); ws.mergeCells('J2:K2');
+    const cab2 = { A2: ['M\u00eases', 'T'], B2: ['Giassi', 'G'], F2: ['Vieira', 'V'], J2: ['Totais', 'T'] };
+    Object.entries(cab2).forEach(([ref, [v, g]]) => { const c = ws.getCell(ref); c.value = v; c.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR[g] } }; c.alignment = { horizontal: 'center', vertical: 'middle' }; });
+    const sub = ['Palete', 'Viagens', 'KM', 'Valor', 'Palete', 'Viagens', 'KM', 'Valor', 'Total KM', 'Total Valor'];
+    sub.forEach((v, j) => { const g = j < 4 ? 'G' : j < 8 ? 'V' : 'T'; const c = ws.getCell(3, j + 2); c.value = v; c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: COR[g] } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CLARO[g] } }; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.border = borda; });
+    for (const ref of ['A2', 'A3', 'B2', 'F2', 'J2']) ws.getCell(ref).border = borda;
+    ws.getRow(2).height = 20; ws.getRow(3).height = 20;
+    const fmtN = '#,##0;-#,##0;"-"', fmtR = '"R$" #,##0.00;-"R$" #,##0.00;""';
+    rows.forEach((r, i) => {
+      const n = 4 + i;
+      const zebra = i % 2 ? 'FFF6F8FB' : 'FFFFFFFF';
+      const vals = [r.nome + (r.proj ? ' *' : ''), r.G.pal, r.G.via, r.G.km, null, r.V.pal, r.V.via, r.V.km, null,
+        { formula: `D${n}+H${n}`, result: r.G.km + r.V.km }, { formula: `IF(COUNT(E${n},I${n})=0,"",SUM(E${n},I${n}))`, result: '' }];
+      vals.forEach((v, j) => {
+        const c = ws.getCell(n, j + 1);
+        c.value = v;
+        c.border = borda;
+        const manual = j === 4 || j === 8;
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: manual ? 'FFFFFBEA' : zebra } };
+        c.font = { name: 'Calibri', size: 10, bold: j === 0 || j >= 9, italic: !!r.proj, color: { argb: r.proj ? 'FF6B7280' : 'FF1B2430' } };
+        c.alignment = { horizontal: j === 0 ? 'left' : 'right', vertical: 'middle' };
+        if (j) c.numFmt = (j === 4 || j === 8 || j === 10) ? fmtR : fmtN;
+      });
+    });
+    const nT = 4 + rows.length;
+    ['TOTAL'].concat('BCDEFGHIJK'.split('')).forEach((L, j) => {
+      const c = ws.getCell(nT, j + 1);
+      c.value = j === 0 ? 'TOTAL' : { formula: `SUM(${L}4:${L}${nT - 1})` };
+      c.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR.T } };
+      c.alignment = { horizontal: j === 0 ? 'left' : 'right', vertical: 'middle' };
+      if (j) c.numFmt = (j === 4 || j === 8 || j === 10) ? '"R$" #,##0.00' : '#,##0';
+    });
+    ws.mergeCells(nT + 2, 1, nT + 2, 11);
+    const cn = ws.getCell(nT + 2, 1);
+    cn.value = nota;
+    cn.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF5A6675' } };
+    cn.alignment = { wrapText: true, vertical: 'top' };
+    ws.getRow(nT + 2).height = 42;
+    ws.mergeCells(nT + 3, 1, nT + 3, 11);
+    const cv = ws.getCell(nT + 3, 1);
+    cv.value = 'Colunas Valor (fundo amarelo) para preencher; Total Valor soma Giassi + Vieira automaticamente.';
+    cv.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF8A6D00' } };
+    [12, 10, 10, 12, 14, 10, 10, 12, 14, 13, 15].forEach((w, j) => { ws.getColumn(j + 1).width = w; });
+    return new Uint8Array(await wb.xlsx.writeBuffer());
+  }
+
+  $('btnMensal').addEventListener('click', async () => {
+    if (!DADOS) return;
+    const ano = ($('dFim').value || DADOS.max).slice(0, 4);
+    const dados = await montarMensal(ano);
+    await salvarXlsx('Consolidado_Mensal_' + ano + '.xlsx', dados);
+  });
+
+  // Exporta o período selecionado no topo (De / Até)
+  $('btnExportar').addEventListener('click', async () => {
+    if (!DADOS) return;
+    const ini = $('dIni').value, fim = $('dFim').value;
+    if (!ini || !fim || ini > fim) { toast('Escolha um período válido (De / Até) para exportar.'); return; }
+    const nome = 'Paletes_' + (mesInteiro(ini, fim) ? MESES_NOME[+ini.slice(5, 7) - 1] + '_' + ini.slice(0, 4) : ini + '_a_' + fim) + '.xlsx';
+    let dados;
+    try { dados = await montarModeloFormatado(ini, fim); }
+    catch (err) { console.warn('Exportação sem formatação:', err); dados = montarModelo(ini, fim); }
+    await salvarXlsx(nome, dados);
   });
 
   // ---------- Abas ----------
