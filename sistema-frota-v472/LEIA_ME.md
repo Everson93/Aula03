@@ -4781,6 +4781,44 @@ sua aba Lançamentos estiver cheia, rode: é ele que amplia a base.
 
 ---
 
+## V4.40.3 — a linha de destino tem de estar VAZIA
+
+A V4.40.2 consertou o cálculo da última linha e passou a reler a linha depois
+de gravar. Não bastou: o usuário continuou vendo "Lançamento gravado" sem o
+lançamento na planilha. O motivo é que **reler depois não pega gravar por
+cima** — a linha realmente contém o que acabei de escrever, ID e placa
+batendo. A conferência aprova, e dois lançamentos somem de uma vez: o novo,
+que ninguém encontra, e o antigo, que estava ali embaixo.
+
+A única pergunta que pega esse caso é feita **antes** de escrever: a linha de
+destino está livre? `linhaLivreParaLancamento_(sheet)` exige a coluna PLACA
+vazia, varre até 500 linhas à frente procurando a primeira livre, e:
+
+- se achou adiante, grava ali e **registra no Log** `Linha de gravação
+  corrigida` com a linha calculada e a usada — sem registro, um erro de
+  cálculo volta a ser invisível;
+- se não achou nenhuma livre na janela, **recusa** dizendo "NADA foi gravado
+  — gravar ali apagaria um lançamento existente";
+- se a grade acabou, recusa pedindo "Instalar / atualizar sistema".
+
+Isto é defesa em profundidade de propósito: o cálculo da linha (V4.40.2), a
+exigência de linha livre (aqui) e a releitura (V4.40.2) são três perguntas
+diferentes. A do meio é a que fecha o buraco.
+
+`conferir_gravacao_lancamento.js` passou a 33 provas, com um bloco que
+**sabota de propósito** o cálculo da última linha (`ultimaLinhaLancamentoReal_`
+devolvendo 1) e exige que a base **cresça**, que nenhum ID anterior desapareça
+e que o Log registre a correção. Três mutantes mortos: gravar na linha
+calculada sem conferir, aceitar linha ocupada, não registrar no Log.
+
+Um efeito colateral honesto: o dublê de `conferir_loja_sem_combustivel.js`
+serve a mesma lista para todas as abas, então "a linha da PLACA está vazia?"
+não tem resposta com significado lá. Essa suíte agora dubla
+`linhaLivreParaLancamento_` — quem prova a regra é a suíte da gravação, com
+uma aba Lançamentos de verdade.
+
+42 suítes, 1.685 provas, tudo verde.
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026

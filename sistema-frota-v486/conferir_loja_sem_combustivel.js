@@ -90,6 +90,11 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   registrarPendenciasDoLancamento_ = function () {};
   ss_ = function () { return { getSheetByName: function () { return null; } }; };
   proximaLinhaLancamento_ = function () { return 2; };
+  // Quem prova que a linha de destino esta livre e
+  // conferir_gravacao_lancamento.js, com uma aba Lancamentos de verdade.
+  // Aqui todas as abas sao a mesma lista de centros, entao a pergunta nao
+  // tem resposta que signifique algo.
+  linhaLivreParaLancamento_ = function () { return { linha: 2, pulou: 0, candidata: 2 }; };
   aba_ = function (nome) {
     // O limite de colunas vale so para a aba Centros, que e a do campo novo.
     // Aplica-lo a Lancamentos faria a gravacao quebrar por um motivo que nao

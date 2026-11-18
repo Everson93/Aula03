@@ -643,7 +643,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.40.2';
+const VERSAO_SISTEMA = '4.40.3';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1224,6 +1224,39 @@ function quantidadeLancamentosReais_() {
 
 function proximaLinhaLancamento_() {
   return Math.max(2, ultimaLinhaLancamentoReal_() + 1);
+}
+
+/**
+ * A linha onde gravar — exigindo que ela esteja VAZIA.
+ *
+ * `proximaLinhaLancamento_` calcula a partir da ultima linha com placa. Esse
+ * calculo ja errou uma vez (V4.40.2, a armadilha do Ctrl+Seta) e o resultado
+ * foi gravar POR CIMA de um lancamento existente, com mensagem de "gravado":
+ * sumiam dois, o novo e o antigo.
+ *
+ * Reler a linha depois de escrever NAO pega esse caso — ela contem o que
+ * acabamos de escrever. A unica pergunta que pega e feita ANTES: a linha de
+ * destino esta livre? Se nao estiver, qualquer que seja o motivo (calculo
+ * errado, linha oculta por filtro, dado colado a mao), procuramos a primeira
+ * livre adiante em vez de apagar o que esta la.
+ *
+ * Custa UMA leitura de uma coluna, e e a diferenca entre perder um
+ * lancamento em silencio e nao perder.
+ */
+const JANELA_LINHA_LIVRE_ = 500;
+
+function linhaLivreParaLancamento_(sheet) {
+  const max = sheet.getMaxRows();
+  const candidata = Math.max(2, proximaLinhaLancamento_());
+  if (candidata > max) return { erro: 'cheia', candidata: candidata, max: max };
+  const quantas = Math.min(JANELA_LINHA_LIVRE_, max - candidata + 1);
+  const placas = sheet.getRange(candidata, COL_LANC.PLACA, quantas, 1).getValues();
+  for (let i = 0; i < quantas; i++) {
+    if (String(placas[i][0] == null ? '' : placas[i][0]).trim() === '') {
+      return { linha: candidata + i, pulou: i, candidata: candidata };
+    }
+  }
+  return { erro: 'ocupada', candidata: candidata, max: max, quantas: quantas };
 }
 
 /** Lista de placas cadastradas (coluna A da aba Veículos). */
@@ -4070,7 +4103,27 @@ function salvarLancamento_(dados, opcoesSalvar) {
 
     const lancamentos = aba_(ABAS.LANCAMENTOS);
     const idLancamento = novoIdLancamento_();
-    const linha = proximaLinhaLancamento_();
+    const destino = linhaLivreParaLancamento_(lancamentos);
+    if (destino.erro) {
+      return {
+        ok: false,
+        mensagem: destino.erro === 'cheia'
+          ? 'A aba "' + ABAS.LANCAMENTOS + '" chegou ao fim da grade (linha ' +
+            destino.candidata + ' de ' + destino.max + '). Rode "Instalar / atualizar ' +
+            'sistema" para ampliar a base e lance de novo. NADA foi gravado.'
+          : 'Não achei linha livre na aba "' + ABAS.LANCAMENTOS + '" a partir da linha ' +
+            destino.candidata + '. NADA foi gravado — gravar ali apagaria um lançamento ' +
+            'existente. Rode "Instalar / atualizar sistema" e me mostre esta mensagem.',
+      };
+    }
+    const linha = destino.linha;
+    if (destino.pulou > 0) {
+      // Acontecer isto e sinal de que o calculo da ultima linha errou. Fica no
+      // Log: sem registro, o defeito volta a ser invisivel.
+      registrarLog_('Linha de gravação corrigida',
+        'o cálculo apontou a linha ' + destino.candidata + ', que estava ocupada; ' +
+        'gravei na ' + linha + ' (' + destino.pulou + ' linha(s) adiante)');
+    }
     // V4.8 (velocidade): a linha inteira em DUAS gravações (antes eram 9 + 3 formatos).
     // Os formatos de coluna já vêm da instalação; a coluna J (Período) é fórmula e fica de fora.
     const veic = resolucaoVeiculo.veiculo;

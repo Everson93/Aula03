@@ -175,7 +175,7 @@ vm.runInContext(fs.readFileSync(arquivo, 'utf8') + `
   exigirExecucaoOperacional_ = function () {};
   exigirExecucaoLeitura_ = function () {};
   exigirExecucaoMutacao_ = function () {};
-  registrarLog_ = function () {};
+  registrarLog_ = function (acao, detalhe) { __log.push(acao + ': ' + detalhe); };
   atualizarResumoSeguro_ = function () {};
   invalidarCacheInicio_ = function () {};
   emailContextoAtual_ = function () { return 'operador@giassi.com.br'; };
@@ -222,6 +222,7 @@ novaAba('Fornecedores', ['Nome', 'Ramo', 'Ativo'], [['POSTO X', 'Posto', 'SIM']]
 novaAba('Conferência', ['Data', 'Origem', 'Placa', 'Problema', 'Detalhe', 'Situação', 'Observação'], []);
 novaAba('Log', ['Quando', 'Quem', 'Ação', 'Detalhe'], []);
 
+ctx.__log = [];
 let provas = 0, falhas = 0;
 function ok(nome, cond, detalhe) {
   provas++;
@@ -331,7 +332,34 @@ ok('mas a mensagem acusa a leitura ANTERIOR',
 ok('e manda corrigir no histórico, não forçar',
   /Histórico \/ estornar/.test(r.mensagem), r.mensagem);
 
-console.log('\n4. Aba cheia até a última linha: não pode gravar por cima');
+console.log('\n4. Se o cálculo da linha errar, ele não apaga nada');
+// Reler a linha DEPOIS de escrever não pega este caso: ela contém o que
+// acabamos de escrever. A única pergunta que pega é feita ANTES — a linha de
+// destino está livre? Aqui o cálculo da última linha é sabotado de
+// propósito, que é o que a armadilha do Ctrl+Seta fazia sozinha.
+(function () {
+  const antes = linhasGravadas().length;
+  const retrato = linhasGravadas().map(function (l) { return String(l[10]); });
+  ctx.__log.length = 0;
+  vm.runInContext('ultimaLinhaLancamentoReal_ = function () { return 1; };', ctx);
+  const r3 = gravar({
+    placa: 'AAA 0001', tipo: 'Pneus', data: '2026-11-19', valor: 123, documento: 'NF ERRADA',
+  });
+  vm.runInContext('delete globalThis.ultimaLinhaLancamentoReal_;', ctx);
+  ok('grava assim mesmo, numa linha livre', r3.ok === true, r3.mensagem);
+  ok('e a base CRESCEU em vez de ficar igual',
+    linhasGravadas().length === antes + 1,
+    'de ' + antes + ' para ' + linhasGravadas().length);
+  ok('nenhum lançamento anterior foi apagado', (function () {
+    const agora = linhasGravadas().map(function (l) { return String(l[10]); });
+    return retrato.every(function (id) { return agora.indexOf(id) !== -1; });
+  })(), 'era isto que sumia em silêncio: o antigo, por baixo do novo');
+  ok('e o Log registra que a linha calculada estava ocupada',
+    ctx.__log.some(function (l) { return /Linha de gravação corrigida/.test(l); }),
+    ctx.__log.join(' | ') + ' — sem registro, o defeito volta a ser invisível');
+})();
+
+console.log('\n4b. Aba cheia até a última linha: não pode gravar por cima');
 // `getNextDataCell(UP)` a partir de uma celula CHEIA sobe para o TOPO do
 // bloco contiguo, nao para a ultima linha com dado. Quando a aba enche ate o
 // fim, `ultimaLinhaLancamentoReal_` devolvia uma linha la em cima — e o
@@ -357,7 +385,7 @@ console.log('\n4. Aba cheia até a última linha: não pode gravar por cima');
     'disse "' + String(r2.mensagem).slice(0, 80) + '" e a base foi de ' + cheias + ' para ' + depois);
   ok('e, quando não dá para gravar, ele DIZ que não gravou',
     r2.ok === true ||
-    /não foi possível gravar|NÃO foi registrado/i.test(String(r2.mensagem)),
+    /não foi possível gravar|NÃO foi registrado|NADA foi gravado/i.test(String(r2.mensagem)),
     'mensagem de sucesso sobre uma gravação que não aconteceu é o pior defeito possível: ' +
     'ninguém procura o que já foi dado como feito');
   ok('e nenhum lançamento antigo foi sobrescrito',
@@ -366,7 +394,7 @@ console.log('\n4. Aba cheia até a última linha: não pode gravar por cima');
     'o lançamento sobrescrito some sem deixar rastro');
 })();
 
-console.log('\n4b. A conferência de leitura vale por si');
+console.log('\n4c. A conferência de leitura vale por si');
 // Mesmo que a linha seja calculada certo, gravar e NAO conferir deixa a porta
 // aberta para qualquer outra causa (permissao, aba protegida, filtro) passar
 // como sucesso.
