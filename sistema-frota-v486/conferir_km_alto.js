@@ -77,7 +77,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
                                          fim: new Date(2026, 10, 25, 23, 59, 59, 999) }; };
   periodoDoMes_ = function () { return periodoAtual_(); };
   lerOdometro_ = function () { return __odo; };
-  lerLancamentos_ = function () { return []; };
+  lerLancamentos_ = function () { return __lanc; };
   localizarDuplicidadeLancamento_ = function () { return null; };
   estadoTanque_ = function () { return { litros: 0, valor: 0, custoMedio: 0, precoLitro: 0,
     diferencaValorizacao: 0, litrosSemLastro: 0 }; };
@@ -94,24 +94,43 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   localizarLeituraOdometro_ = function () { return { linha: 2, iguais: 1 }; };
   novoIdLancamento_ = function () { return 'LAN-1'; };
   proximaLinhaLancamento_ = function () { return 2; };
-  gravarLinhaLancamento_ = function () { return { ok: true }; };
-  aba_ = function () {
+
+  // Duas abas de verdade, nao uma so. Desde a V4.40.1 o gravador LE DE VOLTA
+  // a linha que acabou de escrever, entao um duble que aceita a escrita e nao
+  // guarda nada reprova o codigo por culpa propria.
+  aba_ = function (nome) {
+    const dados = nome === ABAS.LANCAMENTOS ? __lanc : __odo;
     return {
-      getLastRow: function () { return __odo.length + 1; },
-      getMaxRows: function () { return __odo.length + 1; },
+      getLastRow: function () { return dados.length + 1; },
+      getMaxRows: function () { return dados.length + 200; },
+      getMaxColumns: function () { return 30; },
       getRange: function (linha, coluna, nL, nC) {
         return {
           getValues: function () {
             const saida = [];
             for (let i = 0; i < (nL || 1); i++) {
-              const l = __odo[linha - 2 + i] || [];
+              const l = dados[linha - 2 + i] || [];
               saida.push(l.slice(coluna - 1, coluna - 1 + (nC || 1)));
             }
             return saida;
           },
-          setValue: function (v) { __odo[linha - 2][coluna - 1] = v; return this; },
-          setValues: function () { return this; },
+          setValue: function (v) {
+            if (!dados[linha - 2]) dados[linha - 2] = [];
+            dados[linha - 2][coluna - 1] = v;
+            return this;
+          },
+          setValues: function (vals) {
+            vals.forEach(function (l, i) {
+              const alvo = linha - 2 + i;
+              if (!dados[alvo]) dados[alvo] = [];
+              l.forEach(function (v, j) { dados[alvo][coluna - 1 + j] = v; });
+            });
+            return this;
+          },
+          clearContent: function () { return this; },
           setNumberFormat: function () { return this; },
+          getDataValidation: function () { return null; },
+          setDataValidation: function () { return this; },
         };
       },
     };
@@ -123,6 +142,7 @@ const dia = vm.runInContext('(function (m, d) { return new Date(2026, m, d, 12, 
 
 /** Caminhão de rota: ~400 km/dia, leitura a cada 2 dias. */
 function montarCaminhao() {
+  ctx.__lanc = [];
   const linhas = [];
   let km = 100000;
   for (let i = 0; i < 10; i++) {

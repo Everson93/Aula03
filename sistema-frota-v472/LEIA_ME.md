@@ -4705,6 +4705,80 @@ longe, parece aprovação. As provas passaram a usar um acessor que não estoura
 `Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
 sistema*.
 
+## V4.40.2 — achado: ele gravava POR CIMA de um lançamento existente
+
+*"Ainda não está gravando o lançamento de combustível, ele dá mensagem de
+salvo mas não salva."*
+
+"Diz salvo e não salva" mudou o diagnóstico: o servidor **devolvia sucesso**.
+Então a linha era escrita — em algum lugar.
+
+### O defeito
+
+`ultimaLinhaLancamentoReal_` perguntava qual é a última linha com dado assim:
+
+```js
+sheet.getRange(max, COL_LANC.PLACA).getNextDataCell(Direction.UP).getRow()
+```
+
+Isso é o **Ctrl+Seta** do Sheets, e ele tem dois comportamentos:
+
+| partindo de | vai para |
+|---|---|
+| célula **vazia** | a primeira com conteúdo acima ✔ |
+| célula **cheia** | o **topo do bloco contíguo** ✘ |
+
+Quando a aba Lançamentos enche **até a última linha**, a célula de partida
+deixa de estar vazia e a função devolve uma linha lá em cima. O lançamento
+seguinte era gravado **por cima de um já existente**, e o sistema dizia
+"gravado".
+
+**Sumiam dois de uma vez:** o novo, que nunca aparecia, e o antigo, que foi
+sobrescrito sem deixar rastro.
+
+### A guarda existia — num lugar só
+
+`garantirCapacidadeLancamentosBase_` já fazia `getValue() !== '' ? max : …`.
+Quem escreveu aquilo conhecia a armadilha. Os **outros dois** lugares que
+fazem a mesma pergunta — `ultimaLinhaLancamentoReal_` e
+`ultimaLinhaRealPorColuna_` — não tinham. É, de novo, o defeito que mais
+voltou neste projeto: **um lado do contrato certo e os outros não**. Agora há
+um dono só, `ultimaLinhaComDado_`, e sobrou **uma** chamada a
+`getNextDataCell` no sistema inteiro — o que a suíte cobra.
+
+### E a regra que fecha o buraco para sempre
+
+O gravador passou a **ler de volta** a linha que acabou de escrever e comparar
+**ID e placa**. Se não bater, devolve recusa dizendo em que linha gravou e o
+que encontrou lá.
+
+Dizer "gravado" sem conferir é prometer o que não se verificou — e foi
+exatamente assim que isto passou despercebido: mensagem de sucesso, base do
+mesmo tamanho. Qualquer outra causa futura (aba protegida, filtro, permissão)
+agora aparece em vez de sumir.
+
+### Como a suíte achou
+
+A `conferir_gravacao_lancamento.js` da V4.40.1 tinha um `getNextDataCell`
+ingênuo, que devolvia sempre a última linha com dado — **escondendo
+justamente este defeito**. Ensinei o dublê a imitar o Ctrl+Seta de verdade,
+nos dois comportamentos, e o caso "aba cheia até a última linha" reprovou na
+hora.
+
+A conferência de leitura também reprovou a suíte do KM alto, cujo dublê
+aceitava a escrita e não guardava nada. Dublê que aceita tudo não prova nada:
+ganhou uma aba Lançamentos de verdade.
+
+### Suítes
+
+`conferir_gravacao_lancamento.js`: 23 → **29 provas**. **42 suítes, ~1.681
+provas.** Por mutação, 6 defeitos reintroduzidos, **6 pegos**.
+
+### Instalação
+
+`Codigo.gs`. **Não precisa** rodar *Instalar / atualizar sistema* — mas se a
+sua aba Lançamentos estiver cheia, rode: é ele que amplia a base.
+
 ---
 
 # Pendente

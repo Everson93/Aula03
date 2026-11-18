@@ -643,7 +643,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.40.1';
+const VERSAO_SISTEMA = '4.40.2';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1185,13 +1185,36 @@ function normalizaPlaca_(valor) {
 }
 
 /** Última linha realmente ocupada por um lançamento, usando a coluna Placa e ignorando spills de ARRAYFORMULA. */
-function ultimaLinhaLancamentoReal_() {
-  const sheet = ss_().getSheetByName(ABAS.LANCAMENTOS);
+/**
+ * Ultima linha com dado numa coluna — com a guarda que o Ctrl+Seta exige.
+ *
+ * `getNextDataCell(UP)` a partir de uma celula CHEIA sobe para o TOPO do
+ * bloco contiguo, nao para a ultima linha com dado. Quando a aba enche ate a
+ * ultima linha, isso devolvia uma linha la em cima, e o lancamento seguinte
+ * era gravado POR CIMA de um existente — com o sistema dizendo "gravado".
+ * Sumiam DOIS de uma vez: o novo, que nunca aparecia, e o antigo, que foi
+ * sobrescrito.
+ *
+ * A guarda ja existia em `garantirCapacidadeLancamentosBase_` e faltava nos
+ * outros dois lugares que fazem a mesma pergunta. E o defeito que mais voltou
+ * neste projeto: um lado do contrato certo e os outros nao. Agora ha um dono.
+ */
+function ultimaLinhaComDado_(sheet, coluna) {
   if (!sheet) return 1;
   const max = sheet.getMaxRows();
   if (max < 2) return 1;
-  const linha = sheet.getRange(max, COL_LANC.PLACA)
-    .getNextDataCell(SpreadsheetApp.Direction.UP).getRow();
+  const celula = sheet.getRange(max, coluna);
+  const valor = celula.getValue();
+  if (String(valor === null || valor === undefined ? '' : valor).trim() !== '') return max;
+  try {
+    return Math.max(1, celula.getNextDataCell(SpreadsheetApp.Direction.UP).getRow());
+  } catch (e) {
+    return sheet.getLastRow();
+  }
+}
+
+function ultimaLinhaLancamentoReal_() {
+  const linha = ultimaLinhaComDado_(ss_().getSheetByName(ABAS.LANCAMENTOS), COL_LANC.PLACA);
   return linha >= 2 ? linha : 1;
 }
 
@@ -1371,11 +1394,9 @@ function reduzirCapacidadeLancamentos_() {
   const atual = Number(props.getProperty(PROP_CAPACIDADE_LANCAMENTOS_) || 0) || lanc.getMaxRows();
   // Última linha com QUALQUER dado digitado (A:I e K:O; J é fórmula).
   function ultimaComDado(sheet, colunas) {
-    const max = sheet.getMaxRows();
     let ultima = 1;
     colunas.forEach(function (c) {
-      const v = sheet.getRange(max, c).getValue() !== '' ? max
-        : sheet.getRange(max, c).getNextDataCell(SpreadsheetApp.Direction.UP).getRow();
+      const v = ultimaLinhaComDado_(sheet, c);
       if (v > ultima) ultima = v;
     });
     return ultima;
@@ -4075,6 +4096,25 @@ function salvarLancamento_(dados, opcoesSalvar) {
       } catch (e) {}
       return { ok: false, mensagem: 'Não foi possível gravar: ' + erroGravacao.message +
         ' Rode "Instalar / atualizar sistema" na planilha e tente de novo.' };
+    }
+
+    // Le de volta o que acabou de gravar. Dizer "gravado" sem conferir e
+    // prometer o que nao se verificou — e foi exatamente assim que a linha
+    // escrita por cima de outra passou despercebida: mensagem de sucesso,
+    // base do mesmo tamanho.
+    SpreadsheetApp.flush();
+    const conferido = lancamentos.getRange(linha, 1, 1, TOTAL_COL_LANC).getValues()[0];
+    if (String(conferido[L_.ID] || '').trim() !== idLancamento ||
+        normalizaPlaca_(conferido[L_.PLACA]) !== placa) {
+      return {
+        ok: false,
+        mensagem: 'O sistema gravou na linha ' + linha + ' da aba "' + ABAS.LANCAMENTOS +
+          '" e, ao reler, encontrou outra coisa (' +
+          (String(conferido[L_.PLACA] || '').trim() || 'vazio') + ' / ' +
+          (String(conferido[L_.ID] || '').trim() || 'sem ID') + '). O lançamento NÃO foi ' +
+          'registrado. Rode "Instalar / atualizar sistema" para a base ser ampliada e ' +
+          'tente de novo; se repetir, me mostre esta mensagem.',
+      };
     }
 
     let mensagem = 'Lançamento gravado: ' + placa + ' • ' + dados.tipo +
@@ -16941,12 +16981,7 @@ function limparBackupsAntigos_() {
 }
 
 function ultimaLinhaRealPorColuna_(sheet, coluna) {
-  if (!sheet || sheet.getMaxRows() < 2) return 1;
-  try {
-    const linha = sheet.getRange(sheet.getMaxRows(), coluna)
-      .getNextDataCell(SpreadsheetApp.Direction.UP).getRow();
-    return Math.max(1, linha);
-  } catch (e) { return sheet.getLastRow(); }
+  return ultimaLinhaComDado_(sheet, coluna);
 }
 
 function criarBackupPreMigracao_(motivo) {

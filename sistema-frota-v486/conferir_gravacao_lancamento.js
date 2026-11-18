@@ -97,9 +97,29 @@ function novaAba(nome, cabecalho, linhas) {
         setBackground: () => r, setWrap: () => r, setFontStyle: () => r,
         merge: () => r, insertCheckboxes: () => r, setDataValidation: () => r,
         getDataValidation: function () { return null; },
-        getNextDataCell: function () {
-          let ultima = aba.getLastRow();
-          return aba.getRange(Math.max(ultima, 1), coluna, 1, 1);
+        /**
+         * Ctrl+Seta de verdade, que é o que o Sheets faz:
+         *  - partindo de célula VAZIA, pula para a primeira com conteúdo;
+         *  - partindo de célula CHEIA, vai para a ÚLTIMA do bloco contíguo —
+         *    ou seja, subindo, para o TOPO do bloco.
+         * O dublê antigo devolvia sempre a última linha com dado, e com isso
+         * escondia exatamente o defeito que se procura aqui.
+         */
+        getNextDataCell: function (direcao) {
+          const cheia = function (l) {
+            const v = (aba.dados[l - 1] || [])[coluna - 1];
+            return v !== '' && v !== null && v !== undefined;
+          };
+          const passo = direcao === 'UP' ? -1 : 1;
+          const limite = direcao === 'UP' ? 1 : aba.getMaxRows();
+          let l = linha;
+          if (!cheia(l)) {
+            while (l !== limite && !cheia(l + passo)) l += passo;
+            if (cheia(l + passo)) l += passo;
+          } else {
+            while (l !== limite && cheia(l + passo)) l += passo;
+          }
+          return aba.getRange(l, coluna, 1, 1);
         },
         getRow: function () { return linha; },
         offset: function (dl, dc, nl, nc) { return aba.getRange(linha + dl, coluna + dc, nl || nL, nc || nC); },
@@ -311,7 +331,63 @@ ok('mas a mensagem acusa a leitura ANTERIOR',
 ok('e manda corrigir no histórico, não forçar',
   /Histórico \/ estornar/.test(r.mensagem), r.mensagem);
 
-console.log('\n4. A base fica íntegra');
+console.log('\n4. Aba cheia até a última linha: não pode gravar por cima');
+// `getNextDataCell(UP)` a partir de uma celula CHEIA sobe para o TOPO do
+// bloco contiguo, nao para a ultima linha com dado. Quando a aba enche ate o
+// fim, `ultimaLinhaLancamentoReal_` devolvia uma linha la em cima — e o
+// lancamento seguinte era gravado POR CIMA de um ja existente, com o sistema
+// dizendo "gravado". Dois lancamentos somem de uma vez: o novo, que nunca
+// aparece, e o antigo, que foi sobrescrito.
+(function () {
+  const lanc = abas['Lançamentos'];
+  const antes = linhasGravadas().length;
+  // Enche a aba ate a ultima linha.
+  while (lanc.dados.length < lanc.getMaxRows()) lanc.dados.push(new Array(lanc.maxCols).fill(''));
+  for (let i = antes + 1; i < lanc.getMaxRows(); i++) {
+    lanc.dados[i] = [d(2026, 11, 10), 'CCC 0003', 'Pneus', '', 100, 'NF ' + i, '', 'DEPOSITO',
+      'Truck Normal', '', 'LAN-ANTIGO-' + i, '', '', '', ''];
+  }
+  const cheias = linhasGravadas().length;
+  const r2 = gravar({
+    placa: 'AAA 0001', tipo: 'Pneus', data: '2026-11-19', valor: 999, documento: 'NF CHEIA',
+  });
+  const depois = linhasGravadas().length;
+  ok('ou grava numa linha nova, ou recusa — nunca por cima',
+    r2.ok === false || depois === cheias + 1,
+    'disse "' + String(r2.mensagem).slice(0, 80) + '" e a base foi de ' + cheias + ' para ' + depois);
+  ok('e, quando não dá para gravar, ele DIZ que não gravou',
+    r2.ok === true ||
+    /não foi possível gravar|NÃO foi registrado/i.test(String(r2.mensagem)),
+    'mensagem de sucesso sobre uma gravação que não aconteceu é o pior defeito possível: ' +
+    'ninguém procura o que já foi dado como feito');
+  ok('e nenhum lançamento antigo foi sobrescrito',
+    linhasGravadas().filter(function (l) { return /^LAN-ANTIGO/.test(String(l[10])); }).length >=
+      cheias - antes,
+    'o lançamento sobrescrito some sem deixar rastro');
+})();
+
+console.log('\n4b. A conferência de leitura vale por si');
+// Mesmo que a linha seja calculada certo, gravar e NAO conferir deixa a porta
+// aberta para qualquer outra causa (permissao, aba protegida, filtro) passar
+// como sucesso.
+ok('o servidor relê a linha antes de dizer "gravado"', (function () {
+  const fonte = fs.readFileSync(arquivo, 'utf8');
+  // A frase está quebrada em duas linhas no fonte; procurar a string inteira
+  // não acha, e a prova passaria a medir a formatação em vez do conteúdo.
+  return /const conferido = lancamentos\.getRange\(linha, 1, 1, TOTAL_COL_LANC\)\.getValues\(\)\[0\];/
+    .test(fonte) && /O lançamento NÃO foi /.test(fonte);
+})());
+ok('e a conferência compara o ID E a placa', (function () {
+  const fonte = fs.readFileSync(arquivo, 'utf8');
+  return /conferido\[L_\.ID\][\s\S]{0,120}normalizaPlaca_\(conferido\[L_\.PLACA\]\) !== placa/.test(fonte);
+})(), 'só o ID não basta: a linha pode ter o ID certo e a placa de outro lançamento');
+ok('a pergunta "qual é a última linha" tem um dono só', (function () {
+  const fonte = fs.readFileSync(arquivo, 'utf8');
+  return (fonte.match(/^function ultimaLinhaComDado_/gm) || []).length === 1 &&
+    (fonte.match(/getNextDataCell\(SpreadsheetApp\.Direction\.UP\)/g) || []).length === 1;
+})(), 'a guarda do Ctrl+Seta existia num lugar e faltava em dois');
+
+console.log('\n5. A base fica íntegra');
 ok('toda linha gravada tem data, placa, tipo e ID', linhasGravadas().every(function (l) {
   return l[0] && l[1] && l[2] && /^LAN-/.test(String(l[10]));
 }), JSON.stringify(linhasGravadas().map(function (l) { return [l[1], l[2], l[10]]; })));
