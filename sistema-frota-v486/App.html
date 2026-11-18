@@ -1926,6 +1926,12 @@
           if (ehCombustivel()) consultarCustoBomba();
           if(el('naturezaOficina') && el('naturezaOficina').options.length) el('naturezaOficina').selectedIndex = 0;
           el('forcarKm').checked = false;
+          // A caixa "Confirmo: o KM está certo" vive dentro de `avisoKmAlto`,
+          // e sobrevivia ao salvamento: `consultarOdometro` sai cedo quando a
+          // placa está vazia — e ela acabou de ser limpa —, então nada a
+          // apagava. A confirmação ficava marcada e DESLIGAVA a guarda para
+          // todo o resto da sessão, em silêncio.
+          if (el('avisoKmAlto')) el('avisoKmAlto').innerHTML = '';
           consultarOdometro();
           carregarUltimos();
           if (el('placa')) el('placa').focus();

@@ -643,7 +643,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.40.0';
+const VERSAO_SISTEMA = '4.40.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -3794,6 +3794,24 @@ function avaliarPercursoAlto_(placa, km, data, anteriorOpcional) {
   };
 }
 
+/**
+ * A leitura ANTERIOR e que parece errada?
+ *
+ * O caso que travava o veiculo: um KM com digito a mais entra na base; dali
+ * em diante TODO lancamento seguinte vem menor que ele e e recusado com
+ * "marque forcar". E forcar e a pior saida possivel — grava como se o
+ * odometro tivesse sido trocado e deixa o numero errado na base, estragando
+ * o km/l daquele veiculo para sempre.
+ *
+ * Entao, antes de mandar forcar, o sistema pergunta: a leitura anterior
+ * passaria no teste de percurso contra a que veio ANTES dela? Se nao passa,
+ * o erro provavelmente e ela, e a saida certa e corrigi-la.
+ */
+function leituraAnteriorSuspeita_(placa, anterior) {
+  if (!anterior || !ehDataReal_(anterior.data)) return { alto: false };
+  return avaliarPercursoAlto_(placa, anterior.km, anterior.data);
+}
+
 /** A frase do aviso, uma vez só: a tela e o servidor dizem a MESMA coisa. */
 function textoPercursoAlto_(a) {
   return 'Esse KM dá ' + numBR_(a.percurso, 0) + ' km em ' +
@@ -3963,9 +3981,18 @@ function salvarLancamento_(dados, opcoesSalvar) {
       } else if (data) {
         const vizinhos = vizinhosOdometro_(placa, data);
         if (vizinhos.anterior && km < vizinhos.anterior.km && !dados.forcarKm) {
+          const suspeita = leituraAnteriorSuspeita_(placa, vizinhos.anterior);
           erros.push('KM ' + km.toLocaleString('pt-BR') + ' é menor que a leitura anterior (' +
             vizinhos.anterior.km.toLocaleString('pt-BR') + ' em ' + formatarData_(vizinhos.anterior.data) +
-            '). Marque "forçar" se houve troca/zeragem real do odômetro.');
+            '). ' + (suspeita.alto
+              ? 'E essa leitura anterior é que parece errada: ela deu ' +
+                numBR_(suspeita.kmPorDia, 0) + ' km por dia, ' +
+                (suspeita.amostras >= 3
+                  ? 'contra ' + numBR_(suspeita.mediana, 0) + ' km/dia normais deste veículo'
+                  : 'acima do teto de ' + numBR_(suspeita.limite, 0) + ' km/dia') +
+                '. Corrija-a em "⛽ Histórico / estornar" — forçar aqui deixaria o número ' +
+                'errado na base e o km/l do veículo estragado.'
+              : 'Marque "forçar" se houve troca/zeragem real do odômetro.'));
         }
         if (vizinhos.posterior && km > vizinhos.posterior.km && !dados.forcarKm) {
           erros.push('KM ' + km.toLocaleString('pt-BR') + ' é maior que uma leitura posterior (' +

@@ -4631,6 +4631,80 @@ cálculo já descarta. Dentro da sequência, cai.
 uma vez: o parâmetro `KM_DIA_MAXIMO` é novo. Sem rodar, vale o padrão de
 1.500 km/dia (`paramOuPadrao_`), e nada quebra.
 
+## V4.40.1 — revisão do caminho de gravação
+
+*"Faça uma revisão no código, não está salvando lançamentos."*
+
+Montei uma planilha falsa completa — Lançamentos, Odômetro, Veículos, Centros,
+Carga na Bomba — e gravei de verdade, sem dublar nada do caminho de escrita.
+**O caminho grava.** Combustível externo, interno (pelo preço do tanque),
+oficina, pneus, com e sem KM: tudo entra, com ID, com o KM indo para o
+Odômetro e com o centro e a categoria fotografados do cadastro.
+
+O que aparece como "não salva" são **recusas** — e uma delas trava o veículo.
+
+### O veículo que travava
+
+Reproduzido: um KM com dígito a mais entra na base (ou já entrou, antes da
+V4.40). Dali em diante **todo lançamento seguinte vem menor que ele** e cai na
+guarda de "KM menor que a leitura anterior" — que existe desde o começo. E a
+mensagem mandava:
+
+> *Marque "forçar" se houve troca/zeragem real do odômetro.*
+
+**Forçar é a pior saída possível aqui:** grava como se o odômetro tivesse sido
+trocado e **deixa o número errado na base**, estragando o km/l daquele veículo
+para sempre. O conselho estava certo para o caso que ele imaginava (troca de
+odômetro) e errado para o caso que de fato acontece.
+
+Agora, antes de mandar forçar, o sistema pergunta: **a leitura anterior
+passaria no teste de percurso contra a que veio antes dela?** Se não passa, o
+erro é ela, e a mensagem muda:
+
+> *KM 105.800 é menor que a leitura anterior (1.048.000 em 16/11/2026). E essa
+> leitura anterior é que parece errada: ela deu 314.267 km por dia, contra 400
+> km/dia normais deste veículo. Corrija-a em "⛽ Histórico / estornar" —
+> forçar aqui deixaria o número errado na base e o km/l do veículo estragado.*
+
+Numa queda legítima — troca ou zeragem de odômetro — o conselho continua sendo
+"forçar". As duas situações têm respostas diferentes, e agora o sistema
+distingue qual é qual.
+
+### E um defeito meu da V4.40
+
+A caixa **"Confirmo: o KM está certo"** vive dentro do aviso, e **sobrevivia
+ao salvamento**: `consultarOdometro` sai cedo quando a placa está vazia — e a
+placa acabou de ser limpa —, então nada apagava o aviso. A confirmação ficava
+marcada e **desligava a guarda para o resto da sessão, em silêncio**. Agora
+ela é apagada no mesmo ponto em que o "forçar" é desmarcado.
+
+### O buraco que a revisão expôs
+
+**Nenhuma suíte gravava de verdade.** Todas dublavam
+`gravarLinhaLancamento_` e companhia, então o caminho que o operador usa todo
+dia não tinha prova de ponta a ponta — e foi por isso que precisei de uma
+sonda para responder a uma pergunta que a suíte deveria responder sozinha.
+
+A sonda virou suíte: `conferir_gravacao_lancamento.js`, **23 provas**, com uma
+aba falsa que responde `getRange`, `setValues`, `getLastRow` e
+`getNextDataCell` como a de verdade, lança quando o intervalo passa da última
+coluna, e cria as datas **dentro do vm** (`instanceof Date` não atravessa
+realm, e `lerCargasBomba_` usa `instanceof`).
+
+Por mutação, 9 defeitos reintroduzidos, **9 pegos**. Um deles — "grava sempre
+na linha 2" — **matava a suíte** em vez de reprová-la, porque uma prova
+indexava `linhasGravadas()[1]` direto; suíte morta não produz FALHA e, lida de
+longe, parece aprovação. As provas passaram a usar um acessor que não estoura.
+
+### Suítes
+
+**42 suítes, ~1.675 provas.**
+
+### Instalação
+
+`Codigo.gs` e `App.html`. **Não precisa** rodar *Instalar / atualizar
+sistema*.
+
 ---
 
 # Pendente

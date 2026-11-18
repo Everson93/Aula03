@@ -52,6 +52,7 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     ritmoDoVeiculo_, avaliarPercursoAlto_, textoPercursoAlto_, salvarLancamento_,
+    leituraAnteriorSuspeita_,
     ajustarLeituraOdometro_, webContextoLancamento, vizinhosOdometro_,
     FATOR_KM_ALTO_, PISO_KM_DIA_, L_, TOTAL_COL_LANC,
   });
@@ -281,6 +282,40 @@ aj = ctx.ajustarLeituraOdometro_(
   { placa: 'AAA 0001', data: '2026-11-19', km: 108000 }, 9000000, true);
 ok('com a confirmação, grava', aj.ok === true, aj.mensagem);
 
+console.log('\n8b. Depois que um KM errado ENTRA, o veículo não pode travar');
+// O caso que motivou a revisão: um KM com dígito a mais entra na base e, dali
+// em diante, TODO lançamento seguinte vem menor que ele e é recusado. A
+// mensagem mandava "marque forçar" — que é a pior saída: grava como se o
+// odômetro tivesse sido trocado e deixa o número errado na base, estragando
+// o km/l daquele veículo para sempre.
+montarCaminhao();
+ctx.__odo.push([dia(10, 20), 'AAA 0001', 1048000]);   // o dígito a mais, já gravado
+vm.runInContext('ODOMETRO_EXEC_CACHE_ = null; ODOMETRO_INDICE_EXEC_ = null;', ctx);
+const travado = ctx.salvarLancamento_({
+  placa: 'AAA 0001', tipo: 'Combustivel Terceiros', data: '2026-11-22',
+  valor: 600, litros: 100, km: 108800, documento: 'NF 10',
+});
+ok('o lançamento seguinte ainda é recusado', travado.ok === false, travado.mensagem);
+ok('mas a mensagem acusa a leitura ANTERIOR, não o que a pessoa digitou',
+  /essa leitura anterior é que parece errada/.test(travado.mensagem), travado.mensagem);
+ok('e manda corrigir, não forçar',
+  /Histórico \/ estornar/.test(travado.mensagem) &&
+  /forçar aqui deixaria o número errado na base/.test(travado.mensagem),
+  'forçar grava como troca de odômetro e deixa o erro de pé');
+ok('a leitura suspeita é identificada pela mesma conta de km/dia',
+  ctx.leituraAnteriorSuspeita_('AAA 0001', { km: 1048000, data: dia(10, 20) }).alto === true);
+// Quando a anterior esta certa, o conselho continua sendo "forcar": troca de
+// odometro e zeragem existem de verdade.
+ok('mas numa queda legítima o conselho continua sendo "forçar"', (function () {
+  montarCaminhao();
+  const r = ctx.salvarLancamento_({
+    placa: 'AAA 0001', tipo: 'Combustivel Terceiros', data: '2026-11-21',
+    valor: 600, litros: 100, km: 50, documento: 'NF 11',
+  });
+  return r.ok === false && /Marque "forçar"/.test(r.mensagem) &&
+    !/leitura anterior é que parece errada/.test(r.mensagem);
+})(), 'troca de odômetro e zeragem existem de verdade');
+
 console.log('\n9. A tela sabe antes de a pessoa clicar em gravar');
 montarCaminhao();
 const ctxv = ctx.webContextoLancamento('T', 'AAA 0001');
@@ -306,6 +341,22 @@ ok('mudar a DATA reavalia (ela entra na conta de km/dia)',
   /avaliarKmAlto\(\);\s*\n\s*\}\);/.test(app));
 ok('e a correção de leitura pergunta em vez de só recusar',
   /r\.kmAlto && confirm\(/.test(app));
+// A caixa de confirmacao vive dentro de `avisoKmAlto`. Ela sobrevivia ao
+// salvamento — `consultarOdometro` sai cedo com a placa vazia, e a placa
+// acabou de ser limpa —, e a confirmacao marcada DESLIGAVA a guarda para o
+// resto da sessao, em silencio.
+ok('a confirmação é apagada depois de gravar',
+  /if \(el\('avisoKmAlto'\)\) el\('avisoKmAlto'\)\.innerHTML = '';/.test(app),
+  'confirmação que sobrevive ao salvamento desliga a guarda sem ninguém notar');
+ok('e isso acontece dentro do gravar(), junto do "forçar"', (function () {
+  // Ancorado em `gravar()`: "forcarKm.checked = false" tambem aparece na
+  // montagem da tela, e procurar solto achava a ocorrencia errada — a prova
+  // media a distancia entre dois pontos que nao tem relacao nenhuma.
+  const i = app.indexOf('function gravar(permitirDuplicado)');
+  const corpo = app.slice(i, app.indexOf('\n  function ', i + 10));
+  return /el\('forcarKm'\)\.checked = false;[\s\S]{0,500}if \(el\('avisoKmAlto'\)\) el\('avisoKmAlto'\)\.innerHTML = '';/
+    .test(corpo);
+})(), 'as duas caixas têm o mesmo ciclo de vida');
 ok('o servidor tem um dono só da frase',
   (fonte.match(/^function textoPercursoAlto_/gm) || []).length === 1 &&
   (fonte.match(/textoPercursoAlto_\(/g) || []).length >= 3,
