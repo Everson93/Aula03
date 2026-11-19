@@ -1887,6 +1887,35 @@
     }).webUltimosLancamentos(TOKEN, 8);
   }
 
+  /**
+   * Em QUE planilha e em QUE linha o lançamento foi escrito.
+   *
+   * O app da web acha a planilha por um ID guardado nas propriedades do
+   * script. Numa CÓPIA da planilha esse ID continua apontando para a
+   * original — o sistema grava certo, no arquivo errado, e a tela diz
+   * "gravado" com razão. Sem este botão não havia como ver isso de dentro
+   * do app.
+   */
+  var APOSTROFA = String.fromCharCode(39);
+
+  function verOndeGravou(id) {
+    var caixa = el('msgLanc');
+    caixa.innerHTML = '<div class="carregando">conferindo onde foi gravado…</div>';
+    google.script.run
+      .withSuccessHandler(function (d) {
+        caixa.innerHTML = '<div class="ok-caixa"><b>Onde o sistema gravou</b>' +
+          '<pre style="white-space:pre-wrap;margin:6px 0 0;font-size:12px">' +
+          esc(d.texto) + '</pre>' +
+          '<div class="sub2" style="margin-top:6px">' +
+          '<a href="' + esc(d.planilha.url) + '" target="_blank" rel="noopener">' +
+          'abrir a planilha ' + esc(d.planilha.nome) + '</a></div></div>';
+      })
+      .withFailureHandler(function (e) {
+        caixa.innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
+      })
+      .webDiagnosticoGravacao(TOKEN, id || '');
+  }
+
   function gravar(permitirDuplicado) {
     var botao = el('btnGravar');
     botao.disabled = true;
@@ -1916,7 +1945,20 @@
           }
         }
         el('msgLanc').innerHTML = '<div class="' + (r.ok ? 'ok-caixa' : 'erro-caixa') + '">' +
-          esc(r.mensagem) + '</div>';
+          esc(r.mensagem) +
+          // "Gravado" e uma promessa; o link e a prova. Quem nao achou o
+          // lancamento na planilha descobre aqui, em um clique, em QUE arquivo
+          // e em QUE linha ele foi escrito — as duas informacoes que faltavam.
+          (r.ok && r.id
+            // A apostrofa do onclick vem de fromCharCode de proposito: barra
+            // invertida dentro de literal montado por script ja quebrou
+            // <script> inteiro neste projeto, e um <script> com erro de
+            // sintaxe nao define FUNCAO NENHUMA.
+            ? '<div class="sub2" style="margin-top:6px">' +
+              '<a href="#" onclick="verOndeGravou(' + APOSTROFA + esc(r.id) +
+              APOSTROFA + ');return false">🔎 conferir onde foi gravado</a></div>'
+            : '') +
+          '</div>';
         if (r.ok) {
           // A placa entra na limpeza: o lançamento seguinte quase nunca é do
           // mesmo veículo, e deixá-la preenchida já gerou gasto lançado na

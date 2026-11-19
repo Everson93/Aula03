@@ -643,7 +643,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.40.3';
+const VERSAO_SISTEMA = '4.41.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1258,6 +1258,230 @@ function linhaLivreParaLancamento_(sheet) {
   }
   return { erro: 'ocupada', candidata: candidata, max: max, quantas: quantas };
 }
+
+// ------------------------------------------------- onde foi gravado? (V4.41)
+/**
+ * O diagnostico que fecha a duvida "o sistema diz gravado e nao aparece".
+ *
+ * Depois da V4.40.3 o servidor escreve, rele a linha e so entao diz "gravado".
+ * Quando ele diz isso, o lancamento ESTA em alguma aba Lancamentos — mas ele
+ * nao dizia em QUAL planilha nem em QUE linha, e sem essas duas informacoes a
+ * pessoa nao tem como procurar. As tres causas que sobram sao todas visiveis
+ * aqui:
+ *
+ * 1. Planilha diferente. O app da web abre a planilha por `PLANILHA_ID`
+ *    (Propriedades do script). Quem faz uma COPIA da planilha leva o script e
+ *    as propriedades junto: a copia continua escrevendo na ORIGINAL. O nome, o
+ *    ID e o link ficam abaixo — se nao for a planilha que esta aberta, e isso.
+ * 2. Linha longe. A gravacao vai depois da ultima linha com placa. Um dado
+ *    solto na linha 9.000 (importacao antiga, teste, colagem) empurra todo
+ *    lancamento novo para a linha 9.001 — ele esta la, abaixo de milhares de
+ *    linhas vazias, e quem olha o fim dos dados nao ve nada.
+ * 3. Filtro/classificacao na aba escondendo a linha nova.
+ *
+ * So LE. Nao conserta nada: limpar dado solto e decisao do usuario, com a
+ * lista na frente (`sobrasAbaixoDosLancamentos_`).
+ */
+function diagnosticoGravacao_(idProcurado) {
+  exigirExecucaoLeitura_();
+  const planilha = ss_();
+  let ativaId = '';
+  try {
+    const ativa = SpreadsheetApp.getActiveSpreadsheet();
+    ativaId = ativa ? ativa.getId() : '';
+  } catch (e) { ativaId = ''; }
+  const guardado = String(
+    PropertiesService.getScriptProperties().getProperty('PLANILHA_ID') || '');
+  const sheet = aba_(ABAS.LANCAMENTOS);
+  const maxLinhas = sheet.getMaxRows();
+  const ultimaPlaca = ultimaLinhaLancamentoReal_();
+  const quantasLinhas = ultimaPlaca >= 2 ? ultimaPlaca - 1 : 0;
+
+  // Ultima linha com dado em QUALQUER coluna digitada (a J e formula). Se for
+  // mais embaixo que a ultima com placa, existe dado solto — a causa 2.
+  let ultimaQualquer = 1;
+  let colunaDaUltima = 0;
+  for (let c = 1; c <= TOTAL_COL_LANC; c++) {
+    if (c === COL_LANC.PERIODO) continue;
+    const l = ultimaLinhaRealPorColuna_(sheet, c);
+    if (l > ultimaQualquer) { ultimaQualquer = l; colunaDaUltima = c; }
+  }
+
+  // Uma leitura so da faixa inteira: conta placas de verdade, acha buracos e
+  // monta os ultimos lancamentos sem voltar na planilha.
+  let comPlaca = 0;
+  const ultimos = [];
+  if (quantasLinhas > 0) {
+    const faixa = sheet.getRange(2, 1, quantasLinhas, TOTAL_COL_LANC).getValues();
+    for (let i = 0; i < faixa.length; i++) {
+      if (String(faixa[i][L_.PLACA] == null ? '' : faixa[i][L_.PLACA]).trim() !== '') comPlaca++;
+    }
+    for (let i = faixa.length - 1; i >= 0 && ultimos.length < 8; i--) {
+      const l = faixa[i];
+      if (String(l[L_.PLACA] == null ? '' : l[L_.PLACA]).trim() === '') continue;
+      ultimos.push({
+        linha: i + 2,
+        data: ehDataReal_(l[L_.DATA]) ? formatarData_(l[L_.DATA]) : String(l[L_.DATA] || ''),
+        placa: String(l[L_.PLACA] || ''),
+        tipo: String(l[L_.TIPO] || ''),
+        litros: Number(l[L_.LITROS]) || 0,
+        valor: Number(l[L_.VALOR]) || 0,
+        id: String(l[L_.ID] || ''),
+      });
+    }
+    if (idProcurado) {
+      const alvo = String(idProcurado).trim().toUpperCase();
+      for (let i = 0; i < faixa.length; i++) {
+        if (String(faixa[i][L_.ID] || '').trim().toUpperCase() === alvo) {
+          const l = faixa[i];
+          return montarDiagnosticoGravacao_({
+            planilha: planilha, ativaId: ativaId, guardado: guardado,
+            maxLinhas: maxLinhas, ultimaPlaca: ultimaPlaca, ultimaQualquer: ultimaQualquer,
+            colunaDaUltima: colunaDaUltima, comPlaca: comPlaca, ultimos: ultimos,
+            procurado: {
+              id: String(idProcurado).trim(), achado: true, linha: i + 2,
+              placa: String(l[L_.PLACA] || ''), tipo: String(l[L_.TIPO] || ''),
+              valor: Number(l[L_.VALOR]) || 0,
+            },
+          });
+        }
+      }
+    }
+  }
+  return montarDiagnosticoGravacao_({
+    planilha: planilha, ativaId: ativaId, guardado: guardado,
+    maxLinhas: maxLinhas, ultimaPlaca: ultimaPlaca, ultimaQualquer: ultimaQualquer,
+    colunaDaUltima: colunaDaUltima, comPlaca: comPlaca, ultimos: ultimos,
+    procurado: idProcurado
+      ? { id: String(idProcurado).trim(), achado: false, linha: 0 } : null,
+  });
+}
+
+function montarDiagnosticoGravacao_(b) {
+  const planilha = b.planilha;
+  const copiaSuspeita = !!(b.ativaId && b.guardado && b.ativaId !== b.guardado);
+  return {
+    versao: VERSAO_SISTEMA,
+    planilha: {
+      nome: planilha.getName(),
+      id: planilha.getId(),
+      url: planilha.getUrl(),
+      origem: b.ativaId ? 'planilha aberta' : 'PLANILHA_ID das propriedades do script',
+      idGuardado: b.guardado,
+      copiaSuspeita: copiaSuspeita,
+    },
+    aba: {
+      nome: ABAS.LANCAMENTOS,
+      grade: b.maxLinhas,
+      ultimaLinhaComPlaca: b.ultimaPlaca,
+      ultimaLinhaComQualquerDado: b.ultimaQualquer,
+      colunaDoUltimoDado: b.colunaDaUltima ? nomeColunaLancamento_(b.colunaDaUltima) : '',
+      lancamentos: b.comPlaca,
+      linhasNoBloco: b.ultimaPlaca >= 2 ? b.ultimaPlaca - 1 : 0,
+      proximaLinha: proximaLinhaLancamento_(),
+      dadoSolto: b.ultimaQualquer > b.ultimaPlaca,
+      buracos: Math.max((b.ultimaPlaca >= 2 ? b.ultimaPlaca - 1 : 0) - b.comPlaca, 0),
+    },
+    ultimos: b.ultimos,
+    procurado: b.procurado,
+  };
+}
+
+/** Rotulo da coluna de Lançamentos, para o diagnóstico falar em português. */
+function nomeColunaLancamento_(coluna) {
+  const nomes = Object.keys(COL_LANC);
+  for (let i = 0; i < nomes.length; i++) {
+    if (COL_LANC[nomes[i]] === coluna) {
+      return nomes[i].toLowerCase().replace(/_/g, ' ') + ' (coluna ' + coluna + ')';
+    }
+  }
+  return 'coluna ' + coluna;
+}
+
+/**
+ * Dado solto ABAIXO do ultimo lancamento: linha com algo em alguma coluna e
+ * sem placa. E o que empurra a gravacao para a linha 9.001 e faz o lancamento
+ * novo "desaparecer". So lista — apagar e decisao de quem olha.
+ */
+function sobrasAbaixoDosLancamentos_() {
+  exigirExecucaoLeitura_();
+  const sheet = aba_(ABAS.LANCAMENTOS);
+  const ultimaPlaca = ultimaLinhaLancamentoReal_();
+  const inicio = Math.max(2, ultimaPlaca + 1);
+  let fim = 1;
+  for (let c = 1; c <= TOTAL_COL_LANC; c++) {
+    if (c === COL_LANC.PERIODO) continue;
+    const l = ultimaLinhaRealPorColuna_(sheet, c);
+    if (l > fim) fim = l;
+  }
+  if (fim < inicio) return { linhas: [], inicio: inicio, fim: fim };
+  const faixa = sheet.getRange(inicio, 1, fim - inicio + 1, TOTAL_COL_LANC).getValues();
+  const linhas = [];
+  faixa.forEach(function (l, i) {
+    const conteudo = [];
+    for (let c = 1; c <= TOTAL_COL_LANC; c++) {
+      if (c === COL_LANC.PERIODO) continue;
+      const v = l[c - 1];
+      if (String(v == null ? '' : v).trim() !== '') {
+        conteudo.push(nomeColunaLancamento_(c) + ' = ' + String(v).slice(0, 40));
+      }
+    }
+    if (conteudo.length) linhas.push({ linha: inicio + i, conteudo: conteudo.join(' • ') });
+  });
+  return { linhas: linhas, inicio: inicio, fim: fim };
+}
+
+/** O diagnóstico em texto corrido, para o menu da planilha e para a tela. */
+function textoDiagnosticoGravacao_(d) {
+  const p = [];
+  p.push('PLANILHA EM QUE O SISTEMA GRAVA');
+  p.push('  ' + d.planilha.nome);
+  p.push('  ' + d.planilha.url);
+  p.push('  (identificada pela ' + d.planilha.origem + ')');
+  if (d.planilha.copiaSuspeita) {
+    p.push('  ⚠ A planilha ABERTA não é esta. O script guarda o ID ' +
+      d.planilha.idGuardado + ', que é de outro arquivo — é o que acontece ' +
+      'quando se faz uma CÓPIA da planilha: a cópia continua gravando na ' +
+      'original. Rode "Instalar / atualizar sistema" nesta planilha para ' +
+      'apontar o sistema para ela.');
+  }
+  p.push('');
+  p.push('ABA "' + d.aba.nome + '"');
+  p.push('  ' + numBR_(d.aba.lancamentos, 0) + ' lançamento(s)');
+  p.push('  último na linha ' + d.aba.ultimaLinhaComPlaca +
+    ' • próximo vai para a linha ' + d.aba.proximaLinha +
+    ' • grade de ' + numBR_(d.aba.grade, 0) + ' linhas');
+  if (d.aba.dadoSolto) {
+    p.push('  ⚠ Existe dado solto até a linha ' + d.aba.ultimaLinhaComQualquerDado +
+      ' (' + d.aba.colunaDoUltimoDado + '), abaixo do último lançamento. ' +
+      'Não é o que faz o lançamento sumir, mas confunde a conferência.');
+  }
+  if (d.aba.buracos > 0) {
+    p.push('  ⚠ ' + numBR_(d.aba.buracos, 0) + ' linha(s) sem placa no meio do bloco.');
+  }
+  p.push('');
+  p.push('ÚLTIMOS LANÇAMENTOS GRAVADOS');
+  if (!d.ultimos.length) {
+    p.push('  nenhum');
+  } else {
+    d.ultimos.forEach(function (l) {
+      p.push('  linha ' + l.linha + ' • ' + l.data + ' • ' + l.placa + ' • ' + l.tipo +
+        (l.litros ? ' • ' + numBR_(l.litros, 3) + ' L' : '') +
+        ' • R$ ' + numBR_(l.valor) + ' • ' + l.id);
+    });
+  }
+  if (d.procurado) {
+    p.push('');
+    p.push(d.procurado.achado
+      ? 'ID ' + d.procurado.id + ': está na LINHA ' + d.procurado.linha +
+        ' (' + d.procurado.placa + ' • ' + d.procurado.tipo +
+        ' • R$ ' + numBR_(d.procurado.valor) + ').'
+      : 'ID ' + d.procurado.id + ': NÃO está nesta aba. Se o sistema disse ' +
+        '"gravado", ele gravou em outra planilha — confira o link acima.');
+  }
+  return p.join('\n');
+}
+
 
 /** Lista de placas cadastradas (coluna A da aba Veículos). */
 function dadosVeiculosExecucao_() {
@@ -4092,8 +4316,8 @@ function salvarLancamento_(dados, opcoesSalvar) {
       if (tanque.litros < litros) {
         return {
           ok: false,
-          mensagem: 'O tanque tem ' + tanque.litros.toFixed(3) + ' L de ' + produtoTanque +
-            ' em ' + formatarData_(data) + ', menos que os ' + litros.toFixed(3) +
+          mensagem: 'O tanque tem ' + numBR_(tanque.litros, 3) + ' L de ' + produtoTanque +
+            ' em ' + formatarData_(data) + ', menos que os ' + numBR_(litros, 3) +
             ' L deste abastecimento. Confira a carga da bomba ou a quantidade lançada.',
         };
       }
@@ -4170,12 +4394,18 @@ function salvarLancamento_(dados, opcoesSalvar) {
       };
     }
 
+    // A LINHA entra na mensagem de proposito. "Gravado" sem dizer onde nao da
+    // para conferir, e foi assim que a duvida "diz gravado e nao aparece" ficou
+    // de pe por tres versoes: o lancamento estava na linha 9.001, abaixo de
+    // milhares de linhas vazias, e ninguem tinha como saber.
     let mensagem = 'Lançamento gravado: ' + placa + ' • ' + dados.tipo +
       (ehOficina ? ' • ' + naturezaOficina : '') +
       (fornecedor ? ' • ' + fornecedor : '') +
-      ' • R$ ' + valorFinal.toFixed(2).replace('.', ',') + ' • ' + idLancamento;
+      (litros > 0 ? ' • ' + numBR_(litros, 3) + ' L' : '') +
+      ' • R$ ' + numBR_(valorFinal) + ' • ' + idLancamento +
+      ' • linha ' + linha;
     if (custoBomba !== null) {
-      mensagem += ' • bomba a R$ ' + custoBomba.toFixed(4).replace('.', ',') + '/L';
+      mensagem += ' • bomba a R$ ' + numBR_(custoBomba, 4) + '/L';
     }
 
     if (km !== null) {
@@ -4190,7 +4420,8 @@ function salvarLancamento_(dados, opcoesSalvar) {
       mensagem += ' • KM ' + km;
     }
 
-    registrarLog_('Lançamento', idLancamento + ' • ' + placa + ' • ' + dados.tipo + ' • R$ ' + valorFinal.toFixed(2));
+    registrarLog_('Lançamento', idLancamento + ' • ' + placa + ' • ' + dados.tipo +
+      ' • R$ ' + numBR_(valorFinal) + ' • linha ' + linha);
     invalidarCacheInicio_();
     // V4.8: o Resumo é recalculado aqui (antes era fórmula), só na linha do veículo
     // afetado. Dentro do lock, então duas gravações simultâneas não se atropelam.
@@ -4201,6 +4432,33 @@ function salvarLancamento_(dados, opcoesSalvar) {
   }
 }
 
+
+/**
+ * Menu da planilha: mostra em QUE arquivo e em QUE linha o sistema grava.
+ *
+ * Rodar isto DENTRO da planilha e o teste decisivo da causa 1: se o nome e o
+ * link mostrados nao forem os desta planilha, o app da web esta gravando em
+ * outro arquivo.
+ */
+function mostrarDiagnosticoGravacao() {
+  if (!execucaoTemPlanilhaAtiva_()) {
+    throw new Error('Esta ação só funciona com a planilha aberta: use o menu ' +
+      '🚚 Sistema de Frota dentro da planilha.');
+  }
+  const d = diagnosticoGravacao_(null);
+  const sobras = d.aba.dadoSolto ? sobrasAbaixoDosLancamentos_() : { linhas: [] };
+  const extra = sobras.linhas.length
+    ? '\n\nDADO SOLTO ABAIXO DOS LANÇAMENTOS\n' +
+      sobras.linhas.slice(0, 10).map(function (l) {
+        return '  linha ' + l.linha + ': ' + l.conteudo;
+      }).join('\n') +
+      (sobras.linhas.length > 10
+        ? '\n  … e mais ' + (sobras.linhas.length - 10) + ' linha(s)' : '') +
+      '\n\nApagar essas células (sem apagar linha com placa) faz o próximo ' +
+      'lançamento voltar para junto dos outros.'
+    : '';
+  alerta_('Onde o sistema grava', textoDiagnosticoGravacao_(d) + extra);
+}
 
 /** Gateway público exclusivo do formulário lateral vinculado à planilha. */
 function salvarLancamentoPlanilha(dados) {
@@ -5783,6 +6041,7 @@ function onOpen() {
     .addItem('📉 Gerar depreciação mensal', 'gerarDepreciacaoMensalComAviso')
     .addSeparator()
     .addItem('🛡️ Diagnosticar sistema', 'diagnosticarSistemaPlanilha')
+    .addItem('🔎 Onde foi gravado? (planilha e linha)', 'mostrarDiagnosticoGravacao')
     .addItem('🔬 Auditoria profunda', 'auditoriaProfundaPlanilha')
     .addItem('💾 Criar backup agora', 'criarBackupSistemaComAviso')
     .addItem('🛠️ Reparar sistema', 'repararSistemaComAviso');
@@ -7404,6 +7663,24 @@ function webSalvarLancamento(token, dados) {
   const resposta = salvarLancamento_(dados);
   if (resposta && resposta.ok) invalidarCacheInicio_();
   return resposta;
+}
+
+/**
+ * "Onde foi gravado?" pela tela. Quem opera pelo app da web nao tem o menu da
+ * planilha a mao — e e justamente quem ve a mensagem "gravado" sem o
+ * lancamento aparecer, porque o app pode estar escrevendo em outro arquivo.
+ */
+function webDiagnosticoGravacao(token, idProcurado) {
+  autorizarContextoWeb_(token, ['OPERADOR', 'ADMIN']);
+  const d = diagnosticoGravacao_(idProcurado);
+  d.texto = textoDiagnosticoGravacao_(d);
+  return d;
+}
+
+/** A lista de dado solto abaixo dos lançamentos (só ADMIN decide o que fazer). */
+function webSobrasLancamentos(token) {
+  autorizarContextoWeb_(token, ['ADMIN']);
+  return sobrasAbaixoDosLancamentos_();
 }
 
 /** Últimos lançamentos gravados, para conferência rápida no celular. */

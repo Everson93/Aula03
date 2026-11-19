@@ -4819,6 +4819,69 @@ uma aba Lançamentos de verdade.
 
 42 suítes, 1.685 provas, tudo verde.
 
+## V4.41.0 — "gravado" passou a dizer ONDE
+
+Terceira volta no mesmo sintoma: *"ele dá a mensagem de gravado mas não está
+gravando"*. A V4.40.2 consertou o cálculo da linha, a V4.40.3 passou a exigir
+linha vazia antes de escrever e a reler depois. Com essas duas no lugar, se o
+servidor diz "gravado" **o lançamento está numa aba Lançamentos** — ele
+escreveu, releu e conferiu o ID e a placa.
+
+Então o que sobrou não é a gravação: é a **informação**. A mensagem dizia
+"gravado" e não dizia *em qual arquivo* nem *em qual linha* — e sem essas duas
+coisas não existe como conferir. Revendo o caminho inteiro de ponta a ponta,
+sobraram exatamente três causas, e todas são invisíveis hoje:
+
+1. **Planilha diferente.** O app da web encontra a planilha pelo `PLANILHA_ID`
+   guardado nas propriedades do script. Quem faz uma **cópia** da planilha leva
+   o script e as propriedades junto: a cópia continua gravando na **original**.
+   O sistema acerta, o arquivo é outro, e a tela diz "gravado" com razão. É o
+   único caso em que "gravado" é verdade e o lançamento não está ali.
+2. **Linha longe.** A gravação vai depois da última linha com placa. Uma placa
+   perdida na linha 9.000 (importação antiga, colagem, teste) empurra todo
+   lançamento novo para a 9.001 — gravado de verdade, abaixo de milhares de
+   linhas vazias. Quem olha o fim dos dados não vê nada.
+3. **Filtro ou classificação na aba** escondendo a linha nova.
+
+O que entrou:
+
+- **A linha na mensagem e no Log.** `Lançamento gravado: … • linha 4123`. O Log
+  também, porque é onde se olha depois que a tela fechou. "Gravado" é uma
+  promessa; a linha é a prova.
+- **`diagnosticoGravacao_`** — nome, ID e **link** da planilha em que o sistema
+  grava, de onde veio essa identificação, a grade da aba, a última linha com
+  placa, a próxima linha, quantos lançamentos existem, dado solto abaixo (com a
+  coluna), linhas sem placa no meio do bloco, os 8 últimos lançamentos **com a
+  linha e o ID**, e **busca por ID** devolvendo a linha.
+- **Acusa a cópia pelo nome**: se a planilha aberta não é a que o script tem
+  guardada, o texto diz isso e manda rodar "Instalar / atualizar sistema" na
+  planilha certa.
+- **Dois caminhos para chegar lá**: o menu `🔎 Onde foi gravado?` (dentro da
+  planilha, que é onde se compara o nome do arquivo) e o link **🔎 conferir
+  onde foi gravado** na própria mensagem de sucesso do app — diagnóstico que só
+  existe no menu não serve a quem opera pelo celular.
+- **`sobrasAbaixoDosLancamentos_`** lista o dado solto com linha e conteúdo. Só
+  lista: apagar é decisão de quem está olhando.
+
+Dois `toFixed` em mensagem que o usuário lê saíram do caminho de gravação
+(`numBR_` no lugar), e uma regra estática garante que não voltem: em pt-BR o
+ponto decimal se lê como milhar, e isso não dá erro — mente.
+
+`conferir_diagnostico_gravacao.js`, 37 provas, 9 mutantes mortos. Dois achados
+do próprio dublê valem registro: dado solto **fora** da coluna da placa *não*
+move a gravação (prometer que move mandaria o usuário limpar a coisa errada), e
+um UUID fixo no dublê fazia todo lançamento nascer com o mesmo ID — a busca por
+ID acharia sempre o primeiro, e a suíte aprovaria um diagnóstico que devolve a
+linha errada.
+
+43 suítes, 1.722 provas.
+
+Fica pendente: multas com campos próprios (condutor, data da infração,
+vencimento, órgão) — o usuário pediu para deixar de lado por enquanto. E
+`toFixed` em mensagem de usuário ainda existe fora do caminho de gravação
+(carga da bomba, aferição, IPVA, exclusão): a regra estática hoje cobre só
+`salvarLancamento_`.
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026
