@@ -674,7 +674,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.42.0';
+const VERSAO_SISTEMA = '4.42.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -12327,15 +12327,18 @@ function relatorioFrotaTransporte_(centro, categoria, placa, periodoEscolhido) {
     const litros = doCavalo.litros + carretasNoAlvo.reduce(function (t, c) {
       return t + alvo[c.chave].litros;
     }, 0);
+    // Sem KM, o R$/km e o km/L saem VAZIOS (travessao), nao zero. "R$ 0,000
+    // por km" se le como "nao custa nada"; o certo e "nao da para dizer" —
+    // falta a leitura do odometro, e e isso que a pessoa precisa ver.
     return [
       cav.placa,
       carretasNoAlvo.length
         ? carretasNoAlvo.map(function (c) { return c.placa; }).join(' + ')
         : '— sem carreta vinculada',
-      cav.centro, km, litros, litros > 0 ? km / litros : 0,
-      doCavalo.total, custoCarretas, total, km > 0 ? total / km : 0,
+      cav.centro, km, litros, litros > 0 && km > 0 ? km / litros : null,
+      doCavalo.total, custoCarretas, total, km > 0 ? total / km : null,
     ];
-  }).sort(function (a, b) { return b[8] - a[8]; });
+  }).sort(function (a, b) { return (b[8] || 0) - (a[8] || 0); });
 
   // ---- bloco: por veiculo
   const linhasVeiculo = chavesAlvo.map(function (k) {
@@ -12346,9 +12349,9 @@ function relatorioFrotaTransporte_(centro, categoria, placa, periodoEscolhido) {
         ? 'cavalo de ' + i.veiculo.carretas.map(function (c) { return c.placa; }).join(' + ')
         : '');
     return [i.veiculo.placa, i.veiculo.categoria, conjunto, i.veiculo.centro,
-      i.km, i.litros, i.litros > 0 && i.km > 0 ? i.km / i.litros : 0,
-      i.variavel, i.fixo, i.total, i.km > 0 ? i.total / i.km : 0];
-  }).sort(function (a, b) { return b[9] - a[9]; });
+      i.km, i.litros, i.litros > 0 && i.km > 0 ? i.km / i.litros : null,
+      i.variavel, i.fixo, i.total, i.km > 0 ? i.total / i.km : null];
+  }).sort(function (a, b) { return (b[9] || 0) - (a[9] || 0); });
 
   // ---- bloco: cadastro pendente
   const pendencias = [];

@@ -405,6 +405,12 @@ console.log('\n5. O painel da frota');
     'contaria o mesmo percurso duas vezes');
   ok('e o R$/km do conjunto usa esse KM',
     Math.abs(conj1[9] - conj1[8] / 2000) < 0.0001, JSON.stringify(conj1));
+  // Sem leitura de odometro, R$/km e km/L nao sao ZERO: nao existem.
+  const semKm = bConj.linhas.filter(function (l) { return l[0] === 'CAV 0002'; })[0];
+  ok('cavalo sem leitura de odômetro mostra travessão, não "R$ 0,000/km"',
+    semKm && semKm[9] === null && semKm[5] === null,
+    JSON.stringify(semKm) + ' — "R$ 0,000 por km" se lê como "não custa nada"; ' +
+    'o certo é "não dá para dizer, falta a leitura"');
 
   const bVeic = rel.blocos.filter(function (b) { return /Por veículo/.test(b.titulo); })[0];
   const daCarreta = bVeic.linhas.filter(function (l) { return l[0] === 'CAR 0001'; })[0];

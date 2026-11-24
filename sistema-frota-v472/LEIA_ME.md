@@ -4959,6 +4959,20 @@ Instalar.
 **Precisa rodar "Instalar / atualizar sistema"**: coluna nova na aba Veículos e
 categoria nova no grupo de frota.
 
+## V4.42.1 — sem odômetro, travessão (não zero)
+
+Gerei o relatório de exemplo pelo próprio gerador de PDF, para ver como ficava,
+e o modelo mostrou o defeito: carreta e cavalo sem leitura de odômetro saíam
+com **R$ 0,000/km** e **0,00 km/L**. Lido rápido, "R$ 0,000 por km" é "não
+custa nada" — e o que está acontecendo é o contrário: falta a leitura, e é isso
+que a pessoa precisa ver para ir atrás. Agora sai travessão, como já saía na
+coluna de % do imobilizado.
+
+Rodar o relatório de verdade e OLHAR o resultado achou em um minuto o que 44
+provas não pegaram: nenhuma delas perguntava como o número se LÊ.
+
+44 suítes, 1.772 provas.
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026
