@@ -16,7 +16,9 @@ const vm = require('vm');
  * Apps Script isso lança. Um duplê mais permissivo que a coisa real aprova
  * código que quebra em produção, que é o pior defeito que um duplê pode ter.
  */
-function fakeRange(reg, linhas, colunas) {
+function fakeRange(reg, linhas, colunas, primeiraLinha, primeiraColuna) {
+  reg.celulas = reg.celulas || {};
+  function chave(l, c) { return l + ':' + c; }
   const r = {
     setValues: function (v) {
       const lv = v.length, cv = (v[0] || []).length;
@@ -27,11 +29,36 @@ function fakeRange(reg, linhas, colunas) {
         throw new Error('setValues: faixa pedida com ' + colunas + ' coluna(s), valores com ' + cv);
       }
       reg.escritas.push({ tipo: 'setValues', linhas: lv, colunas: cv, valores: v });
+      // Guarda o que foi escrito: desde a V4.43 o dono único RELÊ o bloco
+      // antes de dizer que gravou, e um dublê que esquece reprova gravação boa.
+      if (primeiraLinha) {
+        v.forEach(function (linha, i) {
+          linha.forEach(function (valor, j) {
+            reg.celulas[chave(primeiraLinha + i, primeiraColuna + j)] = valor;
+          });
+        });
+      }
       return r;
     },
     setValue: function () { return r; },
     setNumberFormat: function () { return r; },
-    getValues: function () { return reg.leitura || []; },
+    // Faixa pedida para LER: devolve linhas vazias do tamanho certo. A guarda
+    // de linha livre (V4.43) lê a coluna da placa antes de gravar, e devolver
+    // [] ali faria o dublê dizer "não há linha livre" numa aba vazia.
+    getValues: function () {
+      if (reg.leitura) return reg.leitura;
+      const saida = [];
+      for (let i = 0; i < (linhas || 1); i++) {
+        const linha = [];
+        for (let j = 0; j < (colunas || 1); j++) {
+          const v = primeiraLinha
+            ? reg.celulas[chave(primeiraLinha + i, primeiraColuna + j)] : undefined;
+          linha.push(v === undefined ? '' : v);
+        }
+        saida.push(linha);
+      }
+      return saida;
+    },
     getDisplayValues: function () { return reg.leitura || []; },
     clearContent: function () { return r; },
   };
@@ -187,6 +214,7 @@ const reg = { escritas: [] };
 vm.runInContext(`
   aba_ = function () { return {
     getRange: function (l, c, nl, nc) { return __fakeRange(l, c, nl, nc); },
+    getMaxRows: function () { return 20000; },
     getLastRow: function () { return 1; } }; };
   proximaLinhaLancamento_ = function () { return 500; };
   periodoDoMes_ = function () { return { inicio: new Date(2026, 6, 1), fim: new Date(2026, 6, 31) }; };
@@ -197,7 +225,7 @@ vm.runInContext(`
   formatarData_ = function (d) { return '31/07/2026'; };
 `, ctx);
 ctx.__fakeRange = function (linha, coluna, nLinhas, nColunas) {
-  return fakeRange(reg, nLinhas, nColunas);
+  return fakeRange(reg, nLinhas, nColunas, linha, coluna);
 };
 // Status fabricado: trinta veículos pendentes, com centro e categoria prontos.
 const itensFake = [];
@@ -224,9 +252,19 @@ ok('NENHUMA busca de veículo durante a geração', varreduras2 === 0,
   varreduras2 + ' busca(s) — era uma varredura da frota inteira por linha');
 
 const blocos = reg.escritas.filter(function (e) { return e.linhas === 30; });
+// V4.43: a linha vai COMPLETA pelo dono único — a faixa de entrada (A..I) e a
+// faixa final (K..O), duas escritas para as trinta linhas. O que esta prova
+// guarda continua sendo o mesmo: NÃO é uma escrita por linha.
 const comClasse = blocos.filter(function (e) { return e.colunas === ctx.COL_LANC.CATEGORIA; });
-ok('o bloco principal vai numa escrita só, até a coluna CATEGORIA',
+ok('o bloco de entrada vai numa escrita só, até a coluna CATEGORIA',
   comClasse.length === 1, JSON.stringify(blocos.map(function (e) { return e.colunas; })));
+ok('e a faixa final (ID..tipo de abastecimento) também, numa escrita só',
+  blocos.filter(function (e) { return e.colunas === 5; }).length === 1,
+  JSON.stringify(blocos.map(function (e) { return e.colunas; })) +
+  ' — ID, natureza, detalhe, fornecedor e tipo de abastecimento');
+ok('nenhuma escrita de uma linha só (seriam trinta idas à planilha)',
+  reg.escritas.filter(function (e) { return e.linhas === 1; }).length === 0,
+  JSON.stringify(reg.escritas.map(function (e) { return e.linhas; })));
 const amostra = comClasse[0].valores[3];
 ok('com o centro do veículo na coluna certa',
   amostra[ctx.COL_LANC.CENTRO - 1] === 'LOJA 3', JSON.stringify(amostra));
@@ -244,7 +282,8 @@ ok('statusDepreciacaoMensal_ preenche centroLancamento',
   /centroLancamento:\s*normalizarCentroCusto_/.test(fonte));
 ok('e categoriaLancamento', /categoriaLancamento:\s*String\(v\[COL_VEIC\.CATEGORIA/.test(fonte));
 ok('e a geração consome exatamente esses dois nomes',
-  /faltantes\[k\]\.centroLancamento/.test(fonte) && /faltantes\[k\]\.categoriaLancamento/.test(fonte));
+  /CENTRO: i\.centroLancamento/.test(fonte) && /CATEGORIA: i\.categoriaLancamento/.test(fonte),
+  'se o status parar de preencher, a geração grava vazio sem reclamar');
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

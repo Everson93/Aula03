@@ -341,11 +341,15 @@ console.log('\n4. Se o cálculo da linha errar, ele não apaga nada');
   const antes = linhasGravadas().length;
   const retrato = linhasGravadas().map(function (l) { return String(l[10]); });
   ctx.__log.length = 0;
+  // Guarda a original: `delete globalThis.x` NÃO desfaz uma declaração de
+  // função (a propriedade não é configurável), e a sabotagem vazava para os
+  // blocos seguintes — que então provavam outra coisa sem ninguém notar.
+  const ultimaOriginal = vm.runInContext('ultimaLinhaLancamentoReal_', ctx);
   vm.runInContext('ultimaLinhaLancamentoReal_ = function () { return 1; };', ctx);
   const r3 = gravar({
     placa: 'AAA 0001', tipo: 'Pneus', data: '2026-11-19', valor: 123, documento: 'NF ERRADA',
   });
-  vm.runInContext('delete globalThis.ultimaLinhaLancamentoReal_;', ctx);
+  ctx.ultimaLinhaLancamentoReal_ = ultimaOriginal;
   ok('grava assim mesmo, numa linha livre', r3.ok === true, r3.mensagem);
   ok('e a base CRESCEU em vez de ficar igual',
     linhasGravadas().length === antes + 1,
@@ -398,17 +402,17 @@ console.log('\n4c. A conferência de leitura vale por si');
 // Mesmo que a linha seja calculada certo, gravar e NAO conferir deixa a porta
 // aberta para qualquer outra causa (permissao, aba protegida, filtro) passar
 // como sucesso.
-ok('o servidor relê a linha antes de dizer "gravado"', (function () {
+ok('o servidor relê o que gravou antes de dizer "gravado"', (function () {
   const fonte = fs.readFileSync(arquivo, 'utf8');
-  // A frase está quebrada em duas linhas no fonte; procurar a string inteira
-  // não acha, e a prova passaria a medir a formatação em vez do conteúdo.
-  return /const conferido = lancamentos\.getRange\(linha, 1, 1, TOTAL_COL_LANC\)\.getValues\(\)\[0\];/
-    .test(fonte) && /O lançamento NÃO foi /.test(fonte);
+  // A releitura mora no dono único da gravação (V4.43), não mais dentro do
+  // salvarLancamento_: a prova segue o invariante para onde ele foi morar.
+  return /const conferido = sheet\.getRange\(linha, 1, completas\.length, TOTAL_COL_LANC\)/
+    .test(fonte) && /O lançamento NÃO foi registrado/.test(fonte);
 })());
-ok('e a conferência compara o ID E a placa', (function () {
+ok('e a conferência compara o ID E a placa, linha a linha do bloco', (function () {
   const fonte = fs.readFileSync(arquivo, 'utf8');
-  return /conferido\[L_\.ID\][\s\S]{0,120}normalizaPlaca_\(conferido\[L_\.PLACA\]\) !== placa/.test(fonte);
-})(), 'só o ID não basta: a linha pode ter o ID certo e a placa de outro lançamento');
+  return /achado !== esperado \|\|[\s\S]{0,160}normalizaPlaca_\(conferido\[i\]\[L_\.PLACA\]\)/.test(fonte);
+})(), 'só o ID não basta, e conferir só a primeira linha do bloco não basta');
 ok('a pergunta "qual é a última linha" tem um dono só', (function () {
   const fonte = fs.readFileSync(arquivo, 'utf8');
   return (fonte.match(/^function ultimaLinhaComDado_/gm) || []).length === 1 &&

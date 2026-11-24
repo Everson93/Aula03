@@ -27,6 +27,11 @@ V4.40.3 cobriu um dos quatro caminhos que gravam lançamento.
 
 ## ALTA — corrigir antes de qualquer novidade
 
+> **Item 1 RESOLVIDO na V4.43.0** — e, ao fechá-lo, apareceu o defeito maior
+> que estava por trás do "diz gravado e não aparece": o cache de lançamentos da
+> execução deixava o Resumo ser recalculado **sem** o lançamento recém-gravado.
+> Está descrito no LEIA-ME da V4.43.0.
+
 ### 1. Três outros caminhos gravam lançamento sem a guarda de linha livre
 
 `linhaLivreParaLancamento_` (V4.40.3) é usada **só** por `salvarLancamento_`.

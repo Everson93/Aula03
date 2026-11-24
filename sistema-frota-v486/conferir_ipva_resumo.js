@@ -56,6 +56,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   aba_ = function () {
     return {
       getLastRow: function () { return __lanc.length + 1; },
+      getMaxRows: function () { return 20000; },
       getRange: function (linha, col, nL, nC) {
         return {
           setValues: function (vals) {
@@ -67,7 +68,16 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
             return this;
           },
           setNumberFormat: function () { return this; },
-          getValues: function () { return []; },
+          // Linhas vazias do tamanho pedido: a guarda de linha livre (V4.43)
+          // lê a coluna da placa antes de gravar.
+          getValues: function () {
+            const saida = [];
+            for (var i = 0; i < (nL || 1); i++) {
+              const l = __lanc[linha - 2 + i] || new Array(TOTAL_COL_LANC).fill('');
+              saida.push(l.slice(col - 1, col - 1 + (nC || 1)));
+            }
+            return saida;
+          },
         };
       },
     };

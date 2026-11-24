@@ -674,7 +674,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.42.1';
+const VERSAO_SISTEMA = '4.43.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1276,18 +1276,168 @@ function proximaLinhaLancamento_() {
  */
 const JANELA_LINHA_LIVRE_ = 500;
 
-function linhaLivreParaLancamento_(sheet) {
-  const max = sheet.getMaxRows();
+/**
+ * Onde cabe um BLOCO de `quantas` linhas livres seguidas.
+ *
+ * Generaliza a guarda de uma linha so (V4.40.3). O calculo da linha ja errou
+ * duas vezes neste projeto, e nos caminhos que gravam em BLOCO — depreciacao
+ * do mes, 12 parcelas de IPVA, importacao — um erro nao apaga um lancamento:
+ * apaga N de uma vez, em silencio.
+ *
+ * Quando falta grade, CRESCE em vez de estourar: recusar um lancamento porque
+ * a aba chegou ao fim e transformar um problema de capacidade em perda de
+ * trabalho de quem esta lancando.
+ */
+function linhasLivresParaLancamentos_(sheet, quantas) {
+  const n = Math.max(1, Math.floor(Number(quantas) || 1));
   const candidata = Math.max(2, proximaLinhaLancamento_());
-  if (candidata > max) return { erro: 'cheia', candidata: candidata, max: max };
-  const quantas = Math.min(JANELA_LINHA_LIVRE_, max - candidata + 1);
-  const placas = sheet.getRange(candidata, COL_LANC.PLACA, quantas, 1).getValues();
-  for (let i = 0; i < quantas; i++) {
-    if (String(placas[i][0] == null ? '' : placas[i][0]).trim() === '') {
-      return { linha: candidata + i, pulou: i, candidata: candidata };
+  let max = sheet.getMaxRows();
+  if (candidata + n - 1 > max) {
+    // A capacidade tem dono proprio (formulas, formatos, propriedade). Se ele
+    // falhar, cai no erro 'cheia' — nunca em gravar fora da grade.
+    try { garantirCapacidadeLancamentos_(candidata + n); } catch (e) {
+      registrarLog_('Capacidade de lançamentos', 'não consegui ampliar: ' + e.message);
+    }
+    max = sheet.getMaxRows();
+  }
+  if (candidata + n - 1 > max) return { erro: 'cheia', candidata: candidata, max: max, quantas: n };
+  const janela = Math.min(JANELA_LINHA_LIVRE_ + n, max - candidata + 1);
+  const placas = sheet.getRange(candidata, COL_LANC.PLACA, janela, 1).getValues();
+  let seguidas = 0;
+  for (let i = 0; i < janela; i++) {
+    const vazia = String(placas[i][0] == null ? '' : placas[i][0]).trim() === '';
+    seguidas = vazia ? seguidas + 1 : 0;
+    if (seguidas === n) {
+      const inicio = candidata + i - n + 1;
+      return { linha: inicio, pulou: inicio - candidata, candidata: candidata, quantas: n };
     }
   }
-  return { erro: 'ocupada', candidata: candidata, max: max, quantas: quantas };
+  return { erro: 'ocupada', candidata: candidata, max: max, quantas: n, janela: janela };
+}
+
+/** A guarda de uma linha so, que e o caso do formulario. */
+function linhaLivreParaLancamento_(sheet) {
+  return linhasLivresParaLancamentos_(sheet, 1);
+}
+
+/** A recusa em texto, igual para quem grava uma linha e para quem grava mil. */
+function textoRecusaGravacao_(destino) {
+  return destino.erro === 'cheia'
+    ? 'A aba "' + ABAS.LANCAMENTOS + '" chegou ao fim da grade (precisava da linha ' +
+      (destino.candidata + destino.quantas - 1) + ' de ' + destino.max + ') e não consegui ' +
+      'ampliá-la. Rode "Instalar / atualizar sistema" e tente de novo. NADA foi gravado.'
+    : 'Não achei ' + (destino.quantas > 1 ? destino.quantas + ' linhas livres seguidas' : 'linha livre') +
+      ' na aba "' + ABAS.LANCAMENTOS + '" a partir da linha ' + destino.candidata +
+      '. NADA foi gravado — gravar ali apagaria lançamento existente. Rode ' +
+      '"Instalar / atualizar sistema" e me mostre esta mensagem.';
+}
+
+/**
+ * O ÚNICO lugar do sistema que escreve linha de lançamento.
+ *
+ * Antes eram cinco: o formulario, a depreciacao do mes, as 12 parcelas de
+ * IPVA, o importador e o desfazer da correcao. So o primeiro tinha a guarda de
+ * linha livre e a releitura — justamente o que erra mais BARATO, uma linha por
+ * vez. Os outros quatro gravavam em bloco, sem guarda e sem conferencia.
+ *
+ * Tres coisas que so existem porque este dono e unico:
+ *
+ *  - a linha vai COMPLETA (A..I e K..O). Os blocos antigos escreviam ate a
+ *    coluna I e o ID: as colunas L..O — natureza, detalhe, fornecedor e TIPO
+ *    DE ABASTECIMENTO — ficavam com o conteudo do lancamento anterior se a
+ *    linha estivesse ocupada. Linha meio nova, meio velha, com o campo que
+ *    decide se o litro saiu do tanque herdado de outro lancamento;
+ *  - a releitura vale para todas as linhas do bloco, nao so para a primeira;
+ *  - o CACHE de lancamentos da execucao cai aqui. Quem le os lancamentos antes
+ *    de gravar (`estadoTanque_`, no abastecimento interno) deixava o cache
+ *    velho na memoria, e o `atualizarResumoPlacaSeguro_` logo adiante
+ *    recalculava a linha do veiculo SEM o lancamento recem-gravado — e
+ *    gravava isso no Resumo. A aba Lancamentos ficava certa e o Resumo, o
+ *    Dashboard e o rateio ficavam sem o valor. Era o "diz gravado e nao
+ *    aparece" que sobrou depois da V4.41.
+ */
+function gravarBlocoLancamentos_(sheet, linhas, opcoes) {
+  const op = opcoes || {};
+  if (!linhas || !linhas.length) return { ok: true, linha: 0, gravadas: 0, pulou: 0 };
+  const completas = linhas.map(function (l) {
+    const nova = new Array(TOTAL_COL_LANC).fill('');
+    for (let c = 0; c < TOTAL_COL_LANC; c++) {
+      if (c === L_.PERIODO) continue;   // coluna J e formula: nao se escreve nela
+      const v = l[c];
+      nova[c] = (v === undefined || v === null) ? '' : v;
+    }
+    return nova;
+  });
+  const destino = linhasLivresParaLancamentos_(sheet, completas.length);
+  if (destino.erro) return { ok: false, gravadas: 0, mensagem: textoRecusaGravacao_(destino) };
+  const linha = destino.linha;
+  const faixaEntrada = function () {
+    return sheet.getRange(linha, 1, completas.length, COL_LANC.PERIODO - 1);
+  };
+  const faixaFinal = function () {
+    return sheet.getRange(linha, COL_LANC.ID, completas.length, TOTAL_COL_LANC - COL_LANC.ID + 1);
+  };
+  try {
+    faixaEntrada().setValues(completas.map(function (l) {
+      return l.slice(0, COL_LANC.PERIODO - 1);
+    }));
+    faixaFinal().setValues(completas.map(function (l) {
+      return l.slice(COL_LANC.ID - 1, TOTAL_COL_LANC);
+    }));
+    if (op.formatar === true) {
+      sheet.getRange(linha, COL_LANC.ID, completas.length, 1).setNumberFormat('@');
+      sheet.getRange(linha, COL_LANC.DATA, completas.length, 1).setNumberFormat('dd/mm/yyyy');
+      sheet.getRange(linha, COL_LANC.VALOR, completas.length, 1).setNumberFormat('R$ #,##0.00');
+    }
+  } catch (erroGravacao) {
+    // Nunca deixa linha pela metade na base.
+    try { faixaEntrada().clearContent(); faixaFinal().clearContent(); } catch (e) {}
+    invalidarCacheLancamentos_();
+    return { ok: false, gravadas: 0, mensagem: 'Não foi possível gravar: ' + erroGravacao.message +
+      ' NADA foi gravado. Rode "Instalar / atualizar sistema" na planilha e tente de novo.' };
+  }
+
+  // O cache cai ANTES da conferencia: quem ler os lancamentos daqui para a
+  // frente nesta execucao tem de ver o que acabou de entrar.
+  invalidarCacheLancamentos_();
+  SpreadsheetApp.flush();
+  const conferido = sheet.getRange(linha, 1, completas.length, TOTAL_COL_LANC).getValues();
+  for (let i = 0; i < completas.length; i++) {
+    const esperado = String(completas[i][L_.ID] || '').trim();
+    const achado = String(conferido[i][L_.ID] || '').trim();
+    if (achado !== esperado ||
+        normalizaPlaca_(conferido[i][L_.PLACA]) !== normalizaPlaca_(completas[i][L_.PLACA])) {
+      return {
+        ok: false,
+        linha: linha,
+        gravadas: 0,
+        mensagem: 'O sistema gravou na linha ' + (linha + i) + ' da aba "' + ABAS.LANCAMENTOS +
+          '" e, ao reler, encontrou outra coisa (' +
+          (String(conferido[i][L_.PLACA] || '').trim() || 'vazio') + ' / ' +
+          (achado || 'sem ID') + '). O lançamento NÃO foi registrado. Rode ' +
+          '"Instalar / atualizar sistema" e, se repetir, me mostre esta mensagem.',
+      };
+    }
+  }
+  if (destino.pulou > 0) {
+    // Acontecer isto e sinal de que o calculo da ultima linha errou. Fica no
+    // Log: sem registro, o defeito volta a ser invisivel.
+    registrarLog_('Linha de gravação corrigida',
+      'o cálculo apontou a linha ' + destino.candidata + ', que estava ocupada; gravei ' +
+      completas.length + ' linha(s) a partir da ' + linha +
+      ' (' + destino.pulou + ' linha(s) adiante)');
+  }
+  return { ok: true, linha: linha, gravadas: completas.length, pulou: destino.pulou };
+}
+
+/** Monta uma linha de lançamento completa a partir de um objeto por nome. */
+function linhaLancamento_(campos) {
+  const l = new Array(TOTAL_COL_LANC).fill('');
+  Object.keys(campos || {}).forEach(function (nome) {
+    if (L_[nome] === undefined) throw new Error('Campo de lançamento desconhecido: ' + nome);
+    l[L_[nome]] = campos[nome];
+  });
+  return l;
 }
 
 // ------------------------------------------------- onde foi gravado? (V4.41)
@@ -4389,72 +4539,29 @@ function salvarLancamento_(dados, opcoesSalvar) {
 
     const lancamentos = aba_(ABAS.LANCAMENTOS);
     const idLancamento = novoIdLancamento_();
-    const destino = linhaLivreParaLancamento_(lancamentos);
-    if (destino.erro) {
-      return {
-        ok: false,
-        mensagem: destino.erro === 'cheia'
-          ? 'A aba "' + ABAS.LANCAMENTOS + '" chegou ao fim da grade (linha ' +
-            destino.candidata + ' de ' + destino.max + '). Rode "Instalar / atualizar ' +
-            'sistema" para ampliar a base e lance de novo. NADA foi gravado.'
-          : 'Não achei linha livre na aba "' + ABAS.LANCAMENTOS + '" a partir da linha ' +
-            destino.candidata + '. NADA foi gravado — gravar ali apagaria um lançamento ' +
-            'existente. Rode "Instalar / atualizar sistema" e me mostre esta mensagem.',
-      };
-    }
-    const linha = destino.linha;
-    if (destino.pulou > 0) {
-      // Acontecer isto e sinal de que o calculo da ultima linha errou. Fica no
-      // Log: sem registro, o defeito volta a ser invisivel.
-      registrarLog_('Linha de gravação corrigida',
-        'o cálculo apontou a linha ' + destino.candidata + ', que estava ocupada; ' +
-        'gravei na ' + linha + ' (' + destino.pulou + ' linha(s) adiante)');
-    }
-    // V4.8 (velocidade): a linha inteira em DUAS gravações (antes eram 9 + 3 formatos).
-    // Os formatos de coluna já vêm da instalação; a coluna J (Período) é fórmula e fica de fora.
-    const veic = resolucaoVeiculo.veiculo;
-    const centroSnap = normalizarCentroCusto_(veic.centro) || '⚠ sem cadastro';
-    const categoriaSnap = String(veic.categoria || '').trim() || '⚠ sem cadastro';
     // A lista de validação da coluna Tipo/Natureza pode ser de uma versão anterior (sem
     // "Gás", "Carro Novo", "Serviço"...). Com validação estrita o Google grava a data e
     // a placa e interrompe no tipo, deixando a linha pela metade. Atualiza antes.
     garantirValidacaoTiposLancamento_(lancamentos, dados.tipo, naturezaOficina);
-    try {
-      lancamentos.getRange(linha, 1, 1, COL_LANC.PERIODO - 1).setValues([[
-        data, placa, dados.tipo, litros || '', valorFinal || 0,
-        documentoFinal, observacao, centroSnap, categoriaSnap
-      ]]);
-      lancamentos.getRange(linha, COL_LANC.ID, 1, TOTAL_COL_LANC - COL_LANC.ID + 1).setValues([[
-        idLancamento, naturezaOficina, detalheOficina, fornecedor, tipoAbastecimento
-      ]]);
-    } catch (erroGravacao) {
-      // Nunca deixa linha pela metade na base.
-      try {
-        lancamentos.getRange(linha, 1, 1, COL_LANC.PERIODO - 1).clearContent();
-        lancamentos.getRange(linha, COL_LANC.ID, 1, TOTAL_COL_LANC - COL_LANC.ID + 1).clearContent();
-      } catch (e) {}
-      return { ok: false, mensagem: 'Não foi possível gravar: ' + erroGravacao.message +
-        ' Rode "Instalar / atualizar sistema" na planilha e tente de novo.' };
-    }
-
-    // Le de volta o que acabou de gravar. Dizer "gravado" sem conferir e
-    // prometer o que nao se verificou — e foi exatamente assim que a linha
-    // escrita por cima de outra passou despercebida: mensagem de sucesso,
-    // base do mesmo tamanho.
-    SpreadsheetApp.flush();
-    const conferido = lancamentos.getRange(linha, 1, 1, TOTAL_COL_LANC).getValues()[0];
-    if (String(conferido[L_.ID] || '').trim() !== idLancamento ||
-        normalizaPlaca_(conferido[L_.PLACA]) !== placa) {
-      return {
-        ok: false,
-        mensagem: 'O sistema gravou na linha ' + linha + ' da aba "' + ABAS.LANCAMENTOS +
-          '" e, ao reler, encontrou outra coisa (' +
-          (String(conferido[L_.PLACA] || '').trim() || 'vazio') + ' / ' +
-          (String(conferido[L_.ID] || '').trim() || 'sem ID') + '). O lançamento NÃO foi ' +
-          'registrado. Rode "Instalar / atualizar sistema" para a base ser ampliada e ' +
-          'tente de novo; se repetir, me mostre esta mensagem.',
-      };
-    }
+    const veic = resolucaoVeiculo.veiculo;
+    const gravacao = gravarBlocoLancamentos_(lancamentos, [linhaLancamento_({
+      DATA: data,
+      PLACA: placa,
+      TIPO: dados.tipo,
+      LITROS: litros || '',
+      VALOR: valorFinal || 0,
+      DOCUMENTO: documentoFinal,
+      OBSERVACAO: observacao,
+      CENTRO: normalizarCentroCusto_(veic.centro) || '⚠ sem cadastro',
+      CATEGORIA: String(veic.categoria || '').trim() || '⚠ sem cadastro',
+      ID: idLancamento,
+      NATUREZA_OFICINA: naturezaOficina,
+      DETALHE_OFICINA: detalheOficina,
+      FORNECEDOR: fornecedor,
+      TIPO_ABASTECIMENTO: tipoAbastecimento,
+    })]);
+    if (!gravacao.ok) return { ok: false, mensagem: gravacao.mensagem };
+    const linha = gravacao.linha;
 
     // A LINHA entra na mensagem de proposito. "Gravado" sem dizer onde nao da
     // para conferir, e foi assim que a duvida "diz gravado e nao aparece" ficou
@@ -4643,17 +4750,18 @@ NÃO = cancelar sem alterar nada.`,
     garantirCapacidadeLancamentos_(usadosDepois + 1);
     if (resultado.lancamentos.length) {
       const sheet = aba_(ABAS.LANCAMENTOS);
-      const primeira = proximaLinhaLancamento_();
-      // V4.8: cada linha importada tem 7 campos (DATA..OBSERVAÇÃO). Gravar numa faixa de
-      // 8 colunas fazia o setValues falhar e a importação inteira ser revertida.
-      sheet.getRange(primeira, 1, resultado.lancamentos.length, BLOCO_ENTRADA_LANC).setValues(resultado.lancamentos);
-      const ids = resultado.lancamentos.map(function(){ return [novoIdLancamento_()]; });
-      sheet.getRange(primeira, COL_LANC.ID, ids.length, 1).setValues(ids).setNumberFormat('@');
-      const classImport = resultado.lancamentos.map(function (l) {
+      // Cada linha importada traz 7 campos (DATA..OBSERVAÇÃO); o resto da linha
+      // é montado aqui e gravado pelo dono único, que exige linha livre.
+      const linhasImport = resultado.lancamentos.map(function (l) {
         const c = classificacaoVeiculoAtual_(l[1]);
-        return [c.centro, c.categoria];
+        return linhaLancamento_({
+          DATA: l[0], PLACA: l[1], TIPO: l[2], LITROS: l[3], VALOR: l[4],
+          DOCUMENTO: l[5], OBSERVACAO: l[6],
+          CENTRO: c.centro, CATEGORIA: c.categoria, ID: novoIdLancamento_(),
+        });
       });
-      sheet.getRange(primeira, COL_LANC.CENTRO, classImport.length, 2).setValues(classImport);
+      const gravacao = gravarBlocoLancamentos_(sheet, linhasImport, { formatar: true });
+      if (!gravacao.ok) throw new Error('Importação interrompida: ' + gravacao.mensagem);
     }
     if (resultado.odometros.length) {
       const sheet = aba_(ABAS.ODOMETRO);
@@ -15301,25 +15409,19 @@ function lancarIpvaAnual_(dados) {
       const periodoParcela = periodoDoMes_(competencia);
       const fim = periodoParcela.fim;
       const data = new Date(fim.getFullYear(), fim.getMonth(), fim.getDate(), 12, 0, 0);
-      return [data, resolvido.veiculo.placa, 'IPVA', '', valor, documento,
-        'IPVA ' + grupo + ' • parcela ' + (i + 1) + '/' + PARCELAS_IPVA_ +
-        ' • competência ' + competencia +
-        ' • anual R$ ' + valorAnual.toFixed(2)];
+      return linhaLancamento_({
+        DATA: data, PLACA: resolvido.veiculo.placa, TIPO: 'IPVA', VALOR: valor,
+        DOCUMENTO: documento,
+        OBSERVACAO: 'IPVA ' + grupo + ' • parcela ' + (i + 1) + '/' + PARCELAS_IPVA_ +
+          ' • competência ' + competencia + ' • anual R$ ' + numBR_(valorAnual),
+        CENTRO: classificacao.centro, CATEGORIA: classificacao.categoria,
+        ID: novoIdLancamento_(),
+      });
     });
 
     const sheet = aba_(ABAS.LANCAMENTOS);
-    garantirCapacidadeLancamentos_(quantidadeLancamentosReais_() + linhas.length);
-    const primeira = proximaLinhaLancamento_();
-    sheet.getRange(primeira, 1, linhas.length, BLOCO_ENTRADA_LANC).setValues(linhas);
-    sheet.getRange(primeira, COL_LANC.CENTRO, linhas.length, 2).setValues(
-      linhas.map(function () { return [classificacao.centro, classificacao.categoria]; }));
-    sheet.getRange(primeira, COL_LANC.ID, linhas.length, 1)
-      .setValues(linhas.map(function () { return [novoIdLancamento_()]; }))
-      .setNumberFormat('@');
-    sheet.getRange(primeira, COL_LANC.DATA, linhas.length, 1).setNumberFormat('dd/mm/yyyy');
-    sheet.getRange(primeira, COL_LANC.VALOR, linhas.length, 1).setNumberFormat('R$ #,##0.00');
-
-    SpreadsheetApp.flush();
+    const gravacao = gravarBlocoLancamentos_(sheet, linhas, { formatar: true });
+    if (!gravacao.ok) return { ok: false, mensagem: 'IPVA NÃO lançado. ' + gravacao.mensagem };
     invalidarCacheInicio_();
     atualizarResumoSeguro_();
     registrarLog_('IPVA anual', placa + ' • ' + grupo + ' • R$ ' + valorAnual.toFixed(2) +
@@ -16128,23 +16230,19 @@ function gerarDepreciacaoMensal_() {
     if (!faltantes.length) return { gerados: 0, status: status, mensagem: 'Nenhuma depreciação pendente para gerar.' };
 
     const linhas = faltantes.map(function (i) {
-      return [dataLancamento, i.placa, 'Depreciação', '', i.valorMensal,
-        'DEP-' + status.mes,
-        'Depreciação mensal gerada automaticamente para ' + status.mes];
+      return linhaLancamento_({
+        DATA: dataLancamento, PLACA: i.placa, TIPO: 'Depreciação', VALOR: i.valorMensal,
+        DOCUMENTO: 'DEP-' + status.mes,
+        OBSERVACAO: 'Depreciação mensal gerada automaticamente para ' + status.mes,
+        CENTRO: i.centroLancamento, CATEGORIA: i.categoriaLancamento,
+        ID: novoIdLancamento_(),
+      });
     });
     const sheet = aba_(ABAS.LANCAMENTOS);
-    const primeira = proximaLinhaLancamento_();
-    // CENTRO e CATEGORIA sao as duas colunas seguintes a OBSERVACAO, entao o
-    // bloco inteiro vai numa escrita so em vez de duas.
-    const comClasse = linhas.map(function (l, k) {
-      return l.concat([faltantes[k].centroLancamento, faltantes[k].categoriaLancamento]);
-    });
-    sheet.getRange(primeira, 1, comClasse.length, COL_LANC.CATEGORIA).setValues(comClasse);
-    const idsDep = linhas.map(function(){ return [novoIdLancamento_()]; });
-    sheet.getRange(primeira, COL_LANC.ID, idsDep.length, 1).setValues(idsDep).setNumberFormat('@');
-    sheet.getRange(primeira, COL_LANC.DATA, linhas.length, 1).setNumberFormat('dd/mm/yyyy');
-    sheet.getRange(primeira, COL_LANC.VALOR, linhas.length, 1).setNumberFormat('R$ #,##0.00');
-    SpreadsheetApp.flush();
+    const gravacao = gravarBlocoLancamentos_(sheet, linhas, { formatar: true });
+    if (!gravacao.ok) {
+      return { gerados: 0, status: status, mensagem: 'Depreciação NÃO gerada. ' + gravacao.mensagem };
+    }
     invalidarCacheInicio_();
     atualizarResumoSeguro_();
     registrarLog_('Depreciação mensal', status.mes + ' • ' + linhas.length + ' veículo(s) • R$ ' +
@@ -19396,12 +19494,16 @@ function corrigirLancamento_(id, ref, dados, justificativa) {
     invalidarCacheLancamentos_();
     const r2 = salvarLancamento_(novo, { semLock: true });
     if (!r2.ok) {
-      // Desfaz: o original volta exatamente como estava (mesmo ID).
+      // Desfaz: o original volta exatamente como estava (mesmo ID). Pelo dono
+      // único, que confere — dizer "o original foi mantido" sem conferir era
+      // prometer o contrário do que podia ter acontecido.
       const sheet = aba_(ABAS.LANCAMENTOS);
-      const linha = proximaLinhaLancamento_();
-      sheet.getRange(linha, 1, 1, COL_LANC.PERIODO - 1).setValues([original.slice(0, COL_LANC.PERIODO - 1)]);
-      sheet.getRange(linha, COL_LANC.ID, 1, TOTAL_COL_LANC - COL_LANC.ID + 1)
-        .setValues([original.slice(COL_LANC.ID - 1, TOTAL_COL_LANC)]);
+      const volta = gravarBlocoLancamentos_(sheet, [original.slice(0, TOTAL_COL_LANC)]);
+      if (!volta.ok) {
+        return { ok: false, mensagem: 'A correção falhou (' + r2.mensagem + ') e o ' +
+          'lançamento original NÃO voltou para a base: ' + volta.mensagem +
+          ' Anote o ID ' + String(original[L_.ID] || '') + ' e me mostre esta mensagem.' };
+      }
       if (r1.odometroRemovido) {
         const odo = aba_(ABAS.ODOMETRO);
         const lo = odo.getLastRow() + 1;

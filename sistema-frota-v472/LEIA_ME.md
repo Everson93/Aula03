@@ -4973,6 +4973,89 @@ provas não pegaram: nenhuma delas perguntava como o número se LÊ.
 
 44 suítes, 1.772 provas.
 
+## V4.43.0 — um dono só para a gravação, e o cache que escondia o lançamento
+
+A auditoria do projeto apontou que a guarda de linha livre da V4.40.3 cobria
+**um** dos cinco caminhos que escrevem lançamento. Ao fechar isso, apareceu
+uma coisa maior — e é ela que explica o "diz gravado e não aparece" que sobrou
+depois da V4.41.
+
+### O defeito que faltava achar
+
+Num abastecimento **interno**, `estadoTanque_` lê os lançamentos **antes** de
+gravar (precisa saber quanto custa o litro do tanque) e enche o cache de
+execução. Depois da gravação, `atualizarResumoPlacaSeguro_` recalcula a linha
+do veículo — e lê **do mesmo cache**, agora velho. O resultado é gravado no
+Resumo: o veículo **sem** o abastecimento que acabou de ser lançado.
+
+A aba Lançamentos ficava certa. O Resumo, o Dashboard, o painel inicial e o
+rateio ficavam sem o valor, até alguém forçar um recálculo completo. Por isso
+o diagnóstico da V4.41 sempre encontrava o lançamento: ele estava lá.
+
+A prova é executável e está em `conferir_dono_gravacao.js`:
+
+```
+linhas na ABA depois:      1      ← gravou
+lerLancamentos_() vê:      0      ← cache da execução, velho
+Resumo depois:             0      ← e é isto que vai para o Resumo
+Resumo com o cache limpo:  600    ← o valor certo
+```
+
+### O dono único
+
+`gravarBlocoLancamentos_` passou a ser o único lugar do sistema que escreve
+linha de lançamento. Os cinco caminhos — formulário, depreciação do mês, 12
+parcelas de IPVA, importador e o desfazer da correção — passam por ele.
+
+Três coisas que só existem porque o dono é um só:
+
+- **a linha vai completa** (A..I e K..O). Os blocos antigos escreviam até a
+  coluna I e o ID: natureza, detalhe, fornecedor e **tipo de abastecimento**
+  ficavam com o conteúdo do lançamento anterior se a linha estivesse ocupada.
+  Uma linha meio nova, meio velha — com o campo que decide se o litro saiu do
+  tanque herdado de outro lançamento;
+- **a releitura vale para todas as linhas do bloco**, não só para a primeira;
+- **o cache cai na gravação**, resolvendo o defeito acima para todos os
+  caminhos de uma vez, inclusive os que ainda nem existem.
+
+A guarda de linha livre virou `linhasLivresParaLancamentos_(sheet, quantas)`:
+procura N linhas livres **seguidas** e, quando falta grade, **cresce** em vez
+de recusar — perder o trabalho de quem está lançando por causa de capacidade
+era o pior desfecho possível.
+
+E o desfazer da correção parou de mentir: ele dizia *"o lançamento original foi
+mantido"* sem conferir nada. Agora, se a volta do original falhar, a mensagem
+diz isso, com o ID para procurar.
+
+### Duas regras estáticas
+
+1. `proximaLinhaLancamento_()` só pode aparecer em três funções: a própria
+   definição, o dono único e o diagnóstico (que apenas lê). Qualquer outra é um
+   caminho de gravação sem guarda.
+2. A lista de quem escreve na linha de lançamento está **congelada** com o
+   motivo de cada nome (mesma ideia da lista ACEITAS de desempenho). Nome novo
+   reprova; nome que sumiu do código também, para a lista não virar enfeite.
+
+### Achados de dublê
+
+Dois, e os dois mentiam a favor:
+
+- `delete globalThis.ultimaLinhaLancamentoReal_` **não** desfaz uma declaração
+  de função — a propriedade não é configurável. A sabotagem de um bloco vazava
+  para os seguintes, que então provavam outra coisa sem ninguém notar. Agora a
+  original é guardada e restaurada por atribuição.
+- O dublê de `conferir_classificacao_memo.js` registrava escritas e não
+  guardava nada; com a releitura do dono único, ele reprovava gravação boa.
+  Passou a lembrar o que foi escrito.
+
+Mutantes mortos: cache velho de volta, linhas livres não seguidas, conferir só
+a primeira linha do bloco e — o mais importante — **escrever só até o ID, como
+os blocos antigos**, que reproduz a linha Frankenstein exatamente.
+
+45 suítes, 1.796 provas.
+
+**Não precisa rodar "Instalar / atualizar sistema".**
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026

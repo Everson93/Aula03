@@ -94,7 +94,7 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   // conferir_gravacao_lancamento.js, com uma aba Lancamentos de verdade.
   // Aqui todas as abas sao a mesma lista de centros, entao a pergunta nao
   // tem resposta que signifique algo.
-  linhaLivreParaLancamento_ = function () { return { linha: 2, pulou: 0, candidata: 2 }; };
+  gravarBlocoLancamentos_ = function () { return { ok: true, linha: 2, gravadas: 1, pulou: 0 }; };
   aba_ = function (nome) {
     // O limite de colunas vale so para a aba Centros, que e a do campo novo.
     // Aplica-lo a Lancamentos faria a gravacao quebrar por um motivo que nao
