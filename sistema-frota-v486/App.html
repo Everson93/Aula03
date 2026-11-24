@@ -2652,6 +2652,18 @@
             '<div class="sub2">Sai como G, D ou F na coluna "Tipo Com." do relatório ' +
             'operacional que vai para a contabilidade.</div></div>' +
         '</div>' +
+        // O vínculo carreta -> cavalo (V4.42). Só aparece para carreta: um
+        // campo de cavalo num truck convidaria a preencher o que o servidor
+        // recusa. Quem decide é o servidor; aqui é só o que a pessoa vê.
+        '<div class="linha" id="linhaCavalo" style="display:none">' +
+          '<div><label for="vCavalo">Cavalo do conjunto</label>' +
+            '<input type="text" id="vCavalo" list="listaCavalos" value="' +
+            esc(v.cavalo || '') + '" placeholder="placa do cavalo mecânico">' +
+            datalistVeiculos('listaCavalos', true) +
+            '<div class="sub2">A carreta aponta o cavalo que a puxa. É isso que monta ' +
+            'o conjunto no painel da frota — o KM e o km/L do conjunto são os do ' +
+            'cavalo, porque carreta não tem odômetro.</div></div>' +
+        '</div>' +
         '<div class="linha">' +
           '<div><label for="vAtivo">Situação</label>' +
             seletor('vAtivo', ['ATIVO', 'INATIVO']) + '</div>' +
@@ -2672,7 +2684,34 @@
       definirSelect('vCentro', v.centro);
       definirSelect('vAtivo', v.ativo === false ? 'INATIVO' : 'ATIVO');
     }
+    if (el('vCategoria')) el('vCategoria').onchange = ajustarCampoCavalo;
+    ajustarCampoCavalo();
     el('formVeiculo').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /**
+   * Mostra o campo do cavalo só para carreta.
+   *
+   * A regra é a MESMA do servidor (`ehCategoriaCarreta_`): o nome da categoria
+   * começa com "Carreta". Repetida aqui porque a tela não pode consultar o
+   * servidor a cada tecla — e por isso quem manda continua sendo o servidor:
+   * se as duas discordarem, o cadastro é recusado com a razão, não aceito
+   * errado.
+   */
+  function ehCarretaNaTela(categoria) {
+    return String(categoria || '').trim().toUpperCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').indexOf('CARRETA') === 0;
+  }
+
+  function ajustarCampoCavalo() {
+    var linha = el('linhaCavalo');
+    if (!linha) return;
+    var ehCarreta = ehCarretaNaTela(el('vCategoria') ? el('vCategoria').value : '');
+    linha.style.display = ehCarreta ? '' : 'none';
+    // Trocar a categoria de carreta para outra coisa esvazia o campo: deixar a
+    // placa do cavalo escondida num truck gravaria um vínculo que o servidor
+    // recusa, e a pessoa não veria por quê.
+    if (!ehCarreta && el('vCavalo')) el('vCavalo').value = '';
   }
 
   function definirSelect(id, valor) {
@@ -2719,6 +2758,7 @@
         precoCombustivel: el('vPreco').value,
         ipva: el('vIpva') ? el('vIpva').value : 0,
         combustivel: el('vCombustivel') ? el('vCombustivel').value : '',
+        cavalo: el('vCavalo') ? el('vCavalo').value : '',
         ativo: !el('vAtivo') || el('vAtivo').value !== 'INATIVO'
       });
   }

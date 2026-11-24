@@ -41,35 +41,50 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   normalizarCentroCusto_ = function (c) { return String(c || '').trim().toUpperCase(); };
   listaPlacas_ = function () { return __veiculos.map(function (v) { return v[0]; }); };
   dadosVeiculosExecucao_ = function () { return __veiculos; };
-  aba_ = function () {
-    return {
-      getLastRow: function () { return __veiculos.length + 1; },
-      getRange: function (linha, coluna, nL, nC) {
-        return {
-          getValues: function () {
-            const saida = [];
-            for (let i = 0; i < nL; i++) {
-              const l = __veiculos[linha - 2 + i] || new Array(TOTAL_COL_VEIC).fill('');
-              saida.push(l.slice(coluna - 1, coluna - 1 + nC));
-            }
-            return saida;
-          },
-          setValues: function (vals) {
-            vals.forEach(function (l, i) {
-              const alvo = linha - 2 + i;
-              if (!__veiculos[alvo]) __veiculos[alvo] = new Array(TOTAL_COL_VEIC).fill('');
-              l.forEach(function (v, j) { __veiculos[alvo][coluna - 1 + j] = v; });
-            });
-            return this;
-          },
-          setNumberFormat: function () { return this; },
-        };
-      },
-    };
+  aba_ = function () { return __aba; };
+  __aba = {
+    // Largura e cabecalho de VERDADE no duble: a V4.42 acrescentou a coluna do
+    // cavalo, e o caso que importa e a planilha que ainda NAO rodou o
+    // Instalar — nela a coluna nao existe, e ler ou escrever ali lanca.
+    getLastRow: function () { return __veiculos.length + 1; },
+    getMaxColumns: function () { return __largura; },
+    getMaxRows: function () { return __veiculos.length + 50; },
+    insertColumnsAfter: function (depois, quantas) { __largura += quantas; },
+    getRange: function (linha, coluna, nL, nC) {
+      nL = nL || 1; nC = nC || 1;
+      if (coluna + nC - 1 > __largura) {
+        throw new Error('The number of columns in the range must be at least 1');
+      }
+      function linhaDe(n) {
+        if (n === 1) return __cabecalho;
+        if (!__veiculos[n - 2]) __veiculos[n - 2] = new Array(__largura).fill('');
+        return __veiculos[n - 2];
+      }
+      return {
+        getValues: function () {
+          const saida = [];
+          for (let i = 0; i < nL; i++) {
+            saida.push(linhaDe(linha + i).slice(coluna - 1, coluna - 1 + nC));
+          }
+          return saida;
+        },
+        setValues: function (vals) {
+          vals.forEach(function (l, i) {
+            const destino = linhaDe(linha + i);
+            l.forEach(function (v, j) { destino[coluna - 1 + j] = v; });
+          });
+          return this;
+        },
+        setValue: function (v) { linhaDe(linha)[coluna - 1] = v; return this; },
+        setNumberFormat: function () { return this; },
+      };
+    },
   };
 `, ctx);
 
-function montar() {
+function montar(largura) {
+  ctx.__largura = largura === undefined ? ctx.TOTAL_COL_VEIC : largura;
+  ctx.__cabecalho = new Array(ctx.__largura).fill('');
   const v = new Array(ctx.TOTAL_COL_VEIC).fill('');
   v[ctx.COL_VEIC.PLACA - 1] = 'ABC1D23';
   v[ctx.COL_VEIC.DESCRICAO - 1] = 'Caminhao';

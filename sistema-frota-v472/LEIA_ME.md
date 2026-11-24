@@ -4882,6 +4882,83 @@ vencimento, órgão) — o usuário pediu para deixar de lado por enquanto. E
 (carga da bomba, aferição, IPVA, exclusão): a regra estática hoje cobre só
 `salvarLancamento_`.
 
+## V4.42.0 — a frota de transporte, e o conjunto cavalo + carreta
+
+Pedido do usuário: um menu que traga **só** o que a frota de transporte gasta
+(caminhão, cavalinho e carreta), separando fixo e variável, com a **carreta
+vinculada ao seu devido cavalinho**.
+
+Três decisões foram dele, perguntadas antes de escrever qualquer linha:
+categoria própria para o cavalo mecânico; vínculo **fixo** (uma carreta, um
+cavalo); e, por ora, **só fixo x variável** — sem direto/indireto.
+
+Essa última merece registro, porque é uma recusa a inventar número: hoje todo
+lançamento tem placa, então **todo custo do sistema é direto**. Um "indireto"
+teria de sair de um rateio de estrutura que ninguém lança — e um número que não
+vem de lançamento nenhum é exatamente o tipo de coisa que, três meses depois,
+ninguém sabe defender na reunião. Ficou escrito no próprio relatório.
+
+### O que entrou
+
+- Categoria **Cavalo Mecanico**. Sem ela, cavalinho ia como Truck, e "R$/km da
+  frota de transporte" somava trator com caminhão.
+- Coluna **Cavalo do Conjunto** na aba Veículos (no fim, como sempre: nenhuma
+  coluna existente muda de letra). A **carreta** aponta quem a puxa.
+- `resolverCavaloDaCarreta_`, dono único da regra: recusa o que tornaria o
+  conjunto mentiroso (não é carreta, aponta a si mesma, aponta outra carreta,
+  aponta placa que não existe) e **avisa sem travar** quando o apontado existe
+  mas ainda está como Truck — travar ali impediria o cadastro de quem ainda não
+  reclassificou os cavalinhos.
+- Campo na tela só para carreta, e a chave `cavalo` **manda quando vem**: com o
+  `manter` de sempre, apagar a placa na tela não desfazia o vínculo — um
+  vínculo errado seria para sempre.
+- Relatório **Frota de transporte (fixo x variável)**: indicadores da frota,
+  custo por natureza com a classificação, **conjuntos cavalo + carreta**, por
+  veículo, e a lista do que falta no cadastro. Sai na tela, em PDF e em
+  planilha, pelos formatadores que já existiam.
+- `garantirCategoriaNoGrupoDeTransporte_`: em planilha que já rodava, o
+  `GRUPOS_FROTA` está gravado sem a categoria nova, e categoria fora de grupo
+  cai em "Outros" **sem avisar**. A migração acha o grupo pela categoria de
+  referência (a carreta), não por um nome fixo — o usuário pode ter renomeado o
+  grupo —, é idempotente e registra no Log.
+
+### As duas regras que fazem o número ser confiável
+
+1. **O KM do conjunto é o do cavalo.** Carreta não tem odômetro; somar o km
+   dela ao do cavalo contaria o mesmo quilômetro duas vezes e derrubaria o
+   R$/km pela metade. Vale também para o KM da frota. Se houver leitura de
+   odômetro numa carreta (acontece: digitação errada, hubodômetro), ela
+   continua **visível** no bloco por veículo e **fora** das somas — tirar da
+   soma é uma decisão; esconder o dado seria outra.
+2. **Fixo + variável = total, e imobilizado fica fora.** As duas listas vêm do
+   Resumo (`R_CUSTO_VARIAVEL_` e `R_COMPOEM_TOTAL_`), não de uma lista nova:
+   Oficina Ativo, Plotagem e Carro Novo não entram no custo, igual ao TOTAL do
+   Resumo, e saem listados à parte para ninguém achar que faltou dinheiro.
+
+### Dívidas pagas de passagem
+
+- `kmRodadoPorPlaca_` virou **dono único** do km por placa. Estava no meio de
+  `calcularLinhasResumo_`; duas contas dariam dois R$/km do mesmo mês.
+- `cadastrarVeiculosNovos_` montava uma linha de **13** posições para uma aba
+  de **14** colunas: `setValues` lança quando a largura não bate, e o cadastro
+  em lote do importador quebrava por um motivo que não aparecia no código.
+  Agora a linha é completada até `TOTAL_COL_VEIC`.
+- Toda leitura da aba Veículos passou a usar `Math.min(TOTAL_COL_VEIC,
+  getMaxColumns())`, como já fazia Centros: pedir a coluna 15 numa planilha que
+  ainda não rodou o Instalar **lança**, e o cadastro inteiro pararia de abrir.
+  Na gravação, a coluna é criada com o cabeçalho certo, numa escrita só.
+
+`conferir_conjunto_frota.js` (43 provas) e 6 provas novas em
+`conferir_grupos_frota.js`. 16 mutantes mortos, três deles achados aqui: o km
+do conjunto somando a carreta, o vínculo torto aparecendo só como "sem cavalo"
+(que pede outra providência) e a migração duplicando a categoria a cada
+Instalar.
+
+44 suítes, 1.771 provas.
+
+**Precisa rodar "Instalar / atualizar sistema"**: coluna nova na aba Veículos e
+categoria nova no grupo de frota.
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026

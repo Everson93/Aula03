@@ -30,7 +30,11 @@ vm.runInContext(fs.readFileSync('Codigo.gs', 'utf8') + `
   Object.assign(globalThis, {
     gruposFrota_, grupoDaCategoria_, chaveCategoria_, GRUPO_FROTA_OUTROS_,
     R_, TOTAL_COL_RESUMO, PARAMETROS_PADRAO, CATEGORIAS_VEICULO_PADRAO,
+    garantirCategoriaNoGrupoDeTransporte_,
   });
+  exigirExecucaoMutacao_ = function () {};
+  registrarLog_ = function (acao, detalhe) { __log.push(acao + ': ' + detalhe); };
+  gravarParam_ = function (nome, valor) { __gravado = { nome: nome, valor: valor }; };
 `, ctx, { filename: 'Codigo.gs' });
 
 const PADRAO = ctx.PARAMETROS_PADRAO.filter(function (p) { return p[0] === 'GRUPOS_FROTA'; })[0][1];
@@ -168,6 +172,47 @@ m = ctx.gruposFrota_();
 ok('pedaços inválidos são ignorados sem erro', m.ordem.length === 0, JSON.stringify(m.ordem));
 CONFIG = 'Transporte: Carreta Normal';
 ok('um grupo só também funciona', ctx.grupoDaCategoria_('Carreta Normal') === 'Transporte');
+
+console.log('\n7. Categoria nova entra no grupo sem desfazer o do usuário');
+// Em planilha que ja rodava, GRUPOS_FROTA esta GRAVADO: a categoria nova nao
+// aparece nele e cairia em "Outros" sem avisar. A migracao acha o grupo pela
+// categoria de referencia, nao por um nome fixo, porque o usuario pode ter
+// renomeado o grupo.
+(function () {
+  ctx.__log = [];
+  ctx.__gravado = null;
+  CONFIG = 'Minha Frota: Truck Normal, Carreta Normal | Apoio: Carro';
+  const mexeu = ctx.garantirCategoriaNoGrupoDeTransporte_('Cavalo Mecanico');
+  ok('acrescenta no grupo que tem a carreta, qualquer que seja o nome dele',
+    mexeu === true && ctx.__gravado &&
+    /Minha Frota: Truck Normal, Carreta Normal, Cavalo Mecanico/.test(ctx.__gravado.valor),
+    JSON.stringify(ctx.__gravado));
+  ok('e não mexe nos outros grupos',
+    ctx.__gravado && / Apoio: Carro/.test(ctx.__gravado.valor), JSON.stringify(ctx.__gravado));
+  ok('registra no Log que mexeu em parâmetro do usuário',
+    ctx.__log.some(function (l) { return /Cavalo Mecanico/.test(l); }), JSON.stringify(ctx.__log));
+
+  ctx.__gravado = null;
+  CONFIG = 'Minha Frota: Truck Normal, Carreta Normal, Cavalo Mecanico';
+  ok('rodar de novo não duplica nada (idempotente)',
+    ctx.garantirCategoriaNoGrupoDeTransporte_('Cavalo Mecanico') === false &&
+    ctx.__gravado === null, JSON.stringify(ctx.__gravado));
+
+  ctx.__gravado = null;
+  CONFIG = 'Apoio: Carro, Moto';
+  ok('sem grupo de carreta, não inventa grupo nenhum',
+    ctx.garantirCategoriaNoGrupoDeTransporte_('Cavalo Mecanico') === false &&
+    ctx.__gravado === null,
+    'criar um grupo que o usuário não pediu mudaria todos os recortes dele: ' +
+    JSON.stringify(ctx.__gravado));
+
+  ctx.__gravado = null;
+  CONFIG = '';
+  ok('parâmetro vazio (instalação nova) fica para o padrão, sem gravação',
+    ctx.garantirCategoriaNoGrupoDeTransporte_('Cavalo Mecanico') === false &&
+    ctx.__gravado === null, JSON.stringify(ctx.__gravado));
+  CONFIG = PADRAO;
+})();
 
 console.log('\n' + (falhas ? 'FALHOU: ' + falhas + ' de ' + provas : 'TUDO OK: ' + provas + ' provas'));
 process.exit(falhas ? 1 : 0);

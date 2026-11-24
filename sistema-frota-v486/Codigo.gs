@@ -201,6 +201,23 @@ function rotuloFiltroCategoria_(filtro) {
     : 'na categoria ' + f;
 }
 
+/**
+ * Carreta e cavalo RECONHECIDOS PELO NOME da categoria, nao por uma lista.
+ *
+ * A categoria e campo livre: o usuario pode criar "Carreta Graneleira" ou
+ * "Cavalo Mecanico Toco" amanha. Uma lista fixa aqui faria a carreta nova
+ * ficar fora do conjunto em silencio — e silencio num sistema de custo e o
+ * defeito que ninguem acha. A regra e o prefixo/termo do nome, e esta escrita
+ * num lugar so.
+ */
+function ehCategoriaCarreta_(categoria) {
+  return chaveCategoria_(categoria).indexOf('CARRETA') === 0;
+}
+
+function ehCategoriaCavalo_(categoria) {
+  return chaveCategoria_(categoria).indexOf('CAVALO') !== -1;
+}
+
 function grupoDaCategoria_(categoria, mapa) {
   const m = mapa || gruposFrota_();
   return m.porCategoria[chaveCategoria_(categoria)] || GRUPO_FROTA_OUTROS_;
@@ -374,6 +391,11 @@ const CATEGORIAS_VEICULO_PADRAO = [
   'Moto',
   'Truck Normal',
   'Truck Frigorifico',
+  // V4.42: o cavalo mecanico nao tinha categoria propria e ia como Truck. Sem
+  // distinguir trator de caminhao, "R$/km da frota de transporte" soma dois
+  // veiculos que nao fazem a mesma coisa — e o conjunto cavalo+carreta nao tem
+  // como ser montado.
+  'Cavalo Mecanico',
   'Carreta Normal',
   'Carreta Frigorifica',
   'Empilhadeira/Paleteira',
@@ -585,6 +607,11 @@ const COL_VEIC = {
   // operacional. No fim pelo mesmo motivo de sempre: nenhuma coluna existente
   // muda de letra, e formula de aba antiga continua valendo.
   COMBUSTIVEL: 14,
+  // V4.42: a carreta aponta o cavalo mecanico que a puxa. Vinculo FIXO (uma
+  // carreta, um cavalo), escolha explicita do usuario: engate por viagem
+  // precisaria de controle de viagem, que o sistema nao tem. No fim pelo mesmo
+  // motivo de sempre: nenhuma coluna existente muda de letra.
+  CAVALO: 15,
 };
 
 /** Combustiveis do cadastro. A letra e o que sai no relatorio operacional. */
@@ -614,7 +641,11 @@ const PARAMETROS_PADRAO = [
     // V4.36: o grupo que o usuario chama de "Frota Entregas" e exatamente este
     // — as quatro categorias da planilha dele (Carga Seca / Frigorifico,
     // Caminhao / Carreta). O nome mudou; o conteudo e o mesmo de antes.
-    'Frota Entregas: Truck Normal, Truck Frigorifico, Carreta Normal, Carreta Frigorifica | ' +
+    // V4.42: o cavalo mecanico entra no MESMO grupo. Ele e a frota de
+    // transporte tanto quanto o truck e a carreta; fora do grupo, cairia em
+    // "Outros" e o indicador da frota nasceria errado.
+    'Frota Entregas: Truck Normal, Truck Frigorifico, Cavalo Mecanico, Carreta Normal, ' +
+    'Carreta Frigorifica | ' +
     'Apoio: Carro, Moto, Leve | Operação interna: Empilhadeira/Paleteira, Maquina',
     'Grupos de frota para os indicadores. Formato: Nome: categoria, categoria | Nome: ...'],
 ];
@@ -643,7 +674,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.41.0';
+const VERSAO_SISTEMA = '4.42.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1491,7 +1522,12 @@ function dadosVeiculosExecucao_() {
     VEICULOS_EXEC_CACHE_ = [];
     return VEICULOS_EXEC_CACHE_;
   }
-  VEICULOS_EXEC_CACHE_ = sheet.getRange(2, 1, sheet.getLastRow() - 1, TOTAL_COL_VEIC).getValues();
+  // `Math.min` com getMaxColumns, pela mesma razao de dadosCentrosExecucao_: em
+  // planilha que ainda nao rodou o Instalar a coluna do cavalo (V4.42) nao
+  // existe, e pedi-la LANCA — o cadastro inteiro pararia de abrir. Sem ela, o
+  // vinculo fica vazio e nada muda de comportamento.
+  const colunasVeic = Math.min(TOTAL_COL_VEIC, sheet.getMaxColumns());
+  VEICULOS_EXEC_CACHE_ = sheet.getRange(2, 1, sheet.getLastRow() - 1, colunasVeic).getValues();
   return VEICULOS_EXEC_CACHE_;
 }
 
@@ -1923,7 +1959,8 @@ CABECALHOS[ABAS.CENTROS] = ['Centro de Custo', '% Rateio Depósito', 'Recebe Rat
   'Combustível'];
 CABECALHOS[ABAS.VEICULOS] = ['Placa / ID', 'Descrição', 'Categoria', 'Centro de Custo',
   'Código Patrimônio', 'Depreciação Mensal', 'Emplacamento (não usado)', 'Seguro', 'Bônus',
-  'Preço Comb. Próprio', 'Ativo', 'Aba de Origem', 'IPVA Anual', 'Combustível'];
+  'Preço Comb. Próprio', 'Ativo', 'Aba de Origem', 'IPVA Anual', 'Combustível',
+  'Cavalo do Conjunto'];
 CABECALHOS[ABAS.LANCAMENTOS] = ['Data', 'Placa / ID', 'Tipo de Despesa', 'Litros',
   'Valor R$', 'NF / Documento / OS', 'Observação', 'Centro de Custo',
   'Categoria', 'Período', 'ID Lançamento', 'Natureza da Oficina', 'Detalhe da Peça / Serviço',
@@ -1998,6 +2035,9 @@ function montarAbasDeDados_() {
   // montar fórmulas, validações e relatórios.
   migrarCentroAcParaAdmCentral_();
   migrarGrupoTransporteParaEntregas_();
+  // V4.42: em planilha que ja rodava, o parametro GRUPOS_FROTA esta gravado sem
+  // a categoria nova — e categoria fora de grupo cai em "Outros" sem avisar.
+  garantirCategoriaNoGrupoDeTransporte_('Cavalo Mecanico');
 
   formatarLancamentos_();
   formatarOdometro_();
@@ -3102,6 +3142,45 @@ function mapaTipoColunaResumo_() {
   return normalizado;
 }
 
+/**
+ * KM rodado por placa num intervalo: maior menos menor leitura, com pelo menos
+ * DUAS leituras.
+ *
+ * Dono unico de propósito. O Resumo calculava isto no meio de
+ * `calcularLinhasResumo_`, e o painel da frota (V4.42) precisa do MESMO numero
+ * para um periodo escolhido na tela. Duas implementacoes dariam dois "R$/km"
+ * do mesmo veiculo no mesmo mes, sem nada que explicasse a diferenca — e
+ * quando dois numeros discordam, ninguem usa nenhum.
+ *
+ * Uma leitura so nao vira km: ela nao diz percurso nenhum, e tratar como zero
+ * e diferente de tratar como "o odometro inteiro".
+ */
+function kmRodadoPorPlaca_(ini, fim, aceita) {
+  const odo = ss_().getSheetByName(ABAS.ODOMETRO);
+  const saida = {};
+  if (!odo || odo.getLastRow() < 2) return saida;
+  const leituras = {};
+  lerOdometro_().forEach(function (o) {
+    const data = o[0];
+    if (!ehDataReal_(data)) return;
+    const t = data.getTime();
+    if (t < ini || t > fim) return;
+    const km = Number(o[2]);
+    if (!isFinite(km) || o[2] === '' || o[2] === null) return;
+    const chave = normalizaPlaca_(o[1]);
+    if (aceita && !aceita(chave)) return;
+    const r = leituras[chave] || (leituras[chave] = { n: 0, min: km, max: km });
+    r.n++;
+    if (km < r.min) r.min = km;
+    if (km > r.max) r.max = km;
+  });
+  Object.keys(leituras).forEach(function (chave) {
+    const r = leituras[chave];
+    saida[chave] = r.n >= 2 ? r.max - r.min : 0;
+  });
+  return saida;
+}
+
 /** Chave de comparação de um tipo de despesa: sem acento, sem caixa, sem espaço sobrando. */
 function chaveTipoDespesa_(tipo) {
   return String(tipo == null ? '' : tipo)
@@ -3172,29 +3251,12 @@ function calcularLinhasResumo_(periodo) {
     if (chave === chaveGas) l[R_.GAS_KG] += Number(lanc[L_.LITROS]) || 0;
   });
 
-  // KM rodado = maior - menor leitura do período (exige pelo menos 2 leituras).
-  const odo = ss_().getSheetByName(ABAS.ODOMETRO);
-  if (odo && odo.getLastRow() >= 2) {
-    const leituras = {};
-    lerOdometro_().forEach(function (o) {
-      const data = o[0];
-      if (!(data instanceof Date)) return;
-      const t = data.getTime();
-      if (isNaN(t) || t < ini || t > fim) return;
-      const km = Number(o[2]);
-      if (!isFinite(km) || o[2] === '' || o[2] === null) return;
-      const chave = normalizaPlaca_(o[1]);
-      if (!porPlaca[chave]) return;
-      const r = leituras[chave] || (leituras[chave] = { n: 0, min: km, max: km });
-      r.n++;
-      if (km < r.min) r.min = km;
-      if (km > r.max) r.max = km;
-    });
-    Object.keys(leituras).forEach(function (chave) {
-      const r = leituras[chave];
-      porPlaca[chave][R_.KM] = r.n >= 2 ? r.max - r.min : 0;
-    });
-  }
+  const kmDoPeriodo = kmRodadoPorPlaca_(ini, fim, function (chave) {
+    return !!porPlaca[chave];
+  });
+  Object.keys(kmDoPeriodo).forEach(function (chave) {
+    porPlaca[chave][R_.KM] = kmDoPeriodo[chave];
+  });
 
   linhas.forEach(function (l) {
     let total = 0;
@@ -4763,10 +4825,18 @@ function cadastrarVeiculosNovos_(veiculos, apenasContar) {
   if (apenasContar) return novos.length;
   if (!novos.length) return 0;
 
+  // A linha vai COMPLETADA ate TOTAL_COL_VEIC. Antes tinha 13 posicoes fixas
+  // contra uma aba de 14 colunas, e `setValues` LANCA quando a largura nao
+  // bate: o cadastro em lote do importador quebrava por um motivo que nao
+  // aparecia no codigo. Com o completamento, acrescentar coluna no fim
+  // (combustivel na V4.29, cavalo na V4.42) deixa de mexer aqui.
   const linhas = novos.map(function (v) {
-    return [v.placa, v.descricao, 'Leve', '', v.codigo, v.depreciacao,
+    const linha = [v.placa, v.descricao, 'Leve', '', v.codigo, v.depreciacao,
       v.emplacamento, v.seguro, v.bonus, '', 'SIM', v.aba, 0];
+    while (linha.length < TOTAL_COL_VEIC) linha.push('');
+    return linha.slice(0, TOTAL_COL_VEIC);
   });
+  garantirColunasVeiculos_(sheet);
   sheet.getRange(sheet.getLastRow() + 1, 1, linhas.length, TOTAL_COL_VEIC).setValues(linhas);
   VEICULOS_EXEC_CACHE_ = null;
   invalidarCacheInicio_();
@@ -7952,6 +8022,22 @@ const CATALOGO_RELATORIOS = {
     somenteApp: true,
   },
 
+  'Frota de transporte (fixo x variável)': {
+    descricao: 'Só a frota de transporte — cavalo mecânico, carreta e truck: custo fixo e ' +
+      'variável, por natureza, por veículo e por CONJUNTO (cavalo + as carretas vinculadas ' +
+      'a ele), com KM, litros, km/L e R$/km. O KM do conjunto é o do cavalo, porque carreta ' +
+      'não tem odômetro. Direto e indireto não são separados: hoje todo lançamento tem ' +
+      'placa, então todo custo aqui é direto. Imobilizado (Oficina Ativo, Plotagem, Carro ' +
+      'Novo) fica fora do custo, como no Resumo, e sai listado à parte.',
+    somenteApp: true,
+    fonte: 'lancamentos',
+    filtros: ['centroLancamento', 'categoriaLancamento', 'veiculoLancamento'],
+    colunas: [
+      ['Classificação', '@', 240], ['R$', 'R$ #,##0.00', 130],
+      ['% do custo', '#,##0.00"%"', 110], ['R$/km', 'R$ #,##0.000', 110],
+    ],
+  },
+
   'Combustível lançado por veículo': {
     descricao: 'Cada abastecimento lançado: data, nota, litros, valor e o preço do litro ' +
       'daquele abastecimento, mais o consolidado de litros e valor por veículo. Usa toda ' +
@@ -8475,6 +8561,43 @@ function migrarGrupoTransporteParaEntregas_() {
   const novo = 'Frota Entregas:' + atual.slice('Transporte:'.length);
   gravarParam_('GRUPOS_FROTA', novo);
   registrarLog_('Grupos de frota', 'grupo "Transporte" renomeado para "Frota Entregas"');
+  return true;
+}
+
+/**
+ * Põe uma categoria no grupo de frota onde ela pertence, sem desfazer nada.
+ *
+ * O parametro GRUPOS_FROTA e do usuario: ele pode ter renomeado o grupo e
+ * mudado a composicao. Por isso a categoria nova entra no grupo que JA contem
+ * a categoria de referencia (a carreta), e nao num nome fixo — e se ela ja
+ * estiver em qualquer grupo, nada acontece. Idempotente e registrado no Log:
+ * mexer em parametro do usuario em silencio e o tipo de coisa que ninguem
+ * consegue explicar tres meses depois.
+ */
+function garantirCategoriaNoGrupoDeTransporte_(categoria, referencia) {
+  exigirExecucaoMutacao_();
+  const bruto = String(paramOuPadrao_('GRUPOS_FROTA', '') || '');
+  if (!bruto.trim()) return false;
+  const mapa = gruposFrota_();
+  if (mapa.porCategoria[chaveCategoria_(categoria)] !== undefined) return false;
+  const alvo = chaveCategoria_(referencia || 'Carreta Normal');
+  const partes = bruto.split('|');
+  let mexeu = false;
+  const novo = partes.map(function (parte) {
+    if (mexeu) return parte;
+    const pos = parte.indexOf(':');
+    if (pos === -1) return parte;
+    const tem = parte.slice(pos + 1).split(',').some(function (c) {
+      return chaveCategoria_(c) === alvo;
+    });
+    if (!tem) return parte;
+    mexeu = true;
+    return parte.replace(/\s*$/, '') + ', ' + categoria;
+  }).join('|');
+  if (!mexeu) return false;
+  gravarParam_('GRUPOS_FROTA', novo);
+  registrarLog_('Grupos de frota', 'categoria "' + categoria + '" acrescentada ao grupo de ' +
+    (referencia || 'Carreta Normal'));
   return true;
 }
 
@@ -11382,6 +11505,7 @@ function relatorioPorTipo_(tipo, centro, categoria, placa, termo, periodo) {
     case 'Detalhamento de oficina por veículo': return relatorioDetalhamentoOficina_(centro, categoria, placa, periodo);
     case 'Combustível lançado por veículo': return relatorioCombustivelLancado_(centro, categoria, placa, periodo);
     case 'Diesel por mês e por semana': return relatorioDieselPeriodo_(centro, categoria, placa, periodo);
+    case 'Frota de transporte (fixo x variável)': return relatorioFrotaTransporte_(centro, categoria, placa, periodo);
     case 'Extrato do tanque': return relatorioExtratoTanque_(periodo);
     case 'Aferições de estoque do tanque': return relatorioAfericoes_(periodo);
     case 'Abastecimento e consumo': return relatorioAbastecimento_(centro, categoria, placa);
@@ -11958,6 +12082,343 @@ function ehDieselDoVeiculo_(combustivelCadastro) {
  * mensal". Os dois recortes no mesmo relatorio, porque a pergunta e a mesma
  * vista de duas distancias — a semana mostra o pico, o mes mostra a conta.
  */
+// ================================================== frota de transporte (V4.42)
+/**
+ * A frota de transporte: cavalo mecanico, carreta e truck.
+ *
+ * Reconhecida pelo NOME da categoria, pelo mesmo motivo de
+ * `ehCategoriaCarreta_`: categoria e campo livre, e uma lista fixa deixaria a
+ * categoria nova de fora em silencio. Quem quiser outro recorte usa o filtro
+ * de grupo/categoria da tela — este e so o padrao quando nada e escolhido.
+ */
+const TERMOS_FROTA_TRANSPORTE_ = ['TRUCK', 'CAVALO', 'CARRETA'];
+
+function ehCategoriaTransporte_(categoria) {
+  const k = chaveCategoria_(categoria);
+  return TERMOS_FROTA_TRANSPORTE_.some(function (t) { return k.indexOf(t) !== -1; });
+}
+
+/**
+ * Conjuntos cavalo + carreta(s), montados do cadastro.
+ *
+ * O vinculo e FIXO e mora na carreta (coluna "Cavalo do Conjunto"): a carreta
+ * aponta quem a puxa. Um cavalo pode ter mais de uma carreta — na vida real
+ * ele puxa uma por vez, mas ao longo de um mes troca, e somar o mes inteiro do
+ * conjunto e o que interessa no custo.
+ *
+ * Os casos tortos NAO sao corrigidos nem escondidos: saem em `avisos`, com
+ * placa e motivo, e o relatorio imprime a lista. Vinculo errado consertado em
+ * silencio volta no mes seguinte; vinculo errado escondido vira custo no
+ * conjunto errado.
+ */
+function conjuntosDaFrota_() {
+  const porPlaca = {};
+  const ordem = [];
+  dadosVeiculosExecucao_().forEach(function (v) {
+    const placa = String(v[COL_VEIC.PLACA - 1] || '').trim();
+    if (!placa) return;
+    const chave = normalizaPlaca_(placa);
+    if (porPlaca[chave]) return;   // placa repetida no cadastro: vale a primeira
+    porPlaca[chave] = {
+      placa: placa,
+      chave: chave,
+      descricao: String(v[COL_VEIC.DESCRICAO - 1] || ''),
+      categoria: String(v[COL_VEIC.CATEGORIA - 1] || ''),
+      centro: normalizarCentroCusto_(v[COL_VEIC.CENTRO - 1]),
+      ativo: String(v[COL_VEIC.ATIVO - 1]).toUpperCase() !== 'NAO',
+      cavaloCadastrado: normalizaPlaca_(v[COL_VEIC.CAVALO - 1] || ''),
+      carretas: [],
+      cavalo: null,
+    };
+    ordem.push(chave);
+  });
+
+  const avisos = [];
+  ordem.forEach(function (chave) {
+    const v = porPlaca[chave];
+    if (!v.cavaloCadastrado) return;
+    if (!ehCategoriaCarreta_(v.categoria)) {
+      avisos.push({ placa: v.placa, problema: 'tem cavalo vinculado mas a categoria é "' +
+        v.categoria + '", não carreta' });
+      return;
+    }
+    if (v.cavaloCadastrado === v.chave) {
+      avisos.push({ placa: v.placa, problema: 'está vinculada a si mesma' });
+      return;
+    }
+    const cav = porPlaca[v.cavaloCadastrado];
+    if (!cav) {
+      avisos.push({ placa: v.placa, problema: 'aponta o cavalo ' + v.cavaloCadastrado +
+        ', que não está no cadastro' });
+      return;
+    }
+    if (ehCategoriaCarreta_(cav.categoria)) {
+      avisos.push({ placa: v.placa, problema: 'aponta ' + cav.placa + ', que também é carreta' });
+      return;
+    }
+    cav.carretas.push(v);
+    v.cavalo = cav;
+  });
+
+  const lista = ordem.map(function (k) { return porPlaca[k]; });
+  return {
+    porPlaca: porPlaca,
+    ordem: ordem,
+    cavalos: lista.filter(function (v) {
+      return ehCategoriaCavalo_(v.categoria) || v.carretas.length > 0;
+    }),
+    carretasSemCavalo: lista.filter(function (v) {
+      return ehCategoriaCarreta_(v.categoria) && !v.cavalo && v.ativo;
+    }),
+    cavalosSemCarreta: lista.filter(function (v) {
+      return ehCategoriaCavalo_(v.categoria) && !v.carretas.length && v.ativo;
+    }),
+    avisos: avisos,
+  };
+}
+
+/**
+ * Fixo, variavel ou imobilizado — derivado do Resumo, nao de lista nova.
+ *
+ * `R_CUSTO_VARIAVEL_` ja dizia quais colunas do Resumo andam com o uso do
+ * veiculo, e `R_COMPOEM_TOTAL_` ja dizia quem e despesa (Oficina Ativo,
+ * Plotagem e Carro Novo ficam fora: sao imobilizado). Uma segunda lista aqui
+ * daria, em algum mes, um "% variavel" que nao fecha com o R$/km do Resumo.
+ */
+function classeDeCustoDoTipo_(tipo, mapaColuna) {
+  const coluna = (mapaColuna || mapaTipoColunaResumo_())[chaveTipoDespesa_(tipo)];
+  if (coluna === undefined) return null;
+  const nome = Object.keys(R_).filter(function (n) { return R_[n] === coluna; })[0];
+  if (!nome || R_COMPOEM_TOTAL_.indexOf(nome) === -1) return 'imobilizado';
+  return R_CUSTO_VARIAVEL_.indexOf(nome) !== -1 ? 'variavel' : 'fixo';
+}
+
+const ROTULO_CLASSE_CUSTO_ = { variavel: 'Variável', fixo: 'Fixo', imobilizado: 'Imobilizado' };
+
+/**
+ * Painel da frota de transporte: fixo x variavel, por natureza, por conjunto.
+ *
+ * Nasceu do pedido de ver "so o que a frota de abastecimento gasta", com a
+ * carreta vinculada ao seu cavalinho. Tres decisoes que mudam o que o numero
+ * significa, e por isso ficam escritas:
+ *
+ *  - DIRETO x INDIRETO ficou de fora por honestidade: hoje todo lancamento tem
+ *    placa, entao tudo e direto. Inventar um indireto (rateio, estrutura) daria
+ *    um numero que nao vem de lancamento nenhum.
+ *  - IMOBILIZADO (Oficina Ativo, Plotagem, Carro Novo) nao entra no custo, do
+ *    mesmo jeito que nao entra no TOTAL do Resumo. Sai listado a parte, para
+ *    quem procura o dinheiro gasto no mes nao achar que faltou.
+ *  - O KM do CONJUNTO e o do cavalo. Carreta nao tem odometro, e somar a
+ *    carreta ao km do cavalo contaria o mesmo percurso duas vezes.
+ */
+function relatorioFrotaTransporte_(centro, categoria, placa, periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido, periodoAtual_());
+  const conj = conjuntosDaFrota_();
+  const mapaColuna = mapaTipoColunaResumo_();
+  const classeMemo = {};
+  const chavesCombustivel = TIPOS_COMBUSTIVEL.map(chaveTipoDespesa_);
+
+  function daFrota(v) {
+    if (!v) return false;
+    if (categoria) return categoriaCasa_(v.categoria, categoria);
+    return ehCategoriaTransporte_(v.categoria);
+  }
+
+  const alvo = {};
+  conj.ordem.forEach(function (chave) {
+    const v = conj.porPlaca[chave];
+    if (!daFrota(v)) return;
+    if (centro && v.centro !== centro) return;
+    if (placa && chave !== placa) return;
+    alvo[chave] = { veiculo: v, custo: {}, total: 0, variavel: 0, fixo: 0,
+      imobilizado: 0, litros: 0, km: 0, ehCarreta: ehCategoriaCarreta_(v.categoria) };
+  });
+
+  const porNatureza = {};
+  let semClasse = 0;
+  lerLancamentos_().forEach(function (l) {
+    const chave = normalizaPlaca_(l[L_.PLACA]);
+    const item = alvo[chave];
+    if (!item) return;
+    if (!janela.contem(l[L_.DATA])) return;
+    const tipo = String(l[L_.TIPO] || '').trim();
+    const chaveTipo = chaveTipoDespesa_(tipo);
+    const classe = classeMemo[chaveTipo] !== undefined
+      ? classeMemo[chaveTipo]
+      : (classeMemo[chaveTipo] = classeDeCustoDoTipo_(tipo, mapaColuna));
+    const valor = Number(l[L_.VALOR]) || 0;
+    if (classe === null) { semClasse += valor; return; }
+    item.custo[tipo] = (item.custo[tipo] || 0) + valor;
+    item[classe] += valor;
+    if (classe !== 'imobilizado') item.total += valor;
+    if (chavesCombustivel.indexOf(chaveTipo) !== -1) item.litros += Number(l[L_.LITROS]) || 0;
+    const n = porNatureza[tipo] || (porNatureza[tipo] = { valor: 0, classe: classe, lancamentos: 0 });
+    n.valor += valor;
+    n.lancamentos++;
+  });
+
+  const kmPorPlaca = kmRodadoPorPlaca_(janela.inicio.getTime(), janela.fim.getTime(),
+    function (chave) { return !!alvo[chave]; });
+  Object.keys(kmPorPlaca).forEach(function (chave) {
+    if (alvo[chave]) alvo[chave].km = kmPorPlaca[chave];
+  });
+
+  const chavesAlvo = Object.keys(alvo);
+  function soma(campo) {
+    return chavesAlvo.reduce(function (t, k) { return t + alvo[k][campo]; }, 0);
+  }
+  const totalGeral = soma('total');
+  const variavelGeral = soma('variavel');
+  const fixoGeral = soma('fixo');
+  const imobilizadoGeral = soma('imobilizado');
+  const litrosGeral = soma('litros');
+  // KM da frota: carreta FICA FORA. Ela nao anda sozinha — o percurso e o do
+  // cavalo que a puxa, e somar os dois contaria o mesmo quilometro duas vezes,
+  // derrubando o R$/km pela metade. A leitura da carreta, se existir, continua
+  // visivel no bloco por veiculo: esconder dado e pior do que explicar.
+  const kmGeral = chavesAlvo.reduce(function (t, k) {
+    return t + (alvo[k].ehCarreta ? 0 : alvo[k].km);
+  }, 0);
+  const rsKm = kmGeral > 0 ? totalGeral / kmGeral : 0;
+
+  // ---- tabela principal: a resposta curta
+  const linhas = [
+    ['Variável (anda com o km)', variavelGeral, totalGeral > 0 ? variavelGeral / totalGeral * 100 : 0,
+      kmGeral > 0 ? variavelGeral / kmGeral : 0],
+    ['Fixo (corre com o veículo parado)', fixoGeral, totalGeral > 0 ? fixoGeral / totalGeral * 100 : 0,
+      kmGeral > 0 ? fixoGeral / kmGeral : 0],
+  ];
+
+  // ---- bloco: indicadores da frota
+  const veiculosAtivos = chavesAlvo.filter(function (k) { return alvo[k].veiculo.ativo; }).length;
+  const conjuntosNoAlvo = conj.cavalos.filter(function (c) { return !!alvo[c.chave]; });
+  const indicadores = [
+    ['Veículos no recorte', numBR_(chavesAlvo.length, 0) +
+      (veiculosAtivos !== chavesAlvo.length ? ' (' + numBR_(veiculosAtivos, 0) + ' ativos)' : '')],
+    ['Conjuntos cavalo + carreta', numBR_(conjuntosNoAlvo.length, 0)],
+    ['KM rodado', numBR_(kmGeral, 0) + ' km'],
+    ['Litros de combustível', numBR_(litrosGeral, 1) + ' L'],
+    ['Média de consumo', litrosGeral > 0 ? numBR_(kmGeral / litrosGeral, 2) + ' km/L' : '—'],
+    ['Custo total do recorte', brlPdf_(totalGeral)],
+    ['Custo por KM', kmGeral > 0 ? brlPdf_(rsKm) : '— (sem leitura de odômetro no período)'],
+    ['Peso do variável', totalGeral > 0 ? numBR_(variavelGeral / totalGeral * 100, 1) + '%' : '—'],
+  ];
+  if (imobilizadoGeral > 0) {
+    indicadores.push(['Imobilizado no período (fora do custo)', brlPdf_(imobilizadoGeral)]);
+  }
+
+  // ---- bloco: por natureza
+  const naturezas = Object.keys(porNatureza).sort(function (a, b) {
+    return porNatureza[b].valor - porNatureza[a].valor;
+  }).map(function (tipo) {
+    const n = porNatureza[tipo];
+    return [tipo, ROTULO_CLASSE_CUSTO_[n.classe] || n.classe, n.valor,
+      totalGeral > 0 && n.classe !== 'imobilizado' ? n.valor / totalGeral * 100 : null,
+      kmGeral > 0 && n.classe !== 'imobilizado' ? n.valor / kmGeral : null, n.lancamentos];
+  });
+
+  // ---- bloco: conjuntos
+  const linhasConjunto = conjuntosNoAlvo.map(function (cav) {
+    const doCavalo = alvo[cav.chave];
+    const carretasNoAlvo = cav.carretas.filter(function (c) { return !!alvo[c.chave]; });
+    const custoCarretas = carretasNoAlvo.reduce(function (t, c) { return t + alvo[c.chave].total; }, 0);
+    const total = doCavalo.total + custoCarretas;
+    const km = doCavalo.km;
+    const litros = doCavalo.litros + carretasNoAlvo.reduce(function (t, c) {
+      return t + alvo[c.chave].litros;
+    }, 0);
+    return [
+      cav.placa,
+      carretasNoAlvo.length
+        ? carretasNoAlvo.map(function (c) { return c.placa; }).join(' + ')
+        : '— sem carreta vinculada',
+      cav.centro, km, litros, litros > 0 ? km / litros : 0,
+      doCavalo.total, custoCarretas, total, km > 0 ? total / km : 0,
+    ];
+  }).sort(function (a, b) { return b[8] - a[8]; });
+
+  // ---- bloco: por veiculo
+  const linhasVeiculo = chavesAlvo.map(function (k) {
+    const i = alvo[k];
+    const conjunto = ehCategoriaCarreta_(i.veiculo.categoria) && i.veiculo.cavalo
+      ? 'carreta de ' + i.veiculo.cavalo.placa
+      : (i.veiculo.carretas.length
+        ? 'cavalo de ' + i.veiculo.carretas.map(function (c) { return c.placa; }).join(' + ')
+        : '');
+    return [i.veiculo.placa, i.veiculo.categoria, conjunto, i.veiculo.centro,
+      i.km, i.litros, i.litros > 0 && i.km > 0 ? i.km / i.litros : 0,
+      i.variavel, i.fixo, i.total, i.km > 0 ? i.total / i.km : 0];
+  }).sort(function (a, b) { return b[9] - a[9]; });
+
+  // ---- bloco: cadastro pendente
+  const pendencias = [];
+  conj.carretasSemCavalo.forEach(function (v) {
+    if (categoria && !categoriaCasa_(v.categoria, categoria)) return;
+    pendencias.push([v.placa, v.categoria, 'sem cavalo vinculado — o custo dela não entra em ' +
+      'nenhum conjunto']);
+  });
+  conj.cavalosSemCarreta.forEach(function (v) {
+    if (categoria && !categoriaCasa_(v.categoria, categoria)) return;
+    pendencias.push([v.placa, v.categoria, 'nenhuma carreta aponta para este cavalo']);
+  });
+  conj.avisos.forEach(function (a) {
+    pendencias.push([a.placa, '', a.problema]);
+  });
+
+  const recorte = janela.ativo ? janela.rotulo
+    : 'competência aberta (' + formatarData_(janela.inicio) + ' a ' + formatarData_(janela.fim) + ')';
+  const blocos = [
+    { titulo: 'Indicadores da frota', posicao: 'antes',
+      subtitulo: 'Recorte: ' + recorte + '. A carreta entra no custo e NÃO no KM — nem no da ' +
+        'frota, nem no do conjunto: ela não anda sozinha, e somar o KM dela ao do cavalo ' +
+        'contaria o mesmo quilômetro duas vezes. Se houver leitura de odômetro em carreta, ' +
+        'ela aparece no bloco por veículo, mas fora destas somas.',
+      colunas: [col_('Indicador'), col_('Valor')], linhas: indicadores },
+    { titulo: 'Custo por natureza', colunas: [col_('Natureza'), col_('Classificação'),
+      col_('R$', 'moeda'), col_('% do custo', 'decimal'), col_('R$/km', 'moeda3'),
+      col_('Lançamentos', 'numero')], linhas: naturezas,
+      totais: [null, null, naturezas.reduce(function (t, l) {
+        return t + (l[1] === ROTULO_CLASSE_CUSTO_.imobilizado ? 0 : l[2]);
+      }, 0), null, null, null] },
+    { titulo: 'Conjuntos cavalo + carreta',
+      subtitulo: 'O KM e o km/L são do cavalo; o custo é do cavalo mais as carretas vinculadas a ele.',
+      colunas: [col_('Cavalo'), col_('Carreta(s)'), col_('Loja'), col_('KM', 'numero'),
+        col_('Litros', 'volume'), col_('KM/L', 'media'), col_('Custo do cavalo', 'moeda'),
+        col_('Custo das carretas', 'moeda'), col_('Custo do conjunto', 'moeda'),
+        col_('R$/km do conjunto', 'moeda3')],
+      linhas: linhasConjunto },
+    { titulo: 'Por veículo da frota',
+      colunas: [col_('Placa'), col_('Categoria'), col_('No conjunto'), col_('Loja'),
+        col_('KM', 'numero'), col_('Litros', 'volume'), col_('KM/L', 'media'),
+        col_('Variável', 'moeda'), col_('Fixo', 'moeda'), col_('Total', 'moeda'),
+        col_('R$/km', 'moeda3')],
+      linhas: linhasVeiculo },
+    { titulo: 'Cadastro do conjunto: o que falta',
+      subtitulo: 'Enquanto estiver nesta lista, o custo existe no relatório por veículo e não ' +
+        'aparece em nenhum conjunto.',
+      colunas: [col_('Placa'), col_('Categoria'), col_('Problema')], linhas: pendencias },
+  ];
+
+  return {
+    titulo: 'Frota de transporte — ' + recorte,
+    subtitulo: 'Custo fixo e variável da frota de transporte (cavalo, carreta e truck), ' +
+      'com o conjunto cavalo + carreta. Direto e indireto não são separados: hoje todo ' +
+      'lançamento tem placa, então todo custo aqui é direto.',
+    colunas: [col_('Classificação'), col_('R$', 'moeda'), col_('% do custo', 'decimal'),
+      col_('R$/km', 'moeda3')],
+    linhas: linhas,
+    totais: ['TOTAL', totalGeral, totalGeral > 0 ? 100 : 0, rsKm],
+    blocos: blocos,
+    mensagem: chavesAlvo.length
+      ? (semClasse > 0
+        ? 'R$ ' + numBR_(semClasse) + ' em tipos de despesa que não entram em nenhuma coluna ' +
+          'de custo do Resumo ficaram fora.'
+        : '')
+      : 'Nenhum veículo de transporte no recorte. A frota de transporte é reconhecida pela ' +
+        'categoria (cavalo, carreta, truck); use o filtro de categoria/grupo para outro recorte.',
+  };
+}
+
 function relatorioDieselPeriodo_(centro, categoria, placa, periodoEscolhido) {
   const combustivelPorPlaca = {};
   dadosVeiculosExecucao_().forEach(function (v) {
@@ -14319,7 +14780,8 @@ function webVeiculos(token, busca) {
   const termo = String(busca || '').toUpperCase().trim();
   const sheet = aba_(ABAS.VEICULOS);
   if (sheet.getLastRow() < 2) return { colunas: [], linhas: [] };
-  const dados = sheet.getRange(2, 1, sheet.getLastRow() - 1, TOTAL_COL_VEIC).getValues()
+  const dados = sheet.getRange(2, 1, sheet.getLastRow() - 1,
+      Math.min(TOTAL_COL_VEIC, sheet.getMaxColumns())).getValues()
     .filter(function (l) {
       if (!l[0]) return false;
       if (!termo) return true;
@@ -14460,6 +14922,11 @@ function webSalvarVeiculo(token, dados) {
   }
 
   const sheet = aba_(ABAS.VEICULOS);
+  // A gravacao escreve a linha INTEIRA, inclusive a coluna do cavalo (V4.42).
+  // Numa planilha que ainda nao rodou o Instalar ela nao existe, e tanto ler
+  // como escrever ali LANCA. Aqui a coluna e criada com o cabecalho certo: o
+  // campo novo passa a funcionar sem depender de o usuario rodar o Instalar.
+  garantirColunasVeiculos_(sheet);
   const indice = listaPlacas_(false).indexOf(placa);
   const atual = indice === -1 ? [] : sheet.getRange(indice + 2, 1, 1, TOTAL_COL_VEIC).getValues()[0];
 
@@ -14498,12 +14965,30 @@ function webSalvarVeiculo(token, dados) {
   });
   if (numeroInvalido.length) return { ok: false, mensagem: 'Valor numérico inválido no cadastro: ' + numeroInvalido.join(', ') + '.' };
 
+  // V4.42: o cavalo que puxa esta carreta. Recusa o que tornaria o conjunto
+  // mentiroso (nao e carreta, aponta a si mesma, aponta outra carreta, aponta
+  // placa que nao existe) e AVISA, sem recusar, quando o apontado existe mas
+  // nao esta na categoria de cavalo — travar ali impediria o cadastro de quem
+  // ainda nao reclassificou os cavalinhos.
+  //
+  // O `manter` NAO serve aqui: ele devolve o que esta na celula quando o campo
+  // vem vazio, e isso tornaria impossivel DESFAZER um vinculo — a tela manda
+  // o campo vazio justamente quando a pessoa apagou a placa do cavalo. A
+  // regra e outra: se a chave veio na chamada, ela MANDA, vazia ou nao; se
+  // nao veio (importador, cadastro em lote), o que esta na celula fica.
+  const cavaloEnviado = Object.prototype.hasOwnProperty.call(dados || {}, 'cavalo')
+    ? dados.cavalo
+    : (indice === -1 ? '' : atual[COL_VEIC.CAVALO - 1]);
+  const cavaloVinculado = resolverCavaloDaCarreta_(cavaloEnviado, placa, categoria);
+  if (!cavaloVinculado.ok) return { ok: false, mensagem: cavaloVinculado.mensagem };
+
   const linha = [
     placa, descricao, categoria, centroNormalizado, codigo,
     numerosVeiculo.depreciacao, numerosVeiculo.emplacamento, numerosVeiculo.seguro,
     numerosVeiculo.bonus, numerosVeiculo.precoCombustivel,
     dados.ativo === false ? 'NAO' : 'SIM', abaOrigem, numerosVeiculo.ipva,
     String(manter(dados.combustivel, COL_VEIC.COMBUSTIVEL - 1, '') || '').trim().slice(0, 30),
+    cavaloVinculado.placa,
   ];
 
   if (indice === -1) {
@@ -14512,14 +14997,69 @@ function webSalvarVeiculo(token, dados) {
     VEICULOS_EXEC_CACHE_ = null;
     invalidarCacheInicio_();
     atualizarResumoSeguro_();
-    return { ok: true, mensagem: 'Veículo ' + placa + ' cadastrado e incluído no Resumo.' };
+    return { ok: true, mensagem: 'Veículo ' + placa + ' cadastrado e incluído no Resumo.' +
+      (cavaloVinculado.aviso ? ' ' + cavaloVinculado.aviso : '') };
   }
   sheet.getRange(indice + 2, 1, 1, TOTAL_COL_VEIC).setValues([linha]);
   registrarLog_('Cadastro de veículo', 'alterado: ' + placa);
   VEICULOS_EXEC_CACHE_ = null;
   invalidarCacheInicio_();
   atualizarResumoSeguro_();
-  return { ok: true, mensagem: 'Veículo ' + placa + ' atualizado.' };
+  return { ok: true, mensagem: 'Veículo ' + placa + ' atualizado.' +
+    (cavaloVinculado.aviso ? ' ' + cavaloVinculado.aviso : '') };
+}
+
+/**
+ * O cavalo de uma carreta, validado.
+ *
+ * Dono unico da regra, para a tela, o cadastro em lote e qualquer importacao
+ * dizerem a MESMA coisa. Um vinculo aceito aqui e um custo somado no conjunto
+ * errado todo mes, e ninguem reconfere cadastro antigo.
+ */
+function garantirColunasVeiculos_(sheet) {
+  garantirColunas_(sheet, TOTAL_COL_VEIC);
+  const cabecalho = CABECALHOS[ABAS.VEICULOS];
+  const atual = sheet.getRange(1, 1, 1, TOTAL_COL_VEIC).getValues()[0];
+  // Preenche o que FALTA e preserva o que existe: regravar o cabecalho inteiro
+  // renomearia coluna que o usuario ajustou a mao, e isso ninguem pediu. Uma
+  // gravacao so — celula a celula num laco e o que deixa a planilha lenta.
+  let falta = false;
+  const linha = cabecalho.map(function (titulo, i) {
+    if (String(atual[i] == null ? '' : atual[i]).trim() !== '') return atual[i];
+    falta = true;
+    return titulo;
+  });
+  if (falta) sheet.getRange(1, 1, 1, TOTAL_COL_VEIC).setValues([linha]);
+}
+
+function resolverCavaloDaCarreta_(valor, placaDoVeiculo, categoriaDoVeiculo) {
+  const cavalo = normalizaPlaca_(valor || '');
+  if (!cavalo) return { ok: true, placa: '' };
+  if (!ehCategoriaCarreta_(categoriaDoVeiculo)) {
+    return { ok: false, mensagem: 'Só carreta tem cavalo vinculado. A categoria de ' +
+      placaDoVeiculo + ' é "' + categoriaDoVeiculo + '". Para desfazer o vínculo, ' +
+      'apague o campo "Cavalo do Conjunto".' };
+  }
+  if (cavalo === normalizaPlaca_(placaDoVeiculo)) {
+    return { ok: false, mensagem: 'A carreta não pode ser o próprio cavalo.' };
+  }
+  const achado = dadosVeiculosExecucao_().filter(function (v) {
+    return normalizaPlaca_(v[COL_VEIC.PLACA - 1]) === cavalo;
+  })[0];
+  if (!achado) {
+    return { ok: false, mensagem: 'Cavalo "' + cavalo + '" não está cadastrado. ' +
+      'Cadastre o cavalo mecânico antes de vincular a carreta.' };
+  }
+  const categoriaCavalo = String(achado[COL_VEIC.CATEGORIA - 1] || '');
+  if (ehCategoriaCarreta_(categoriaCavalo)) {
+    return { ok: false, mensagem: cavalo + ' é uma carreta ("' + categoriaCavalo +
+      '"), não pode puxar outra.' };
+  }
+  const aviso = ehCategoriaCavalo_(categoriaCavalo) ? '' :
+    'Vínculo gravado, mas ' + cavalo + ' está na categoria "' + categoriaCavalo +
+    '". Se for cavalo mecânico, reclassifique para "Cavalo Mecanico" — é o que ' +
+    'separa trator de caminhão no painel da frota.';
+  return { ok: true, placa: String(achado[COL_VEIC.PLACA - 1] || '').trim(), aviso: aviso };
 }
 
 function webVeiculo(token, placaOuPatrimonio) {
@@ -14531,13 +15071,15 @@ function webVeiculo(token, placaOuPatrimonio) {
   const placas = listaPlacas_(false);
   const indice = placas.map(normalizaPlaca_).indexOf(alvo);
   if (indice === -1) return null;
-  const l = sheet.getRange(indice + 2, 1, 1, TOTAL_COL_VEIC).getValues()[0];
+  const l = sheet.getRange(indice + 2, 1, 1,
+    Math.min(TOTAL_COL_VEIC, sheet.getMaxColumns())).getValues()[0];
   return {
     placa: l[0], descricao: l[1], categoria: l[2], centro: l[3], codigo: l[4],
     depreciacao: l[5], emplacamento: l[6], seguro: l[7], bonus: l[8],
     precoCombustivel: l[9], ativo: String(l[10]).toUpperCase() !== 'NAO',
     aba: l[11], ipva: Number(l[12]) || 0,
     combustivel: String(l[COL_VEIC.COMBUSTIVEL - 1] || ''),
+    cavalo: String(l[COL_VEIC.CAVALO - 1] || ''),
   };
 }
 
