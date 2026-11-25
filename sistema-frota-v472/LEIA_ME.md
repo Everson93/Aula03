@@ -5105,6 +5105,71 @@ barrado por outro com nota.
 
 **Não precisa rodar "Instalar / atualizar sistema".**
 
+## Cobertura dos caminhos destrutivos (sem mudança no `Codigo.gs`)
+
+Item 3 da auditoria: **54 das 100 funções que escrevem na planilha não eram
+citadas por suíte nenhuma** — e é lá que moram as operações que mexem em
+dinheiro já lançado. Duas suítes novas, nenhuma linha de produção alterada.
+Nada a instalar: o `Codigo.gs` continua o da V4.44.0.
+
+### `conferir_carga_bomba.js` — 51 provas
+
+A carga da bomba define o custo de **todo** abastecimento interno, e corrigir
+uma carga **revaloriza** os internos do período aberto a partir daquela data.
+O que se prova é sobretudo o que a revalorização **não** pode tocar:
+
+- abastecimento **externo** (tem nota própria, o valor é o do posto);
+- **outro produto** — a prova usa um ARLA interno de verdade, com carga
+  própria: misturar os dois tanques dá um preço de litro que não é de ninguém;
+- lançamento **anterior** à data da carga corrigida. Aqui a prova precisou de
+  um caso específico: um interno anterior cujo valor gravado **diverge** da
+  simulação de hoje. Sem ele, "não mudou" podia significar apenas "o preço
+  calhou de ser o mesmo" — e o mutante que ignora a data sobrevivia;
+- lançamento **legado**, aquele com o valor digitado à mão antes de existir
+  controle de bomba. Reescrever um desses é reescrever história que ninguém
+  pediu.
+
+Mais: tela desatualizada não corrige a carga errada (`cargaPorLinha_` confere
+NF, produto e data antes de escrever), justificativa mínima obrigatória,
+exclusão que sobe as linhas de baixo sem embaralhar, e o ajuste de estoque
+(aferição) com a diferença medida virando movimento `AJUSTE-ESTOQUE`.
+
+Sete mutantes, seis mortos. O sobrevivente é **equivalente** e fica
+registrado: tirar o filtro de "só interno" da simulação muda o estoque
+simulado, e o estoque não participa do preço — o litro sai pelo preço da
+última carga. A precisão continua no código por clareza, mas nenhuma prova de
+comportamento pode distingui-la.
+
+### `conferir_parametros_periodo.js` — 37 provas
+
+`webSalvarParametro` muda a competência aberta e o dia de corte — e mudar o
+corte **reescreve a competência de toda a base**. O que se prova é a recusa:
+parâmetro inventado, mês fora do formato, corte fora de 1..31, empresa vazia,
+domínio inválido, hora fora de 0..23, estoque mínimo negativo. Em cada recusa,
+**nada é gravado**.
+
+Reabrir um mês já fechado continua permitido — com o aviso de que vai divergir
+do fechamento guardado. Aceitar em silêncio esconderia a divergência até o
+fechamento seguinte.
+
+E `apagarPeriodo_`, que o importador chama antes de trazer o mês de novo: apaga
+Lançamentos **e** Odômetro, só dentro do intervalo. A limitação conhecida ficou
+**provada em vez de suposta**: linha com data inválida não é apagada e
+sobrevive à reimportação.
+
+Dois achados nas próprias regras estáticas, os dois do mesmo tipo — medir o
+texto em vez do comportamento:
+
+- a regra da ordem "competência antes dos relatórios" casava com o
+  **comentário** que explica por que a ordem importa, não com a chamada. Agora
+  procura a chamada no início da linha;
+- o dublê usava um UUID fixo, então todo lançamento nascia com o mesmo ID e
+  "o valor do lançamento X" devolvia sempre o primeiro. Quatro provas passavam
+  medindo a linha errada.
+
+**Cobertura: de 54 funções que escrevem sem prova para 47.** 48 suítes, 1.913
+provas.
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026

@@ -72,7 +72,7 @@ planilha.
 `data + placa + tipo + valor + litros + km` e cair no fluxo de confirmação que
 já existe (`permitirDuplicado`).
 
-### 3. Metade das funções que escrevem não tem nenhuma prova
+### 3. Metade das funções que escrevem não tem nenhuma prova — PARCIALMENTE RESOLVIDO
 
 54 de 100. As que mais preocupam, por ordem de estrago:
 
@@ -90,6 +90,14 @@ já existe (`permitirDuplicado`).
 **Correção**: uma suíte de caminhos destrutivos, no mesmo molde da
 `conferir_gravacao_lancamento.js` (planilha falsa completa). Prioridade:
 carga/edição da bomba → parâmetro/competência → apagar período.
+
+> **Feito**: `conferir_carga_bomba.js` (51 provas) e
+> `conferir_parametros_periodo.js` (37 provas) cobrem carga/edição/exclusão da
+> bomba, ajuste de estoque, `webSalvarParametro` e `apagarPeriodo_`. A contagem
+> caiu de 54 para 47. **Faltam**, em ordem de risco: `webEditarCargaBomba` já
+> coberto, mas `webSalvarUsuario`/`webExcluirUsuario` (acesso),
+> `gravarDepreciacaoCompetencia_`, `reabrirMesAnterior` e `importarMapaAntigo`
+> continuam sem prova.
 
 ---
 
