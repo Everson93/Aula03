@@ -674,7 +674,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.45.0';
+const VERSAO_SISTEMA = '4.46.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -5817,16 +5817,20 @@ function depreciacaoPodeContarComoPendencia_() {
  */
 function estadoConferencia_() {
   const sheet = garantirAbaPendencias_(false);
-  if (!sheet || sheet.getLastRow() < 3) return { pendentes: 0, excecoes: [] };
+  if (!sheet || sheet.getLastRow() < 3) return { pendentes: 0, excecoes: [], informativos: 0 };
   const dados = sheet.getRange(3, 1, sheet.getLastRow() - 2, 6).getDisplayValues();
   const contarDepreciacao = depreciacaoPodeContarComoPendencia_();
   const excecoes = [];
   let pendentes = 0;
+  let informativos = 0;
   dados.forEach(function (linha) {
     const origem = String(linha[0] || '').trim();
     if (!origem || origem === 'Nenhum problema encontrado.') return;
     if (!contarDepreciacao && ehPendenciaDepreciacao_(linha[2])) return;
     const status = String(linha[4] || 'PENDENTE').trim().toUpperCase();
+    // Informativo não é pendência nem exceção aprovada: é um ponto de atenção
+    // que o fechamento não precisa de ninguém para liberar.
+    if (status === STATUS_INFORMATIVO_) { informativos++; return; }
     if (status === 'RESOLVIDO') {
       excecoes.push({
         origem: origem,
@@ -5839,7 +5843,7 @@ function estadoConferencia_() {
     }
     pendentes++;
   });
-  return { pendentes: pendentes, excecoes: excecoes };
+  return { pendentes: pendentes, excecoes: excecoes, informativos: informativos };
 }
 
 function contarPendenciasConferencia_() {
@@ -5904,7 +5908,10 @@ function casarAnteriores_(linhasAnteriores, problemasAtuais) {
 
   function novoItem(linha) {
     let status = String(linha[4] || 'PENDENTE').trim().toUpperCase();
-    if (['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO'].indexOf(status) === -1) status = 'PENDENTE';
+    // A lista vem do dono único: escrita aqui à mão, ela rejeitaria
+    // INFORMATIVO e devolveria a linha para PENDENTE a cada revalidação — o
+    // informativo voltaria a bloquear o fechamento sem ninguém entender.
+    if (STATUS_PENDENCIA_.indexOf(status) === -1) status = 'PENDENTE';
     return { status: status, observacao: String(linha[5] || ''), consumido: false };
   }
 
@@ -6012,8 +6019,14 @@ function escreverConferencia_(problemas) {
     const agora = new Date();
     const linhas = problemas.map(function (p, indice) {
       const ant = anteriores.proximo(p, indice);
-      let status = String(ant.status || 'PENDENTE').toUpperCase();
-      if (['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO'].indexOf(status) === -1) status = 'PENDENTE';
+      const informativa = pendenciaEhInformativa_(p[2]);
+      // O padrão de uma linha informativa é INFORMATIVO, não PENDENTE. Se
+      // alguém já tinha escolhido EM ANÁLISE ou RESOLVIDO nela, a escolha fica:
+      // trocar por baixo o que a pessoa marcou é pior do que a classificação
+      // errada que isto conserta.
+      let status = String(ant.status || (informativa ? STATUS_INFORMATIVO_ : 'PENDENTE')).toUpperCase();
+      if (STATUS_PENDENCIA_.indexOf(status) === -1) status = informativa ? STATUS_INFORMATIVO_ : 'PENDENTE';
+      if (informativa && status === 'PENDENTE') status = STATUS_INFORMATIVO_;
       let observacao = ant.observacao || '';
       // Uma pendência RESOLVIDA permanece como exceção conferida mesmo que o
       // coletor continue identificando a condição. A aprovação não corrige o
@@ -6024,7 +6037,7 @@ function escreverConferencia_(problemas) {
     sheet.getRange(3, 7, linhas.length, 1).setNumberFormat('dd/mm/yyyy hh:mm');
 
     const regraStatus = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO'], true)
+      .requireValueInList(STATUS_PENDENCIA_, true)
       .setAllowInvalid(false).build();
     sheet.getRange(3, 5, linhas.length, 1).setDataValidation(regraStatus);
 
@@ -6035,7 +6048,11 @@ function escreverConferencia_(problemas) {
       SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(fx_('=$E3="EM ANÁLISE"'))
         .setBackground(CORES.AMARELO).setRanges([faixa]).build(),
       SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(fx_('=$E3="RESOLVIDO"'))
-        .setBackground(CORES.VERDE).setRanges([faixa]).build()
+        .setBackground(CORES.VERDE).setRanges([faixa]).build(),
+      // Informativo em cinza: não é vermelho de problema nem verde de resolvido.
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied(fx_('=$E3="' + STATUS_INFORMATIVO_ + '"'))
+        .setBackground('#F3F1F0').setRanges([faixa]).build()
     ];
     sheet.setConditionalFormatRules(regras);
     sheet.getRange(2, 1, 1, 7).createFilter();
@@ -16669,11 +16686,11 @@ function webPendencias(token) {
   exigirPerfilToken_(token, ['OPERADOR', 'ADMIN']);
   const sheet = garantirAbaPendencias_(false);
   if (!sheet || sheet.getLastRow() < 3) {
-    return { total: 0, pendentes: 0, analise: 0, linhas: [] };
+    return { total: 0, pendentes: 0, analise: 0, informativos: 0, linhas: [] };
   }
   const dados = sheet.getRange(3, 1, sheet.getLastRow() - 2, 7).getValues();
   const linhas = [];
-  let pendentes = 0, analise = 0;
+  let pendentes = 0, analise = 0, informativos = 0;
   const contarDepreciacao = depreciacaoPodeContarComoPendencia_();
   dados.forEach(function (l, i) {
     if (!l[0] || String(l[0]).trim() === 'Nenhum problema encontrado.') return;
@@ -16683,6 +16700,7 @@ function webPendencias(token) {
     const status = String(l[4] || 'PENDENTE').trim().toUpperCase();
     if (status === 'PENDENTE') pendentes++;
     if (status === 'EM ANÁLISE') analise++;
+    if (status === STATUS_INFORMATIVO_) informativos++;
     linhas.push({
       linha: i + 3, origem: String(l[0] || ''), placa: String(l[1] || ''),
       problema: String(l[2] || ''), detalhe: String(l[3] || ''),
@@ -16699,7 +16717,7 @@ function webPendencias(token) {
     });
   });
   return { total: pendentes + analise, pendentes: pendentes, analise: analise,
-    linhas: linhas, listas: listasDeCorrecao_() };
+    informativos: informativos, linhas: linhas, listas: listasDeCorrecao_() };
 }
 
 // ====================================================== V4.9.1: corrigir pendência na hora
@@ -17009,6 +17027,23 @@ const ACOES_PENDENCIA_ = {
     explicacao: 'Não é defeito: o veículo simplesmente não teve despesa no período. ' +
       'Se ele parou de rodar de vez, o certo é inativá-lo no cadastro.' },
 };
+
+/**
+ * Status de uma linha que e INFORMACAO, nao defeito.
+ *
+ * "Sem nenhum custo no periodo" sempre foi marcada como informativa no
+ * catalogo — e mesmo assim entrava na fila como PENDENTE, contava no painel e
+ * BLOQUEAVA o fechamento. O sistema dizia "nao e defeito" no texto e tratava
+ * como defeito em todo o resto. Quem opera entao marcava RESOLVIDO num ponto
+ * que nao tinha o que resolver, so para destravar o mes.
+ */
+const STATUS_INFORMATIVO_ = 'INFORMATIVO';
+const STATUS_PENDENCIA_ = ['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO', STATUS_INFORMATIVO_];
+
+function pendenciaEhInformativa_(problema) {
+  const acao = ACOES_PENDENCIA_[String(problema || '').trim()];
+  return !!acao && acao.tipo === 'informativo';
+}
 
 function acaoDaPendencia_(problema) {
   return ACOES_PENDENCIA_[String(problema || '').trim()] || null;
@@ -17467,7 +17502,7 @@ function pendenciaAindaPresente_(problemas, origem, placa, problema, linhaAlvo, 
 function webAtualizarPendencia(token, linha, status, observacao, esperado) {
   autorizarContextoWeb_(token, ['OPERADOR', 'ADMIN']);
   status = String(status || '').trim().toUpperCase();
-  if (['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO'].indexOf(status) === -1) {
+  if (STATUS_PENDENCIA_.indexOf(status) === -1) {
     return { ok: false, mensagem: 'Status inválido.' };
   }
   const sheet = garantirAbaPendencias_(true);

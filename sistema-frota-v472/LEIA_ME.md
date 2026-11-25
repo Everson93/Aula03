@@ -5206,6 +5206,49 @@ cobrar no primeiro abastecimento" e "conta leitura de qualquer período".
 
 **Não precisa rodar "Instalar / atualizar sistema".**
 
+## V4.46.0 — informativo não é pendência (e não trava o fechamento)
+
+O usuário mandou a tela: *"por que está aparecendo esse erro? o veículo por
+acabar não tendo custo no mês"*. O texto que ele leu começa com **"Não é
+defeito"** — e a linha mesmo assim entrava na fila como PENDENTE, contava no
+painel e **bloqueava o fechamento do mês**.
+
+O catálogo já classificava "Sem nenhum custo no período" como
+`tipo: 'informativo'` desde que ela existe. O que faltava era o resto do
+sistema respeitar a própria classificação. Na prática, quem operava resolvia do
+único jeito possível: marcando RESOLVIDO num ponto que não tinha o que
+resolver, só para destravar o mês. Isso gasta a confiança na lista inteira — e
+a pendência que procede some no meio das que não procedem.
+
+Agora existe o status **INFORMATIVO**:
+
+- a linha nasce com ele e **não conta** como pendência, nem no painel, nem no
+  Dashboard (a fórmula já contava só PENDENTE e EM ANÁLISE), nem no alerta
+  diário, nem no **bloqueio do fechamento**;
+- ela **continua visível** na lista, em cinza — esconder não é o objetivo: um
+  veículo sem custo nenhum no mês merece um olhar, só não merece uma acusação;
+- o filtro "Em aberto" passa a esconder resolvidos **e** informativos, e o
+  painel ganhou o contador deles, com a nota de que não bloqueiam;
+- se alguém marcar **EM ANÁLISE**, ela volta a contar: quem pediu para olhar
+  quer ver na fila. Revalidar não desfaz essa escolha.
+
+**Base que já rodava** tem essa linha gravada como PENDENTE, do jeito antigo. A
+revalidação reclassifica — sem isso, o fechamento continuaria travado por um
+veículo parado até alguém marcar RESOLVIDO à mão. Tem prova para esse caso.
+
+A regra estática "a lista de status tem um dono só" achou dois lugares que
+ainda traziam `['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO']` escrito à mão:
+`casarAnteriores_`, que devolveria a linha para PENDENTE a cada revalidação, e
+`webAtualizarPendencia`, que recusaria o status vindo da tela. Os dois agora
+leem o dono.
+
+`conferir_pendencia_informativa.js`, 22 provas, 5 mutantes mortos.
+
+50 suítes, 1.949 provas.
+
+**Não precisa rodar "Instalar / atualizar sistema"** — mas rode **"Validar
+dados"** uma vez para a aba de conferência ser reescrita com o status novo.
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026
