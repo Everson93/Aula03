@@ -351,8 +351,12 @@ ok('atalho não é rotina: webAcaoPendencia recusa', r.ok === false, JSON.string
 const atalho = ctx.acaoDaPendencia_('Soma dos percentuais de rateio não fecha 100%');
 ok('mas a tela recebe o atalho para centros',
   atalho && atalho.tipo === 'atalho' && atalho.tela === 'centros', JSON.stringify(atalho));
-ok('"Sem nenhum custo no período" é informativo, não defeito',
-  ctx.acaoDaPendencia_('Sem nenhum custo no período').tipo === 'informativo');
+// V4.47: "Sem nenhum custo no período" saiu da conferência e virou o relatório
+// "Veículos sem lançamento no período". Veículo parado não é defeito — é
+// decisão —, e pendência que não procede ensina a ignorar a lista inteira.
+ok('"Sem nenhum custo no período" não é mais pendência',
+  ctx.acaoDaPendencia_('Sem nenhum custo no período') === null,
+  'virou relatório; a explicação dela saiu do catálogo junto');
 ok('toda ação traz explicação, senão o operador fica sem saber o porquê',
   Object.keys(ctx.ACOES_PENDENCIA_).every(function (k) {
     return String(ctx.ACOES_PENDENCIA_[k].explicacao || '').length > 20;

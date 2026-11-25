@@ -5249,6 +5249,59 @@ leem o dono.
 **Não precisa rodar "Instalar / atualizar sistema"** — mas rode **"Validar
 dados"** uma vez para a aba de conferência ser reescrita com o status novo.
 
+## V4.47.0 — veículo parado virou relatório, como o usuário disse
+
+Resposta dele à V4.46: *"é mais fácil então criar um relatório de veículos sem
+lançamento e remover eles dali"*. Está certo, e a V4.46 parou no meio do
+caminho: tirou o peso da linha (não bloqueia mais o fechamento) mas deixou ela
+na fila de conferência, que é a lista de coisas a resolver.
+
+A diferença não é de palavra. **Pendência** é algo que alguém tem de resolver
+para o mês fechar. Aquilo é uma lista para **decidir** — e decidir pode ser não
+fazer nada.
+
+### Saiu
+
+"Sem nenhum custo no período" não é mais gerada, e a explicação dela saiu do
+catálogo junto: explicação órfã é pior que nenhuma, porque descreve algo que
+não acontece mais.
+
+O status `INFORMATIVO` **continua aceito**, e isso é de propósito: quem instalou
+a V4.46 tem linhas gravadas com ele. Se a lista de status não o aceitasse, a
+revalidação as devolveria para PENDENTE e o fechamento voltaria a travar por
+causa de uma versão de meia hora atrás. Elas somem sozinhas na primeira
+revalidação; até lá, não contam.
+
+### Entrou
+
+Relatório **"Veículos sem lançamento no período"**: os veículos ATIVOS que não
+tiveram lançamento nenhum no recorte, com a data do último lançamento que
+tiveram, **há quantos dias estão parados** e o que lançaram por último.
+Ordenado por quem nunca lançou primeiro, depois pelos mais parados — a ordem em
+que se decide.
+
+Ele responde duas perguntas, não uma:
+
+- **quem inativar** — a coluna de dias parados é o que sustenta essa conversa;
+- **quem está rodando e ninguém está lançando** — esse some da conta de custo
+  sem fazer barulho, e é o caso em que o relatório paga sozinho.
+
+Mais dois blocos: as faixas de tempo parado (nunca lançou / até 30 / 31 a 90 /
+mais de 90 dias) e **o outro lado do cadastro** — veículo INATIVO que teve
+lançamento no período, que é inconsistência de verdade.
+
+Uma passada só na base responde as duas coisas (quem teve lançamento no recorte
+e qual foi o último de cada um), e há regra estática guardando isso.
+
+`conferir_veiculo_sem_lancamento.js`, 25 provas, 5 mutantes mortos — entre eles
+"último lançamento vira o primeiro", que faria o veículo parecer parado há mais
+tempo do que está.
+
+50 suítes, 1.952 provas.
+
+**Não precisa rodar "Instalar / atualizar sistema"** — rode **"Validar dados"**
+uma vez para a linha antiga sumir da conferência.
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026

@@ -674,7 +674,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.46.0';
+const VERSAO_SISTEMA = '4.47.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -5711,12 +5711,11 @@ function coletarProblemas_(opcoesColeta) {
         // leituras === 1 com UM abastecimento não entra: é o primeiro
         // abastecimento do veículo no período, e não falta nada.
       }
-      // Veículo ativo sem custo é um ponto de conferência, não um erro histórico.
-      // A competência no detalhe impede que um RESOLVIDO de um mês seja herdado pelo mês seguinte.
-      if (total === 0 && placasAtivas[placa]) {
-        problemas.push([ABAS.RESUMO, placa, 'Sem nenhum custo no período',
-          periodo.mesRef + ' • confirmar se o veículo ficou parado nesta competência']);
-      }
+      // V4.47: "veículo ativo sem custo no período" SAIU da conferência. Nunca
+      // foi defeito — o próprio texto dela começava com "Não é defeito" — e
+      // pendência que não procede ensina a ignorar a lista inteira. Virou o
+      // relatório "Veículos sem lançamento no período", que é o que ela sempre
+      // quis ser: uma lista para decidir o que inativar, não uma acusação.
     });
   }
 
@@ -6019,14 +6018,8 @@ function escreverConferencia_(problemas) {
     const agora = new Date();
     const linhas = problemas.map(function (p, indice) {
       const ant = anteriores.proximo(p, indice);
-      const informativa = pendenciaEhInformativa_(p[2]);
-      // O padrão de uma linha informativa é INFORMATIVO, não PENDENTE. Se
-      // alguém já tinha escolhido EM ANÁLISE ou RESOLVIDO nela, a escolha fica:
-      // trocar por baixo o que a pessoa marcou é pior do que a classificação
-      // errada que isto conserta.
-      let status = String(ant.status || (informativa ? STATUS_INFORMATIVO_ : 'PENDENTE')).toUpperCase();
-      if (STATUS_PENDENCIA_.indexOf(status) === -1) status = informativa ? STATUS_INFORMATIVO_ : 'PENDENTE';
-      if (informativa && status === 'PENDENTE') status = STATUS_INFORMATIVO_;
+      let status = String(ant.status || 'PENDENTE').toUpperCase();
+      if (STATUS_PENDENCIA_.indexOf(status) === -1) status = 'PENDENTE';
       let observacao = ant.observacao || '';
       // Uma pendência RESOLVIDA permanece como exceção conferida mesmo que o
       // coletor continue identificando a condição. A aprovação não corrige o
@@ -8239,6 +8232,22 @@ const CATALOGO_RELATORIOS = {
     // Calculado em codigo (agrupa por semana e por competencia): nao ha
     // formula QUERY que monte isso na aba Relatorios.
     somenteApp: true,
+  },
+
+  'Veículos sem lançamento no período': {
+    descricao: 'Os veículos ATIVOS que não tiveram nenhum lançamento no período, com a ' +
+      'data do último lançamento que tiveram e há quantos dias estão parados. É a lista ' +
+      'para decidir o que inativar — e para achar o veículo que está rodando e ninguém ' +
+      'está lançando. Abaixo, o contrário: veículo INATIVO que teve lançamento no ' +
+      'período, que é inconsistência de cadastro.',
+    somenteApp: true,
+    fonte: 'lancamentos',
+    filtros: ['centroLancamento', 'categoriaLancamento', 'veiculoLancamento'],
+    colunas: [
+      ['Placa / ID', '@', 110], ['Veículo', '@', 220], ['Categoria', '@', 150],
+      ['Loja', '@', 150], ['Último lançamento', 'dd/mm/yyyy', 120],
+      ['Dias sem lançar', '#,##0', 110], ['Último tipo', '@', 170],
+    ],
   },
 
   'Frota de transporte (fixo x variável)': {
@@ -11725,6 +11734,7 @@ function relatorioPorTipo_(tipo, centro, categoria, placa, termo, periodo) {
     case 'Combustível lançado por veículo': return relatorioCombustivelLancado_(centro, categoria, placa, periodo);
     case 'Diesel por mês e por semana': return relatorioDieselPeriodo_(centro, categoria, placa, periodo);
     case 'Frota de transporte (fixo x variável)': return relatorioFrotaTransporte_(centro, categoria, placa, periodo);
+    case 'Veículos sem lançamento no período': return relatorioSemLancamento_(centro, categoria, placa, periodo);
     case 'Extrato do tanque': return relatorioExtratoTanque_(periodo);
     case 'Aferições de estoque do tanque': return relatorioAfericoes_(periodo);
     case 'Abastecimento e consumo': return relatorioAbastecimento_(centro, categoria, placa);
@@ -12430,6 +12440,139 @@ const ROTULO_CLASSE_CUSTO_ = { variavel: 'Variável', fixo: 'Fixo', imobilizado:
  *  - O KM do CONJUNTO e o do cavalo. Carreta nao tem odometro, e somar a
  *    carreta ao km do cavalo contaria o mesmo percurso duas vezes.
  */
+/**
+ * Veiculos ATIVOS sem nenhum lancamento no periodo.
+ *
+ * Nasceu de uma queixa do usuario sobre a pendencia "Sem nenhum custo no
+ * periodo": ela aparecia como erro, bloqueava o fechamento, e o proprio texto
+ * dela dizia "nao e defeito". Ele mesmo apontou o caminho — isto e relatorio,
+ * nao pendencia. A diferenca nao e de palavra: pendencia e algo que alguem tem
+ * de resolver para o mes fechar; isto e uma lista para DECIDIR, e decidir pode
+ * ser nao fazer nada.
+ *
+ * Duas leituras uteis na mesma lista:
+ *  - o veiculo parado de verdade, candidato a inativacao (a coluna "dias sem
+ *    lancar" e o que sustenta essa conversa);
+ *  - o veiculo que ESTA rodando e ninguem esta lancando. Esse some da conta de
+ *    custo sem fazer barulho, e e o caso em que o relatorio paga sozinho.
+ *
+ * O bloco de baixo mostra o contrario — inativo COM lancamento no periodo —,
+ * que e inconsistencia de cadastro. Os dois lados do mesmo cadastro, juntos.
+ */
+function relatorioSemLancamento_(centro, categoria, placa, periodoEscolhido) {
+  const janela = intervaloDeDatas_(periodoEscolhido, periodoAtual_());
+  const hoje = hojeNoFuso_();
+  const info = {};
+  const ordem = [];
+  dadosVeiculosExecucao_().forEach(function (v) {
+    const p = String(v[COL_VEIC.PLACA - 1] || '').trim();
+    if (!p) return;
+    const chave = normalizaPlaca_(p);
+    if (info[chave]) return;
+    info[chave] = {
+      placa: p,
+      descricao: String(v[COL_VEIC.DESCRICAO - 1] || ''),
+      categoria: String(v[COL_VEIC.CATEGORIA - 1] || ''),
+      centro: normalizarCentroCusto_(v[COL_VEIC.CENTRO - 1]),
+      ativo: String(v[COL_VEIC.ATIVO - 1]).toUpperCase() !== 'NAO',
+      noPeriodo: 0,
+      ultimaData: null,
+      ultimoTipo: '',
+    };
+    ordem.push(chave);
+  });
+
+  // Uma passada so na base: diz quem teve lancamento no recorte E qual foi o
+  // ultimo lancamento de cada veiculo, que e o que mede ha quanto tempo ele
+  // esta parado. Sem a segunda informacao a lista nao ajuda a decidir nada.
+  lerLancamentos_().forEach(function (l) {
+    const chave = normalizaPlaca_(l[L_.PLACA]);
+    const item = info[chave];
+    if (!item) return;
+    const data = l[L_.DATA];
+    if (!ehDataReal_(data)) return;
+    if (janela.contem(data)) item.noPeriodo++;
+    if (!item.ultimaData || data > item.ultimaData) {
+      item.ultimaData = data;
+      item.ultimoTipo = String(l[L_.TIPO] || '');
+    }
+  });
+
+  function passaNoFiltro(item) {
+    if (centro && item.centro !== centro) return false;
+    if (categoria && !categoriaCasa_(item.categoria, categoria)) return false;
+    if (placa && normalizaPlaca_(item.placa) !== placa) return false;
+    return true;
+  }
+  function diasParado(item) {
+    if (!item.ultimaData) return null;
+    return Math.max(0, Math.round((hoje - item.ultimaData) / 86400000));
+  }
+
+  const parados = ordem.map(function (k) { return info[k]; })
+    .filter(function (i) { return i.ativo && i.noPeriodo === 0 && passaNoFiltro(i); });
+  // Nunca lancado primeiro: e o cadastro que talvez nem devesse existir.
+  parados.sort(function (a, b) {
+    const da = diasParado(a), db = diasParado(b);
+    if (da === null && db === null) return a.placa < b.placa ? -1 : 1;
+    if (da === null) return -1;
+    if (db === null) return 1;
+    return db - da;
+  });
+
+  const linhas = parados.map(function (i) {
+    return [i.placa, i.descricao, i.categoria, i.centro,
+      i.ultimaData, diasParado(i), i.ultimoTipo || '— nunca teve lançamento'];
+  });
+
+  const faixas = [
+    { rotulo: 'Nunca tiveram lançamento', de: null, ate: null },
+    { rotulo: 'Parados há até 30 dias', de: 0, ate: 30 },
+    { rotulo: 'Parados de 31 a 90 dias', de: 31, ate: 90 },
+    { rotulo: 'Parados há mais de 90 dias', de: 91, ate: 1000000 },
+  ].map(function (f) {
+    const quantos = parados.filter(function (i) {
+      const d = diasParado(i);
+      if (f.de === null) return d === null;
+      return d !== null && d >= f.de && d <= f.ate;
+    }).length;
+    return [f.rotulo, quantos];
+  }).filter(function (l) { return l[1] > 0; });
+
+  const inativosComLancamento = ordem.map(function (k) { return info[k]; })
+    .filter(function (i) { return !i.ativo && i.noPeriodo > 0 && passaNoFiltro(i); })
+    .map(function (i) {
+      return [i.placa, i.descricao, i.centro, i.noPeriodo, i.ultimaData];
+    });
+
+  const recorte = janela.ativo ? janela.rotulo
+    : 'competência aberta (' + formatarData_(janela.inicio) + ' a ' + formatarData_(janela.fim) + ')';
+  const ativos = ordem.filter(function (k) { return info[k].ativo && passaNoFiltro(info[k]); }).length;
+  return {
+    titulo: 'Veículos sem lançamento — ' + recorte,
+    subtitulo: 'Veículo parado não é defeito: é decisão. Quem está parado há meses provavelmente ' +
+      'deve ser inativado no cadastro; quem está rodando e não aparece aqui por engano é ' +
+      'custo que está ficando de fora da conta.',
+    colunas: [col_('Placa / ID'), col_('Veículo'), col_('Categoria'), col_('Loja'),
+      col_('Último lançamento', 'data'), col_('Dias sem lançar', 'numero'), col_('Último tipo')],
+    linhas: linhas,
+    blocos: [
+      { titulo: 'Há quanto tempo', posicao: 'antes',
+        subtitulo: numBR_(linhas.length, 0) + ' de ' + numBR_(ativos, 0) +
+          ' veículo(s) ativo(s) no recorte não tiveram lançamento nenhum.',
+        colunas: [col_('Situação'), col_('Veículos', 'numero')], linhas: faixas },
+      { titulo: 'O outro lado: inativo COM lançamento no período',
+        subtitulo: 'Lançamento em veículo inativo é inconsistência de cadastro — ou o ' +
+          'veículo voltou a rodar, ou o lançamento foi na placa errada.',
+        colunas: [col_('Placa / ID'), col_('Veículo'), col_('Loja'),
+          col_('Lançamentos', 'numero'), col_('Último lançamento', 'data')],
+        linhas: inativosComLancamento },
+    ],
+    mensagem: linhas.length ? '' :
+      'Todos os veículos ativos do recorte tiveram lançamento no período.',
+  };
+}
+
 function relatorioFrotaTransporte_(centro, categoria, placa, periodoEscolhido) {
   const janela = intervaloDeDatas_(periodoEscolhido, periodoAtual_());
   const conj = conjuntosDaFrota_();
@@ -17022,28 +17165,22 @@ const ACOES_PENDENCIA_ = {
     tipo: 'atalho', tela: 'lancar', rotulo: 'Conferir as leituras do veículo',
     explicacao: 'Há duas ou mais leituras no período e todas com o mesmo KM. ' +
       'Ou o veículo não rodou, ou alguma leitura foi repetida por engano.' },
-  'Sem nenhum custo no período': {
-    tipo: 'informativo',
-    explicacao: 'Não é defeito: o veículo simplesmente não teve despesa no período. ' +
-      'Se ele parou de rodar de vez, o certo é inativá-lo no cadastro.' },
+
 };
 
 /**
- * Status de uma linha que e INFORMACAO, nao defeito.
+ * O status INFORMATIVO continua ACEITO, mas nada mais o produz.
  *
- * "Sem nenhum custo no periodo" sempre foi marcada como informativa no
- * catalogo — e mesmo assim entrava na fila como PENDENTE, contava no painel e
- * BLOQUEAVA o fechamento. O sistema dizia "nao e defeito" no texto e tratava
- * como defeito em todo o resto. Quem opera entao marcava RESOLVIDO num ponto
- * que nao tinha o que resolver, so para destravar o mes.
+ * A V4.46 criou esse status para "Sem nenhum custo no periodo" parar de contar
+ * como pendencia e de bloquear o fechamento. Na V4.47 essa linha saiu da
+ * conferencia de vez: virou relatorio. O status fica porque planilha que rodou
+ * a V4.46 TEM linhas gravadas com ele — e, se a lista de status nao o
+ * aceitasse, a revalidacao as devolveria para PENDENTE e o fechamento voltaria
+ * a travar, por uma versao de meia hora atras. Elas somem sozinhas na primeira
+ * revalidacao; ate la, nao contam.
  */
 const STATUS_INFORMATIVO_ = 'INFORMATIVO';
 const STATUS_PENDENCIA_ = ['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO', STATUS_INFORMATIVO_];
-
-function pendenciaEhInformativa_(problema) {
-  const acao = ACOES_PENDENCIA_[String(problema || '').trim()];
-  return !!acao && acao.tipo === 'informativo';
-}
 
 function acaoDaPendencia_(problema) {
   return ACOES_PENDENCIA_[String(problema || '').trim()] || null;

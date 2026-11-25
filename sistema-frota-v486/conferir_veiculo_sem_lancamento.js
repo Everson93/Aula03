@@ -1,18 +1,17 @@
 /**
- * Informativo não é pendência.
+ * Veículo parado: relatório, não pendência.
  *
- * Queixa do usuário, com a tela na mão: *"por que está aparecendo esse erro? o
- * veículo por acabar não tendo custo no mês"*. O texto que ele viu começa com
- * **"Não é defeito"** — e mesmo assim a linha entrava na fila como PENDENTE,
- * contava no painel e **bloqueava o fechamento do mês**. O sistema dizia uma
- * coisa no texto e fazia outra no resto.
+ * O usuário viu a linha "Sem nenhum custo no período" na fila de conferência,
+ * com um texto que começa em **"Não é defeito"**, e respondeu o óbvio: *"é mais
+ * fácil então criar um relatório de veículos sem lançamento e remover eles
+ * dali"*. Ele está certo, e a diferença não é de palavra — pendência é algo que
+ * alguém tem de resolver para o mês fechar; isto é uma lista para DECIDIR, e
+ * decidir pode ser não fazer nada.
  *
- * Quem opera resolvia do único jeito possível: marcando RESOLVIDO num ponto
- * que não tinha o que resolver, só para destravar o fechamento. Isso gasta a
- * confiança na lista inteira — e a pendência que procede some no meio.
- *
- * O catálogo já classificava essa linha como `tipo: 'informativo'`. O que
- * faltava era o resto do sistema respeitar a própria classificação.
+ * O que se prova aqui: a linha saiu da conferência (não conta, não bloqueia o
+ * fechamento, não existe mais), e o relatório que ficou no lugar responde as
+ * duas perguntas úteis — quem está parado há tempo demais para continuar
+ * cadastrado como ativo, e quem está rodando sem ninguém lançar.
  */
 const fs = require('fs');
 const vm = require('vm');
@@ -200,8 +199,9 @@ const planilha = {
 ctx.globalThis = ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(arquivo, 'utf8') + `
-  Object.assign(globalThis, { escreverConferencia_, estadoConferencia_, webPendencias,
-    pendenciaEhInformativa_, STATUS_INFORMATIVO_, STATUS_PENDENCIA_, ACOES_PENDENCIA_,
+  Object.assign(globalThis, { relatorioSemLancamento_, escreverConferencia_,
+    estadoConferencia_, webPendencias, CATALOGO_RELATORIOS,
+    STATUS_INFORMATIVO_, STATUS_PENDENCIA_, ACOES_PENDENCIA_,
     coletarProblemas_, acaoDaPendencia_, R_, TOTAL_COL_RESUMO,
     periodoAtual_, salvarLancamento_, ABAS, COL_LANC, L_, COL_VEIC, COL_CENTRO });
   exigirExecucaoOperacional_ = function () {};
@@ -297,124 +297,164 @@ function cel(i, k) {
 
 
 
-// A aba de conferência, com o mínimo que escreverConferencia_ e
-// estadoConferencia_ precisam: ela é lida e reescrita de verdade.
+// A aba de conferência, com o mínimo que escreverConferencia_ precisa.
 const conf = novaAba('Conferência', ['Origem', 'Placa / ID', 'Problema', 'Detalhe',
   'Status', 'Observação', 'Validado em'], []);
 conf.clear = function () { conf.dados.length = 1; conf.dados[0] = new Array(conf.maxCols).fill(''); };
 conf.clearConditionalFormatRules = function () {};
 conf.setConditionalFormatRules = function () {};
 conf.getDataRange = function () { return { breakApart: function () {} }; };
-conf.setColumnWidth = function () {};
 vm.runInContext('garantirAbaPendencias_ = function () { return __conf; };', ctx);
 ctx.__conf = conf;
 
-function escrever(problemas) {
-  ctx.escreverConferencia_(problemas);
+const V = abas['Veículos'];
+function cadastrar(placa, centro, ativo, categoria) {
+  const l = new Array(15).fill('');
+  l[0] = placa; l[1] = 'Veículo ' + placa; l[2] = categoria || 'Truck Normal';
+  l[3] = centro; l[10] = ativo === false ? 'NAO' : 'SIM'; l[13] = 'Diesel';
+  V.dados.push(l);
+  vm.runInContext('VEICULOS_EXEC_CACHE_ = null;', ctx);
 }
-function linhasDaAba() {
-  return conf.dados.slice(2).filter(function (l) { return l[0]; });
+function lancar(placa, dia, mes, tipo) {
+  const lanc = abas['Lançamentos'];
+  const l = new Array(lanc.maxCols).fill('');
+  l[0] = d(2026, mes || 11, dia); l[1] = placa; l[2] = tipo || 'Pneus'; l[4] = 100;
+  l[7] = 'DEPOSITO'; l[8] = 'Truck Normal'; l[10] = 'LAN-' + placa + '-' + mes + dia;
+  lanc.dados.push(l);
+  vm.runInContext('invalidarCacheLancamentos_();', ctx);
 }
-function statusDe(problema) {
-  const l = linhasDaAba().filter(function (x) { return String(x[2]) === problema; })[0];
-  return l ? String(l[4]) : null;
+function linhasDoRelatorio() { return ctx.relatorioSemLancamento_(null, null, null, null).linhas; }
+function placasNoRelatorio() {
+  return linhasDoRelatorio().map(function (l) { return String(l[0]); });
 }
-const SEM_CUSTO = 'Sem nenhum custo no período';
-const UM_DEFEITO = 'Lançamento sem ID de auditoria';
 
-console.log('\n1. O catálogo já dizia: é informação, não defeito');
-ok('"' + SEM_CUSTO + '" está marcada como informativa',
-  ctx.pendenciaEhInformativa_(SEM_CUSTO) === true,
-  'o texto dela começa com "Não é defeito"');
-ok('e uma pendência de verdade não é', ctx.pendenciaEhInformativa_(UM_DEFEITO) === false);
-
-console.log('\n2. Ela entra na aba com status INFORMATIVO');
+console.log('\n1. A pendência não existe mais');
 (function () {
-  escrever([
-    ['Resumo', 'AAA 0001', SEM_CUSTO, '2026-11 • confirmar se ficou parado'],
-    ['Lançamentos', 'BBB 0002', UM_DEFEITO, 'linha 5'],
-  ]);
-  ok('a informativa nasce como INFORMATIVO', statusDe(SEM_CUSTO) === 'INFORMATIVO',
-    JSON.stringify(statusDe(SEM_CUSTO)));
-  ok('e a pendência de verdade nasce como PENDENTE', statusDe(UM_DEFEITO) === 'PENDENTE',
-    JSON.stringify(statusDe(UM_DEFEITO)));
+  const fonte = fs.readFileSync(arquivo, 'utf8');
+  ok('nada mais gera "Sem nenhum custo no período"',
+    !/problemas\.push\(\[ABAS\.RESUMO, placa, 'Sem nenhum custo no período'/.test(fonte),
+    'o texto dela começava com "Não é defeito" e ela bloqueava o fechamento');
+  ok('e a explicação dela saiu do catálogo junto',
+    !ctx.ACOES_PENDENCIA_['Sem nenhum custo no período'],
+    'explicação órfã é pior que nenhuma: descreve algo que não acontece mais');
+  ok('o status INFORMATIVO continua ACEITO, para a base da V4.46',
+    ctx.STATUS_PENDENCIA_.indexOf('INFORMATIVO') !== -1,
+    'se a revalidação recusasse, as linhas da V4.46 voltariam a PENDENTE — e a ' +
+    'travar o fechamento por uma versão de meia hora atrás');
+  // E, de fato, uma linha gravada pela V4.46 não conta nem bloqueia.
+  conf.dados.length = 2;
+  conf.dados.push(['Resumo', 'AAA 0001', 'Sem nenhum custo no período', 'x',
+    'INFORMATIVO', '', '']);
+  ok('linha antiga com esse status não conta como pendência',
+    ctx.estadoConferencia_().pendentes === 0, JSON.stringify(ctx.estadoConferencia_()));
 })();
 
-console.log('\n3. Ela não conta como pendência — e não bloqueia o fechamento');
+console.log('\n2. O relatório responde quem está parado');
 (function () {
-  const e = ctx.estadoConferencia_();
-  ok('o contador de pendências vê só a de verdade', e.pendentes === 1,
-    JSON.stringify(e) + ' — é este número que o fechamento usa para bloquear');
-  ok('e conta os informativos à parte', e.informativos === 1, JSON.stringify(e));
-  ok('informativo não vira "exceção aprovada" no fechamento',
-    (e.excecoes || []).every(function (x) { return x.problema !== SEM_CUSTO; }),
-    JSON.stringify(e.excecoes) + ' — exceção é algo que alguém analisou e liberou');
+  // Período aberto: 26/10 a 25/11/2026.
+  cadastrar('PAR 0001', 'DEPOSITO');            // parado há meses
+  cadastrar('ROD 0002', 'DEPOSITO');            // rodando
+  cadastrar('NOV 0003', 'DEPOSITO');            // nunca teve lançamento
+  cadastrar('OFF 0004', 'DEPOSITO', false);     // inativo e parado
+  lancar('PAR 0001', 10, 7);                    // último lançamento em julho
+  lancar('ROD 0002', 10, 11);                   // lançou no período
+  const placas = placasNoRelatorio();
+  ok('o parado aparece', placas.indexOf('PAR 0001') !== -1, JSON.stringify(placas));
+  ok('quem lançou no período NÃO aparece', placas.indexOf('ROD 0002') === -1,
+    JSON.stringify(placas));
+  ok('quem nunca lançou aparece', placas.indexOf('NOV 0003') !== -1, JSON.stringify(placas));
+  ok('e o inativo não entra: parado é o esperado dele',
+    placas.indexOf('OFF 0004') === -1, JSON.stringify(placas) +
+    ' — misturá-lo com os ativos faria a lista de decisão crescer com o que já foi decidido');
+  // Ordem: primeiro quem NUNCA lançou (cadastro que talvez nem devesse existir),
+  // depois os parados há mais tempo. É a ordem em que se decide.
+  const linhas = linhasDoRelatorio();
+  const ultimoSemData = linhas.map(function (l) { return l[4] === null; }).lastIndexOf(true);
+  const primeiroComData = linhas.map(function (l) { return l[4] !== null; }).indexOf(true);
+  ok('quem nunca lançou vem antes de quem tem data',
+    primeiroComData === -1 || ultimoSemData < primeiroComData,
+    JSON.stringify(linhas.map(function (l) { return [l[0], l[5]]; })));
+  ok('e entre os com data, o mais parado primeiro', (function () {
+    const dias = linhas.filter(function (l) { return l[4] !== null; })
+      .map(function (l) { return l[5]; });
+    return dias.every(function (v, i) { return i === 0 || dias[i - 1] >= v; });
+  })(), JSON.stringify(linhas.map(function (l) { return [l[0], l[5]]; })));
 })();
 
-console.log('\n4. Só a informativa some da fila; a de verdade fica');
+console.log('\n3. As colunas sustentam a decisão');
 (function () {
-  escrever([['Resumo', 'AAA 0001', SEM_CUSTO, 'x']]);
-  const e = ctx.estadoConferencia_();
-  ok('mês só com informativos não tem pendência nenhuma', e.pendentes === 0,
-    JSON.stringify(e) + ' — antes, um veículo parado travava o fechamento do mês inteiro');
-  const w = ctx.webPendencias('T');
-  ok('a tela também não a conta como aberta', w.total === 0 && w.pendentes === 0,
-    JSON.stringify({ total: w.total, pendentes: w.pendentes, informativos: w.informativos }));
-  ok('e informa quantos informativos existem', w.informativos === 1,
-    JSON.stringify(w.informativos) + ' — sem o número, some do painel em vez de mudar de lugar');
-  ok('mas ela continua VISÍVEL na lista', w.linhas.length === 1,
-    'esconder não é o objetivo: um veículo sem custo nenhum no mês merece um olhar');
-  ok('com o status que diz o que ela é', w.linhas[0].status === 'INFORMATIVO',
-    JSON.stringify(w.linhas[0].status));
-  ok('e a tela sabe que ela é informativa pelo catálogo',
-    w.linhas[0].acao && w.linhas[0].acao.tipo === 'informativo', JSON.stringify(w.linhas[0].acao));
+  const linha = linhasDoRelatorio().filter(function (l) { return l[0] === 'PAR 0001'; })[0];
+  ok('traz a data do último lançamento',
+    Object.prototype.toString.call(linha[4]) === '[object Date]', JSON.stringify(linha));
+  ok('e há quantos dias está parado', linha[5] > 90, JSON.stringify(linha[5]) +
+    ' — é esta coluna que sustenta a conversa de inativar');
+  ok('e o que ele lançou por último', String(linha[6]) === 'Pneus', JSON.stringify(linha[6]));
+  // Dois lançamentos em meses diferentes, o mais ANTIGO gravado primeiro: a
+  // coluna tem de mostrar o ÚLTIMO, senão "dias sem lançar" conta a partir da
+  // data errada e o veículo parece parado há mais tempo do que está.
+  cadastrar('DOI 0006', 'DEPOSITO');
+  lancar('DOI 0006', 5, 5, 'Lavacao/Graxa');
+  lancar('DOI 0006', 20, 8, 'Oficina Despesa');
+  const dois = linhasDoRelatorio().filter(function (l) { return l[0] === 'DOI 0006'; })[0];
+  ok('com dois lançamentos, mostra o mais recente',
+    String(dois[6]) === 'Oficina Despesa' && dois[4].getMonth() === 7,
+    JSON.stringify([String(dois[6]), dois[4] && dois[4].toISOString().slice(0, 10)]));
+  ok('e os dias contam a partir dele',
+    dois[5] < linhasDoRelatorio().filter(function (l) { return l[0] === 'PAR 0001'; })[0][5],
+    'agosto é mais perto de hoje que julho');
+
+  const nunca = linhasDoRelatorio().filter(function (l) { return l[0] === 'NOV 0003'; })[0];
+  ok('quem nunca lançou mostra isso por extenso, sem data inventada',
+    nunca[4] === null && /nunca teve lançamento/.test(String(nunca[6])), JSON.stringify(nunca));
+  ok('e os dias ficam em branco, não em zero', nunca[5] === null,
+    JSON.stringify(nunca[5]) + ' — zero dias parado seria o contrário do que acontece');
 })();
 
-console.log('\n5. A escolha de quem operou é respeitada');
+console.log('\n4. Os dois lados do cadastro');
 (function () {
-  escrever([['Resumo', 'AAA 0001', SEM_CUSTO, 'x']]);
-  // Alguém marcou EM ANÁLISE: quer olhar esse veículo.
-  linhasDaAba()[0][4] = 'EM ANÁLISE';
-  escrever([['Resumo', 'AAA 0001', SEM_CUSTO, 'x']]);
-  ok('revalidar NÃO desfaz o EM ANÁLISE', statusDe(SEM_CUSTO) === 'EM ANÁLISE',
-    JSON.stringify(statusDe(SEM_CUSTO)) + ' — trocar por baixo o que a pessoa marcou ' +
-    'é pior do que a classificação errada que isto conserta');
-  ok('e aí ela VOLTA a contar como aberta', ctx.estadoConferencia_().pendentes === 1,
-    'quem pediu para olhar quer ver na fila');
+  lancar('OFF 0004', 12, 11);     // inativo que recebeu lançamento no período
+  vm.runInContext('VEICULOS_EXEC_CACHE_ = null;', ctx);
+  const rel = ctx.relatorioSemLancamento_(null, null, null, null);
+  const outro = rel.blocos.filter(function (b) { return /inativo/i.test(b.titulo); })[0];
+  ok('o inativo COM lançamento aparece no bloco do outro lado',
+    outro.linhas.some(function (l) { return String(l[0]) === 'OFF 0004'; }),
+    JSON.stringify(outro.linhas));
+  const faixas = rel.blocos.filter(function (b) { return /Há quanto tempo/.test(b.titulo); })[0];
+  ok('o bloco de faixas separa quem nunca lançou dos parados',
+    faixas.linhas.some(function (l) { return /Nunca tiveram/.test(String(l[0])); }) &&
+    faixas.linhas.some(function (l) { return /mais de 90/.test(String(l[0])); }),
+    JSON.stringify(faixas.linhas));
+  ok('e o subtítulo diz quantos de quantos', /de \d+ veículo\(s\) ativo\(s\)/.test(faixas.subtitulo),
+    faixas.subtitulo);
 })();
 
-console.log('\n6. Base antiga: a linha que já estava como PENDENTE');
-// Quem já usava o sistema tem essa linha gravada como PENDENTE, do jeito
-// antigo. A revalidação tem de reclassificá-la — senão o veículo sem custo
-// continua travando o fechamento até alguém marcar RESOLVIDO à mão.
+console.log('\n5. Filtros e período');
 (function () {
-  escrever([['Resumo', 'AAA 0001', SEM_CUSTO, 'x']]);
-  linhasDaAba()[0][4] = 'PENDENTE';     // como a versão anterior gravava
-  ok('antes da revalidação ela conta como pendência',
-    ctx.estadoConferencia_().pendentes === 1, JSON.stringify(ctx.estadoConferencia_()));
-  escrever([['Resumo', 'AAA 0001', SEM_CUSTO, 'x']]);
-  ok('revalidar reclassifica a linha antiga', statusDe(SEM_CUSTO) === 'INFORMATIVO',
-    JSON.stringify(statusDe(SEM_CUSTO)) + ' — sem isto, quem já usa o sistema ' +
-    'continuaria com o fechamento travado por um veículo parado');
-  ok('e ela para de contar', ctx.estadoConferencia_().pendentes === 0,
-    JSON.stringify(ctx.estadoConferencia_()));
+  cadastrar('LOJ 0005', 'LOJA 05');
+  const soDeposito = ctx.relatorioSemLancamento_('DEPOSITO', null, null, null).linhas
+    .map(function (l) { return String(l[0]); });
+  ok('filtro de loja recorta a lista', soDeposito.indexOf('LOJ 0005') === -1 &&
+    soDeposito.indexOf('PAR 0001') !== -1, JSON.stringify(soDeposito));
+  // Em julho, o PAR 0001 lançou: no recorte de julho ele não está parado.
+  const julho = ctx.relatorioSemLancamento_(null, null, null,
+    { de: '2026-07-01', ate: '2026-07-31' }).linhas.map(function (l) { return String(l[0]); });
+  ok('o período escolhido muda quem está parado', julho.indexOf('PAR 0001') === -1,
+    JSON.stringify(julho) + ' — em julho ele lançou');
 })();
 
-console.log('\n7. Regras estáticas');
-const fonte = fs.readFileSync(arquivo, 'utf8');
-const tela = fs.readFileSync('App.html', 'utf8');
+console.log('\n6. Regras estáticas');
 (function () {
-  ok('INFORMATIVO é um status aceito pela validação da aba',
-    /requireValueInList\(STATUS_PENDENCIA_, true\)/.test(fonte),
-    'status fora da lista faz o Sheets RECUSAR a escrita — e a linha fica pela metade');
-  ok('a lista de status tem um dono só',
-    (fonte.match(/const STATUS_PENDENCIA_ = /g) || []).length === 1 &&
-    !/\['PENDENTE', 'EM ANÁLISE', 'RESOLVIDO'\]/.test(fonte),
-    'duas listas divergiriam: uma aceitaria o status que a outra recusa');
-  ok('o filtro "em aberto" da tela esconde o informativo',
-    /p\.status === 'RESOLVIDO' \|\| p\.status === 'INFORMATIVO'/.test(tela));
-  ok('e o painel mostra quantos são, dizendo que não bloqueiam',
-    /Informativos/.test(tela) && /não bloqueiam o fechamento/.test(tela));
+  const fonte = fs.readFileSync(arquivo, 'utf8');
+  ok('o relatório está no catálogo e no switch',
+    !!ctx.CATALOGO_RELATORIOS['Veículos sem lançamento no período'] &&
+    fonte.indexOf("case 'Veículos sem lançamento no período':") !== -1);
+  ok('e aceita recorte de datas (a fonte é a base de lançamentos)',
+    ctx.CATALOGO_RELATORIOS['Veículos sem lançamento no período'].fonte === 'lancamentos');
+  ok('a base é lida UMA vez para as duas perguntas',
+    (fonte.slice(fonte.indexOf('function relatorioSemLancamento_'),
+      fonte.indexOf('function relatorioFrotaTransporte_'))
+      .match(/lerLancamentos_\(\)/g) || []).length === 1,
+    'quem teve lançamento no recorte e qual foi o último de cada um saem da mesma passada');
 })();
 
 if (falhas) {
