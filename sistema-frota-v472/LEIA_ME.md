@@ -5170,6 +5170,42 @@ texto em vez do comportamento:
 **Cobertura: de 54 funções que escrevem sem prova para 47.** 48 suítes, 1.913
 provas.
 
+## V4.45.0 — a pendência de KM parou de cobrar o impossível
+
+Queixa do usuário: *"quando abasteço a primeira vez o veículo acusa que tem
+que ter 2 registros de KM, não faz sentido"*. E não faz mesmo.
+
+KM rodado é **maior menos menor leitura do período**, e exige duas leituras —
+essa parte está certa e continua. O erro estava em transformar o resultado
+disso numa acusação: a pendência disparava sempre que o KM rodado era zero, e
+no **primeiro** abastecimento do veículo no mês zero é a resposta correta, não
+o descuido de ninguém. A explicação que a tela mostrava — *"o KM rodado precisa
+de pelo menos duas leituras no período"* — estava cobrando uma segunda leitura
+que ainda não podia existir.
+
+Pendência que não procede não é só um incômodo: ela ensina a ignorar a lista, e
+aí a pendência que procede passa batido junto.
+
+Agora a mesma situação se divide em três, e cada uma diz o que realmente falta:
+
+| Situação | O que o sistema diz |
+|---|---|
+| 1 abastecimento, 1 leitura | **nada** — é o primeiro do mês |
+| abasteceu e nenhuma leitura | "Abasteceu e não registrou KM nenhum" |
+| 2+ abastecimentos, 1 leitura | "Abasteceu mais de uma vez e só tem uma leitura de KM" |
+| 2+ leituras, todas iguais | "Leituras de KM do período são todas iguais" — ou não rodou, ou repetiram |
+
+As contagens saem dos laços que já existiam (lançamentos e odômetro), sem
+leitura nova da planilha, e **só contam o que está dentro do período**: leitura
+de outro mês não mede percurso nenhum deste.
+
+`conferir_pendencia_km.js`, 14 provas, 5 mutantes mortos — entre eles "volta a
+cobrar no primeiro abastecimento" e "conta leitura de qualquer período".
+
+49 suítes, 1.927 provas.
+
+**Não precisa rodar "Instalar / atualizar sistema".**
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026

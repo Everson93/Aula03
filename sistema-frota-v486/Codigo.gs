@@ -674,7 +674,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.44.0';
+const VERSAO_SISTEMA = '4.45.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -5420,6 +5420,11 @@ function validarDados() {
 /** Roda todas as checagens e devolve a lista de problemas. */
 function coletarProblemas_(opcoesColeta) {
   const problemas = [];
+  // Quantos abastecimentos e quantas leituras de odômetro cada veículo teve NO
+  // PERÍODO. É o que separa "o operador esqueceu de anotar o KM" de "ainda não
+  // houve uma segunda leitura" — ver a pendência de KM rodado, mais abaixo.
+  const abastecimentosNoPeriodo = {};
+  const leiturasNoPeriodo = {};
   // Numero da linha -> ID do lancamento, preenchido na varredura de Lançamentos.
   // Usado no fim para carimbar o ID em cada pendencia; ver carimbarIds_.
   const idPorLinha = {};
@@ -5602,6 +5607,10 @@ function coletarProblemas_(opcoesColeta) {
         problemas.push([ABAS.LANCAMENTOS, placa, 'Litros informados num tipo que não é abastecimento',
           'linha ' + numeroLinha + ' • ' + tipo]);
       }
+      if (litros > 0 && TIPOS_COM_LITROS.indexOf(tipo) !== -1) {
+        const chaveAb = normalizaPlaca_(placa);
+        abastecimentosNoPeriodo[chaveAb] = (abastecimentosNoPeriodo[chaveAb] || 0) + 1;
+      }
       const precoAbsurdo = pendenciaPrecoUnitario_(tipo, valor, litros, numeroLinha, placa);
       if (precoAbsurdo) problemas.push(precoAbsurdo);
     });
@@ -5631,6 +5640,10 @@ function coletarProblemas_(opcoesColeta) {
       if (!isFinite(km) || km <= 0) {
         if (data >= periodo.inicio) problemas.push([ABAS.ODOMETRO, placa, 'KM/horímetro inválido', 'linha ' + linhaPlanilha]);
         return;
+      }
+      if (data >= periodo.inicio && data <= periodo.fim) {
+        const chaveLeitura = normalizaPlaca_(placa);
+        leiturasNoPeriodo[chaveLeitura] = (leiturasNoPeriodo[chaveLeitura] || 0) + 1;
       }
       dadosValidos.push([data, placa, km, linhaPlanilha]);
     });
@@ -5673,10 +5686,30 @@ function coletarProblemas_(opcoesColeta) {
       const litros = Number(linha[R_.LITROS] || 0);
       const km = Number(linha[R_.KM] || 0);
       const total = Number(linha[R_.TOTAL] || 0);
+      // KM rodado = maior menos menor leitura DO PERÍODO, e por isso ele só
+      // existe a partir da SEGUNDA leitura. A pendência antiga dizia
+      // "abasteceu e não tem KM rodado" sempre que o resultado era zero — e no
+      // primeiro abastecimento do veículo no mês isso é verdade por
+      // construção, não por descuido de ninguém. Cobrar uma segunda leitura
+      // que ainda não podia existir é acusar o operador de um erro que ele não
+      // cometeu, e pendência que não procede ensina a ignorar a lista inteira.
       if (litros > 0 && km === 0) {
-        problemas.push([ABAS.RESUMO, placa,
-          'Abasteceu mas não tem KM rodado no período',
-          periodo.mesRef + ' • faltam leituras de odômetro']);
+        const chaveKm = normalizaPlaca_(placa);
+        const leituras = leiturasNoPeriodo[chaveKm] || 0;
+        const abastecimentos = abastecimentosNoPeriodo[chaveKm] || 0;
+        if (leituras === 0) {
+          problemas.push([ABAS.RESUMO, placa, 'Abasteceu e não registrou KM nenhum',
+            periodo.mesRef + ' • ' + abastecimentos + ' abastecimento(s) e nenhuma leitura ' +
+            'de odômetro no período']);
+        } else if (leituras === 1 && abastecimentos > 1) {
+          problemas.push([ABAS.RESUMO, placa, 'Abasteceu mais de uma vez e só tem uma leitura de KM',
+            periodo.mesRef + ' • ' + abastecimentos + ' abastecimentos • 1 leitura de odômetro']);
+        } else if (leituras >= 2) {
+          problemas.push([ABAS.RESUMO, placa, 'Leituras de KM do período são todas iguais',
+            periodo.mesRef + ' • ' + leituras + ' leituras • nenhum KM rodado entre elas']);
+        }
+        // leituras === 1 com UM abastecimento não entra: é o primeiro
+        // abastecimento do veículo no período, e não falta nada.
       }
       // Veículo ativo sem custo é um ponto de conferência, não um erro histórico.
       // A competência no detalhe impede que um RESOLVIDO de um mês seja herdado pelo mês seguinte.
@@ -16959,10 +16992,18 @@ const ACOES_PENDENCIA_ = {
       'competência. Se a data está aceita, use “Confirmar data da depreciação” ' +
       '(menu Fechamento ou tela de depreciação): o lançamento fica como está e a ' +
       'pendência some.' },
-  'Abasteceu mas não tem KM rodado no período': {
+  'Abasteceu e não registrou KM nenhum': {
     tipo: 'atalho', tela: 'lancar', rotulo: 'Lançar leitura de odômetro',
-    explicacao: 'Falta uma LEITURA nova, não um campo errado: o KM rodado precisa ' +
-      'de pelo menos duas leituras no período.' },
+    explicacao: 'O veículo abasteceu e não tem nenhuma leitura de odômetro no ' +
+      'período. Sem leitura não há km/L nem custo por KM para este veículo.' },
+  'Abasteceu mais de uma vez e só tem uma leitura de KM': {
+    tipo: 'atalho', tela: 'lancar', rotulo: 'Lançar leitura de odômetro',
+    explicacao: 'Falta uma LEITURA, não um campo errado: houve mais de um ' +
+      'abastecimento e só um deles trouxe o KM. O percurso entre eles ficou sem medida.' },
+  'Leituras de KM do período são todas iguais': {
+    tipo: 'atalho', tela: 'lancar', rotulo: 'Conferir as leituras do veículo',
+    explicacao: 'Há duas ou mais leituras no período e todas com o mesmo KM. ' +
+      'Ou o veículo não rodou, ou alguma leitura foi repetida por engano.' },
   'Sem nenhum custo no período': {
     tipo: 'informativo',
     explicacao: 'Não é defeito: o veículo simplesmente não teve despesa no período. ' +
