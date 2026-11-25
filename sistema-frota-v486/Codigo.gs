@@ -674,7 +674,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.43.0';
+const VERSAO_SISTEMA = '4.44.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -2664,22 +2664,74 @@ function garantirIdsLancamentos_() {
   return total;
 }
 
-/** Assinatura conservadora: só bloqueia duplicidade quando existe Documento. */
-function assinaturaLancamento_(data, placa, tipo, valor, documento) {
+/**
+ * Assinatura de duplicidade — com documento e TAMBEM sem.
+ *
+ * Ate a V4.43 ela devolvia vazio quando nao havia documento, e
+ * `localizarDuplicidadeLancamento_` desistia. Abastecimento INTERNO nao tem NF
+ * por decisao de projeto (a nota e a da carga do tanque), entao o fluxo mais
+ * usado da operacao era o UNICO sem nenhuma guarda contra lancamento em dobro:
+ * dois envios baixavam o tanque duas vezes e estragavam o km/L do veiculo.
+ *
+ * Sem documento, o que identifica o lancamento e o conjunto: data, placa,
+ * tipo, valor e litros. O prefixo separa os dois mundos — um lancamento COM
+ * nota nao e duplicata de um SEM nota, e sem o prefixo as duas assinaturas
+ * poderiam coincidir por acaso.
+ *
+ * `toFixed` aqui e CHAVE de comparacao, nunca texto que alguem le.
+ */
+function assinaturaLancamento_(data, placa, tipo, valor, documento, litros) {
   const doc = String(documento || '').trim().toUpperCase().replace(/\s+/g, ' ');
-  if (!doc) return '';
-  const dataChave = data instanceof Date && !isNaN(data.getTime())
+  const dataChave = ehDataReal_(data)
     ? Utilities.formatDate(data, timezone_(), 'yyyy-MM-dd') : String(data || '');
-  return [dataChave, normalizaPlaca_(placa), String(tipo || '').trim().toUpperCase(),
-    Number(valor || 0).toFixed(2), doc].join('|');
+  const base = [dataChave, normalizaPlaca_(placa), String(tipo || '').trim().toUpperCase(),
+    Number(valor || 0).toFixed(2)];
+  if (doc) return 'D|' + base.concat([doc]).join('|');
+  return 'S|' + base.concat([Number(litros || 0).toFixed(3)]).join('|');
 }
 
-function localizarDuplicidadeLancamento_(data, placa, tipo, valor, documento) {
-  const alvo = assinaturaLancamento_(data, placa, tipo, valor, documento);
+/** A mensagem da duplicidade, que muda conforme exista ou não a NF. */
+function textoDuplicidadeLancamento_(duplicado, documento, litros) {
+  const onde = duplicado.id
+    ? ' (ID ' + duplicado.id + ', linha ' + duplicado.linha + ')' : '';
+  if (String(documento || '').trim()) {
+    return 'Possível lançamento duplicado: o documento "' + documento +
+      '" já foi lançado para esta placa/data/tipo/valor' + onde + '. Revise antes de continuar.';
+  }
+  return 'Possível lançamento duplicado: já existe um lançamento com a MESMA data, placa, ' +
+    'tipo, valor' + (litros > 0 ? ' e ' + numBR_(litros, 3) + ' L' : '') + onde +
+    '. Abastecimento interno não tem NF — a nota é a da carga do tanque —, então a ' +
+    'conferência é essa. Se for mesmo um segundo lançamento, confirme para gravar.';
+}
+
+function localizarDuplicidadeLancamento_(data, placa, tipo, valor, documento, litros) {
+  const alvo = assinaturaLancamento_(data, placa, tipo, valor, documento, litros);
   if (!alvo) return null;
   const sheet = ss_().getSheetByName(ABAS.LANCAMENTOS);
   const n = quantidadeLancamentosReais_();
   if (!sheet || n < 1) return null;
+
+  // Sem documento nao da para usar a coluna da NF como atalho: ela esta vazia
+  // em TODO abastecimento interno. Uma leitura so, de A..F, e a comparacao e
+  // feita em memoria — a coluna do documento vem junto de proposito, para um
+  // lancamento COM nota nunca casar com um SEM nota.
+  if (String(documento || '').trim() === '') {
+    const faixa = sheet.getRange(2, 1, n, COL_LANC.DOCUMENTO).getValues();
+    for (let i = faixa.length - 1; i >= 0; i--) {
+      const l = faixa[i];
+      if (assinaturaLancamento_(l[L_.DATA], l[L_.PLACA], l[L_.TIPO], l[L_.VALOR],
+          l[L_.DOCUMENTO], l[L_.LITROS]) !== alvo) continue;
+      const numeroLinha = i + 2;
+      const completa = sheet.getRange(numeroLinha, 1, 1, COL_LANC.ID).getValues()[0];
+      return {
+        linha: numeroLinha,
+        id: String(completa[L_.ID] || ''),
+        documento: '',
+        litros: Number(l[L_.LITROS]) || 0,
+      };
+    }
+    return null;
+  }
 
   // O documento costuma ser único. Primeiro lemos apenas a coluna G (1 célula por linha),
   // em vez de trazer as 12 colunas da base em todo lançamento. Só buscamos a linha completa
@@ -2695,7 +2747,7 @@ function localizarDuplicidadeLancamento_(data, placa, tipo, valor, documento) {
     // na V4.7.2. Cru, isso comparava a assinatura contra o campo errado e a deteccao
     // de duplicidade parava de achar duplicata nenhuma — em silencio.
     if (assinaturaLancamento_(l[L_.DATA], l[L_.PLACA], l[L_.TIPO], l[L_.VALOR],
-        l[L_.DOCUMENTO]) === alvo) {
+        l[L_.DOCUMENTO], l[L_.LITROS]) === alvo) {
       return {
         linha: numeroLinha,
         id: String(l[L_.ID] || ''),
@@ -4446,14 +4498,6 @@ function salvarLancamento_(dados, opcoesSalvar) {
       }
     }
 
-    const duplicado = data && isFinite(valor)
-      ? localizarDuplicidadeLancamento_(data, placa, dados.tipo, valor, documento) : null;
-    if (duplicado && dados.permitirDuplicado !== true) {
-      erros.push('Possível lançamento duplicado: o documento "' + documento +
-        '" já foi lançado para esta placa/data/tipo/valor' +
-        (duplicado.id ? ' (ID ' + duplicado.id + ')' : '') + '. Revise antes de continuar.');
-    }
-
     // Item 3 do escopo: KM so faz sentido no abastecimento. Manutencao, multa e
     // pedagio nao movem odometro, e um KM digitado ali sujava a serie que alimenta
     // o consumo (KM/litro) e o custo por KM.
@@ -4506,7 +4550,7 @@ function salvarLancamento_(dados, opcoesSalvar) {
       }
     }
 
-    if (erros.length) return { ok: false, mensagem: erros.join('\n'), duplicidade: !!duplicado };
+    if (erros.length) return { ok: false, mensagem: erros.join('\n') };
 
     // Abastecimento INTERNO nao tem preco proprio: o custo e o do tanque naquele
     // momento. Calculado aqui, DEPOIS das validacoes e ANTES de gravar, porque
@@ -4535,6 +4579,23 @@ function salvarLancamento_(dados, opcoesSalvar) {
       }
       custoBomba = tanque.precoLitro;
       valorFinal = Math.round(litros * custoBomba * 100) / 100;
+    }
+
+    // A conferência de duplicidade mora AQUI, depois do custo do tanque, porque
+    // ela compara o que vai ser GRAVADO. No abastecimento interno o valor não
+    // vem da tela — é o tanque que o define —, então comparar o valor digitado
+    // (zero) contra o valor gravado (R$ 600) nunca encontrava nada. Junte-se a
+    // isso o fato de o interno não ter NF, e esse era o único fluxo do sistema
+    // sem NENHUMA guarda contra lançamento em dobro.
+    const duplicado = ehDataReal_(data)
+      ? localizarDuplicidadeLancamento_(data, placa, dados.tipo, valorFinal, documentoFinal, litros)
+      : null;
+    if (duplicado && dados.permitirDuplicado !== true) {
+      return {
+        ok: false,
+        duplicidade: true,
+        mensagem: textoDuplicidadeLancamento_(duplicado, documentoFinal, litros),
+      };
     }
 
     const lancamentos = aba_(ABAS.LANCAMENTOS);
@@ -19006,8 +19067,8 @@ function diagnosticoAuditoriaProfunda_() {
   // Integridade dos IDs e duplicidades exatas por documento.
   const sheet=ss_().getSheetByName(ABAS.LANCAMENTOS); let semId=0, idsDup=0, dupDocs=0;
   const qtdAudit=quantidadeLancamentosReais_();
-  if(sheet&&qtdAudit>=1){const dados=sheet.getRange(2,1,qtdAudit,12).getValues();const ids={},ass={};dados.forEach(function(l){if(!l[1])return;const id=String(l[11]||'').trim();if(!id)semId++;else{idsDup+=ids[id]?1:0;ids[id]=true;}const a=assinaturaLancamento_(l[0],l[1],l[2],l[4],l[6]);if(a){dupDocs+=ass[a]?1:0;ass[a]=true;}});}
-  adicionar('Integridade dos lançamentos',(semId||idsDup)?'CRITICO':(dupDocs?'AVISO':'OK'),'Sem ID: '+semId+' • IDs repetidos: '+idsDup+' • possíveis duplicidades por documento: '+dupDocs+'.');
+  if(sheet&&qtdAudit>=1){const dados=sheet.getRange(2,1,qtdAudit,12).getValues();const ids={},ass={};dados.forEach(function(l){if(!l[1])return;const id=String(l[11]||'').trim();if(!id)semId++;else{idsDup+=ids[id]?1:0;ids[id]=true;}const a=assinaturaLancamento_(l[L_.DATA],l[L_.PLACA],l[L_.TIPO],l[L_.VALOR],l[L_.DOCUMENTO],l[L_.LITROS]);if(a){dupDocs+=ass[a]?1:0;ass[a]=true;}});}
+  adicionar('Integridade dos lançamentos',(semId||idsDup)?'CRITICO':(dupDocs?'AVISO':'OK'),'Sem ID: '+semId+' • IDs repetidos: '+idsDup+' • possíveis duplicidades: '+dupDocs+'.');
 
   const hist = auditarIntegridadeHistorico_();
   adicionar('Integridade dos períodos fechados', hist.divergencias.length ? 'CRITICO' : ((hist.semHash || hist.semFechado.length) ? 'AVISO' : 'OK'),

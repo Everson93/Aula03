@@ -54,7 +54,7 @@ quando precisou pular; os cinco caminhos passam por ele. Mais uma regra
 estática que proíbe `proximaLinhaLancamento_(` fora desse dono — é o que
 impede o quinto caminho de nascer errado.
 
-### 2. Abastecimento interno não tem proteção contra duplicidade
+### 2. Abastecimento interno não tem proteção contra duplicidade — RESOLVIDO na V4.44.0
 
 `assinaturaLancamento_` (`Codigo.gs:2518`) devolve string vazia quando não há
 documento, e `localizarDuplicidadeLancamento_` (`:2527`) desiste quando a

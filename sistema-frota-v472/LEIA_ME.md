@@ -5056,6 +5056,55 @@ os blocos antigos**, que reproduz a linha Frankenstein exatamente.
 
 **Não precisa rodar "Instalar / atualizar sistema".**
 
+## V4.44.0 — lançamento em dobro, inclusive sem nota fiscal
+
+Item 2 da auditoria. A assinatura de duplicidade exigia o número do documento:
+
+```js
+const doc = String(documento || '').trim()...;
+if (!doc) return '';          // ← desistia aqui
+```
+
+E abastecimento **interno não tem NF** por decisão de projeto — a nota é a da
+carga do tanque. Ou seja: o fluxo mais usado da operação era o **único sem
+nenhuma guarda** contra lançamento em dobro. Dois envios baixavam o tanque duas
+vezes, estragavam o km/L do veículo e ninguém via.
+
+Havia um segundo motivo, independente do primeiro, e ele sozinho já
+inutilizaria a conferência: ela rodava **antes** do cálculo do custo do tanque.
+No interno o valor não vem da tela, vem do tanque — comparar o valor digitado
+(zero) com o valor gravado (R$ 600) nunca acharia nada. Por isso a conferência
+mudou de lugar: agora compara **o que vai ser gravado**.
+
+O que entrou:
+
+- sem documento, a assinatura é o conjunto: **data, placa, tipo, valor e
+  litros**;
+- o prefixo `D|` / `S|` separa os dois mundos. Um lançamento **com** nota não é
+  duplicata de um **sem** nota — e, para saber disso, a busca lê a coluna do
+  documento das linhas já gravadas;
+- a mensagem diz o **ID e a linha** do lançamento que já existe, e explica a
+  regra quando não há NF;
+- continua sendo um **aviso**, não uma parede: quem abastece duas vezes no
+  mesmo dia com os mesmos litros existe, e confirma.
+
+Custo: uma leitura a mais (A..F, de uma vez) no caminho sem documento. O
+caminho com NF continua usando o atalho da coluna da nota.
+
+**De quebra**, a auditoria do sistema comparava a assinatura com `l[6]` — que é
+a **Observação** desde a V4.7.2, não o documento. O comentário que avisa dessa
+troca de colunas estava três linhas acima, no mesmo arquivo. A métrica
+"possíveis duplicidades" vinha da coluna errada desde então.
+
+`conferir_duplicidade_sem_nota.js`, 29 provas, 5 mutantes mortos — entre eles
+"volta a ignorar lançamento sem NF", "compara o valor digitado em vez do
+gravado" e "não lê a coluna do documento", que faria um lançamento sem nota ser
+barrado por outro com nota.
+
+46 suítes, 1.825 provas.
+
+**Não precisa rodar "Instalar / atualizar sistema".**
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026
