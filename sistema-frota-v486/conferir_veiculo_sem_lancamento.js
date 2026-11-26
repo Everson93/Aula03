@@ -410,6 +410,37 @@ console.log('\n3. As colunas sustentam a decisão');
     JSON.stringify(nunca[5]) + ' — zero dias parado seria o contrário do que acontece');
 })();
 
+console.log('\n3b. Quem só espera a depreciação do mês fica num bloco à parte');
+// Na planilha real do usuário, 83 de 166 veículos ativos apareciam "sem
+// lançamento" — e mais de 60 eram leves de loja cujo último lançamento foi a
+// depreciação automática do mês anterior. Eles não estão abandonados: estão
+// esperando a depreciação deste mês, que só é gerada no último dia. Misturar
+// os dois faz a lista de decisão nascer com 60 linhas que não pedem decisão.
+(function () {
+  cadastrar('DEP 0007', 'DEPOSITO');
+  // 20/10 fica FORA do período aberto (26/10 a 25/11) — é a depreciação do
+  // mês anterior, que é exatamente o caso real.
+  lancar('DEP 0007', 20, 10, 'Depreciação');
+  const rel = ctx.relatorioSemLancamento_(null, null, null, null);
+  const principal = rel.linhas.map(function (l) { return String(l[0]); });
+  const bloco = rel.blocos.filter(function (b) { return /depreciação do mês/i.test(b.titulo); })[0];
+  const nele = bloco.linhas.map(function (l) { return String(l[0]); });
+  ok('ele NÃO está na lista de decisão', principal.indexOf('DEP 0007') === -1,
+    JSON.stringify(principal));
+  ok('está no bloco de quem espera a depreciação', nele.indexOf('DEP 0007') !== -1,
+    JSON.stringify(nele));
+  ok('e quem parou de verdade continua na lista principal',
+    principal.indexOf('PAR 0001') !== -1, JSON.stringify(principal));
+  ok('o subtítulo diz quantos são de cada tipo',
+    /só esperam a depreciação do mês/.test(
+      rel.blocos.filter(function (b) { return /Há quanto tempo/.test(b.titulo); })[0].subtitulo),
+    rel.blocos.filter(function (b) { return /Há quanto tempo/.test(b.titulo); })[0].subtitulo);
+  ok('e as faixas de tempo contam só os parados de verdade',
+    rel.blocos.filter(function (b) { return /Há quanto tempo/.test(b.titulo); })[0]
+      .linhas.reduce(function (s, l) { return s + l[1]; }, 0) === principal.length,
+    'senão o número da faixa não bate com a lista que está logo abaixo');
+})();
+
 console.log('\n4. Os dois lados do cadastro');
 (function () {
   lancar('OFF 0004', 12, 11);     // inativo que recebeu lançamento no período

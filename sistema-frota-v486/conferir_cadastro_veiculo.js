@@ -100,6 +100,30 @@ function montar(largura) {
 
 function celula(coluna) { return ctx.__veiculos[0][coluna - 1]; }
 
+console.log('\n0. Placa que só difere por espaço ou hífen não entra duas vezes');
+// Aconteceu na planilha do usuário: o mesmo equipamento cadastrado como
+// "N 292" e "N292". Para o sistema são DOIS veículos — normalizaPlaca_ tira o
+// hífen, não o espaço. Um recebe todos os lançamentos; o outro fica zerado no
+// Resumo para sempre, inflando a contagem de ativos e a lista de parados.
+montar();
+(function () {
+  const r = ctx.webSalvarVeiculo('T', {
+    placa: 'ABC1D23 ', descricao: 'Mesmo caminhão', categoria: 'Truck Normal',
+    centro: 'DEPOSITO', depreciacao: 0, seguro: 0, ipva: 0,
+  });
+  // 'ABC1D23 ' normaliza para o MESMO 'ABC1D23' — é edição, não colisão.
+  ok('a mesma placa com espaço sobrando é edição, não veículo novo', r.ok === true, r.mensagem);
+  const colide = ctx.webSalvarVeiculo('T', {
+    placa: 'ABC 1D23', descricao: 'Cadastro duplicado', categoria: 'Truck Normal',
+    centro: 'DEPOSITO', depreciacao: 0, seguro: 0, ipva: 0,
+  });
+  ok('mas "ABC 1D23" ao lado de "ABC1D23" é recusado',
+    colide.ok === false && /espaço ou hífen/.test(String(colide.mensagem)), colide.mensagem);
+  ok('e a recusa mostra a placa que já existe',
+    /ABC1D23/.test(String(colide.mensagem)), colide.mensagem);
+  ok('nada foi gravado', ctx.__veiculos.length === 1, JSON.stringify(ctx.__veiculos.length));
+})();
+
 console.log('\n1. Campo que a tela não manda não é apagado');
 montar();
 // Exatamente o que a tela da V4.36 manda: sem `emplacamento`.

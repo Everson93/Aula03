@@ -674,7 +674,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.47.0';
+const VERSAO_SISTEMA = '4.48.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -1034,6 +1034,57 @@ function ehMesCivil_(corte) {
 function diaInicioPeriodo_() {
   const corte = diaCortePeriodo_();
   return ehMesCivil_(corte) ? 1 : corte + 1;
+}
+
+/**
+ * Quais competencias JA FECHADAS mudam de composicao se o dia de corte mudar.
+ *
+ * Mudar o corte reescreve a competencia de toda a base — inclusive a de meses
+ * que ja foram fechados, com hash de integridade gravado. Nao e proibido, e as
+ * vezes e exatamente o que se quer (o usuario trocou para mes civil, dia 1 ao
+ * ultimo dia). O que nao pode e acontecer em silencio: a Auditoria vai apontar
+ * divergencia de hash depois, e tres meses adiante ninguem lembra por que.
+ *
+ * Mede antes de mexer: quantos lancamentos trocam de mes, e quais dos meses
+ * fechados deixam de bater.
+ */
+function impactoDoCorteNosFechados_(corteNovo) {
+  const fechados = {};
+  try {
+    const hist = ss_().getSheetByName(ABAS.HISTORICO);
+    if (hist && hist.getLastRow() >= 2) {
+      hist.getRange(2, 1, hist.getLastRow() - 1, 1).getValues().forEach(function (l) {
+        try { fechados[normalizarMesReferencia_(l[0])] = true; } catch (e) {}
+      });
+    }
+  } catch (e) { return { movidos: 0, fechadosAfetados: [] }; }
+  if (!Object.keys(fechados).length) return { movidos: 0, fechadosAfetados: [] };
+
+  const corteNovoSan = Math.max(1, Math.min(31, Math.floor(Number(corteNovo) || 0)));
+  const civilNovo = corteNovoSan >= DIA_CORTE_MES_CIVIL_;
+  function competenciaCom(data, corte, civil) {
+    let ano = data.getFullYear(), mes = data.getMonth() + 1;
+    if (!civil && data.getDate() > corte) { mes++; if (mes > 12) { mes = 1; ano++; } }
+    return ano + '-' + ('0' + mes).slice(-2);
+  }
+  const mexidos = {};
+  let movidos = 0;
+  lerLancamentos_().forEach(function (l) {
+    const data = l[L_.DATA];
+    if (!ehDataReal_(data)) return;
+    const antes = mesCompetenciaDaData_(data);
+    const depois = competenciaCom(data, corteNovoSan, civilNovo);
+    if (antes === depois) return;
+    movidos++;
+    if (fechados[antes]) mexidos[antes] = (mexidos[antes] || 0) + 1;
+    if (fechados[depois]) mexidos[depois] = (mexidos[depois] || 0) + 1;
+  });
+  return {
+    movidos: movidos,
+    fechadosAfetados: Object.keys(mexidos).sort().map(function (m) {
+      return { mes: m, lancamentos: mexidos[m] };
+    }),
+  };
 }
 
 function periodoDoMes_(mesRef) {
@@ -2512,6 +2563,7 @@ function montarParametros_() {
     .setBackground(CORES.LARANJA_CLARO)
     .setFontWeight('bold')
     .setHorizontalAlignment('left');
+  normalizarFormatosParametros_(sheet, linhas.length);
 
   const linhaCalc = LINHA_PARAM_INICIAL + linhas.length + 1;
   sheet.getRange(linhaCalc, 1).setValue('PERÍODO CALCULADO')
@@ -2584,6 +2636,24 @@ function formulasPeriodoParametros_() {
  * títulos, Consulta, Relatórios) com o período em vigor: datas livres, quando houver,
  * ou as fórmulas padrão do dia de corte.
  */
+/**
+ * Tira o formato de DATA das celulas de parametro.
+ *
+ * A lista de parametros cresceu ao longo das versoes, e as linhas do "PERIODO
+ * CALCULADO" — que sao datas — foram descendo junto. O formato dd/mm/yyyy
+ * ficou onde elas estavam: na planilha do usuario, HORA_ALERTA aparecia como
+ * 07/01/1900 e ESTOQUE_MINIMO_L como 14/05/1901. Os valores (7 e 500) estavam
+ * certos por dentro; o que mentia era a tela — e quem editasse ali veria o
+ * Sheets converter o que digitou em data.
+ *
+ * MES_REFERENCIA continua como texto: "2026-07" vira data sozinho.
+ */
+function normalizarFormatosParametros_(sheet, quantas) {
+  if (!sheet || !quantas) return;
+  sheet.getRange(LINHA_PARAM_INICIAL, 2, quantas, 1).setNumberFormat('General');
+  sheet.getRange(LINHA_PARAM_INICIAL, 2).setNumberFormat('@');
+}
+
 function aplicarPeriodoNaPlanilha_() {
   const sheet = ss_().getSheetByName(ABAS.PARAMETROS);
   const linhaIni = Number(PropertiesService.getDocumentProperties().getProperty('LINHA_PERIODO_INI'));
@@ -2606,6 +2676,9 @@ function aplicarPeriodoNaPlanilha_() {
   }
   celIni.setNumberFormat('dd/mm/yyyy');
   celFim.setNumberFormat('dd/mm/yyyy');
+  // Conserta tambem aqui, e nao so no Instalar: trocar o dia de corte e a
+  // operacao que o usuario faz quando o formato o incomoda.
+  normalizarFormatosParametros_(sheet, PARAMETROS_PADRAO.length);
   // Contagem de lançamentos do período (regravada aqui para corrigir planilhas que
   // ficaram com a fórmula antiga "+0.99999", que dava #ERROR! em pt-BR).
   const fimLanc = limiteLancamentosAtual_();
@@ -12520,10 +12593,22 @@ function relatorioSemLancamento_(centro, categoria, placa, periodoEscolhido) {
     return db - da;
   });
 
-  const linhas = parados.map(function (i) {
+  // Dois grupos, porque sao duas conversas diferentes. Na planilha do usuario,
+  // 83 dos 166 veiculos ativos apareciam "sem lancamento" — e mais de 60 eram
+  // leves de loja cujo ULTIMO lancamento foi a depreciacao automatica do mes
+  // anterior. Eles nao estao abandonados: estao esperando a depreciacao deste
+  // mes, que so e gerada no ultimo dia do periodo. Misturar os dois faz a lista
+  // de decisao nascer com 60 linhas que nao pedem decisao nenhuma.
+  function soDepreciacao(i) {
+    return chaveTipoDespesa_(i.ultimoTipo) === chaveTipoDespesa_('Depreciação');
+  }
+  const semNadaProprio = parados.filter(function (i) { return !soDepreciacao(i); });
+  const esperandoDepreciacao = parados.filter(soDepreciacao);
+  function linhaDe(i) {
     return [i.placa, i.descricao, i.categoria, i.centro,
       i.ultimaData, diasParado(i), i.ultimoTipo || '— nunca teve lançamento'];
-  });
+  }
+  const linhas = semNadaProprio.map(linhaDe);
 
   const faixas = [
     { rotulo: 'Nunca tiveram lançamento', de: null, ate: null },
@@ -12531,7 +12616,7 @@ function relatorioSemLancamento_(centro, categoria, placa, periodoEscolhido) {
     { rotulo: 'Parados de 31 a 90 dias', de: 31, ate: 90 },
     { rotulo: 'Parados há mais de 90 dias', de: 91, ate: 1000000 },
   ].map(function (f) {
-    const quantos = parados.filter(function (i) {
+    const quantos = semNadaProprio.filter(function (i) {
       const d = diasParado(i);
       if (f.de === null) return d === null;
       return d !== null && d >= f.de && d <= f.ate;
@@ -12552,15 +12637,26 @@ function relatorioSemLancamento_(centro, categoria, placa, periodoEscolhido) {
     titulo: 'Veículos sem lançamento — ' + recorte,
     subtitulo: 'Veículo parado não é defeito: é decisão. Quem está parado há meses provavelmente ' +
       'deve ser inativado no cadastro; quem está rodando e não aparece aqui por engano é ' +
-      'custo que está ficando de fora da conta.',
+      'custo que está ficando de fora da conta. Quem só espera a depreciação do mês está ' +
+      'num bloco à parte, porque não pede decisão nenhuma.',
     colunas: [col_('Placa / ID'), col_('Veículo'), col_('Categoria'), col_('Loja'),
       col_('Último lançamento', 'data'), col_('Dias sem lançar', 'numero'), col_('Último tipo')],
     linhas: linhas,
     blocos: [
       { titulo: 'Há quanto tempo', posicao: 'antes',
         subtitulo: numBR_(linhas.length, 0) + ' de ' + numBR_(ativos, 0) +
-          ' veículo(s) ativo(s) no recorte não tiveram lançamento nenhum.',
+          ' veículo(s) ativo(s) no recorte não tiveram despesa própria' +
+          (esperandoDepreciacao.length
+            ? ', e outros ' + numBR_(esperandoDepreciacao.length, 0) +
+              ' só esperam a depreciação do mês (lista abaixo).' : '.'),
         colunas: [col_('Situação'), col_('Veículos', 'numero')], linhas: faixas },
+      { titulo: 'Só esperam a depreciação do mês',
+        subtitulo: 'O último lançamento deles foi a depreciação automática, que só é ' +
+          'gerada no último dia do período. Não são veículos abandonados: vão entrar ' +
+          'na conta assim que a depreciação rodar.',
+        colunas: [col_('Placa / ID'), col_('Veículo'), col_('Categoria'), col_('Loja'),
+          col_('Última depreciação', 'data'), col_('Dias', 'numero'), col_('Último tipo')],
+        linhas: esperandoDepreciacao.map(linhaDe) },
       { titulo: 'O outro lado: inativo COM lançamento no período',
         subtitulo: 'Lançamento em veículo inativo é inconsistência de cadastro — ou o ' +
           'veículo voltou a rodar, ou o lançamento foi na placa errada.',
@@ -12568,7 +12664,7 @@ function relatorioSemLancamento_(centro, categoria, placa, periodoEscolhido) {
           col_('Lançamentos', 'numero'), col_('Último lançamento', 'data')],
         linhas: inativosComLancamento },
     ],
-    mensagem: linhas.length ? '' :
+    mensagem: (linhas.length || esperandoDepreciacao.length) ? '' :
       'Todos os veículos ativos do recorte tiveram lançamento no período.',
   };
 }
@@ -15295,7 +15391,26 @@ function webSalvarVeiculo(token, dados) {
   const indice = listaPlacas_(false).indexOf(placa);
   const atual = indice === -1 ? [] : sheet.getRange(indice + 2, 1, 1, TOTAL_COL_VEIC).getValues()[0];
 
-  /** Usa o valor enviado; se não veio, mantém o que já estava. */
+    // Placa que SO difere por espaco ou hifen ja esta cadastrada?
+  //
+  // `normalizaPlaca_` tira o hifen e aperta os espacos, mas NAO remove o
+  // espaco: para o sistema, "N 292" e "N292" sao dois veiculos. Na planilha do
+  // usuario isso aconteceu — o mesmo equipamento cadastrado duas vezes, um
+  // recebendo todos os lancamentos e o outro parado em zero no Resumo para
+  // sempre, inflando a contagem de ativos e a lista de veiculos sem lancamento.
+  const chaveFrouxa = placa.replace(/[\s-]/g, '');
+  const colisao = dadosVeiculosExecucao_().filter(function (l) {
+    const outra = normalizaPlaca_(l[COL_VEIC.PLACA - 1]);
+    return outra && outra !== placa && outra.replace(/[\s-]/g, '') === chaveFrouxa;
+  })[0];
+  if (colisao && indice === -1) {
+    return { ok: false, mensagem: 'Já existe o veículo "' + colisao[COL_VEIC.PLACA - 1] +
+      '", que só difere de "' + placa + '" por espaço ou hífen. Para o sistema seriam ' +
+      'DOIS veículos: um receberia os lançamentos e o outro ficaria zerado no Resumo. ' +
+      'Use a placa que já existe, ou corrija a grafia dela antes de cadastrar esta.' };
+  }
+
+/** Usa o valor enviado; se não veio, mantém o que já estava. */
   function manter(enviado, posicao, padrao) {
     if (enviado !== undefined && enviado !== null && enviado !== '') return enviado;
     if (indice !== -1 && atual[posicao] !== '') return atual[posicao];
@@ -15370,8 +15485,13 @@ function webSalvarVeiculo(token, dados) {
   VEICULOS_EXEC_CACHE_ = null;
   invalidarCacheInicio_();
   atualizarResumoSeguro_();
+  // Na EDIÇÃO a colisão não bloqueia: ela já existe na base, e travar aqui
+  // impediria justamente quem está tentando arrumar o cadastro.
+  const avisoColisao = colisao
+    ? ' Atenção: "' + colisao[COL_VEIC.PLACA - 1] + '" é o mesmo veículo com outra grafia. ' +
+      'Enquanto os dois existirem, um deles fica zerado no Resumo.' : '';
   return { ok: true, mensagem: 'Veículo ' + placa + ' atualizado.' +
-    (cavaloVinculado.aviso ? ' ' + cavaloVinculado.aviso : '') };
+    (cavaloVinculado.aviso ? ' ' + cavaloVinculado.aviso : '') + avisoColisao };
 }
 
 /**
@@ -17774,6 +17894,7 @@ function webParametros(token) {
 function webSalvarParametro(token, nome, valor) {
   autorizarContextoWeb_(token, 'ADMIN');
   let recalcularCompetencia = false;
+  let impactoCorte = null;
   const permitidos = PARAMETROS_PADRAO.map(function (p) { return p[0]; });
   if (permitidos.indexOf(nome) === -1) return { ok: false, mensagem: 'Parâmetro desconhecido.' };
   let avisoPeriodo = '';
@@ -17799,6 +17920,8 @@ function webSalvarParametro(token, nome, valor) {
       return { ok: false, mensagem: 'O dia de corte precisa ser um número de 1 a 31. Use 28 ou mais para fechar por mês civil (dia 1 ao último dia).' };
     }
     valor = corte;
+    // Mede ANTES de mexer: depois da troca não há como saber o que mudou.
+    try { impactoCorte = impactoDoCorteNosFechados_(corte); } catch (e) { impactoCorte = null; }
     limparPeriodoLivre_();   // mudar o corte = voltar à regra do corte (sai das datas livres)
     // Mudar o corte reescreve a competência de TODA a base: lançamentos mudam de mês.
     // reconstruirRelatorios_() no fim não basta — quem redesenha a fórmula da coluna
@@ -17878,7 +18001,7 @@ function webSalvarParametro(token, nome, valor) {
       ? 'Dia de corte alterado para ' + valor + '. Período: ' +
         (ehMesCivil_() ? 'mês civil (dia 1 ao último dia)'
           : 'dia ' + diaInicioPeriodo_() + ' do mês anterior ao dia ' + valor) +
-        '. Competência e relatórios recalculados.'
+        '. Competência e relatórios recalculados.' + textoImpactoDoCorte_(impactoCorte)
       : nome + ' atualizado e relatórios sincronizados automaticamente.'
   };
 }
@@ -17902,6 +18025,20 @@ function webFornecedores(token, busca) {
     }),
     mensagem: dados.length + ' fornecedor(es).',
   };
+}
+
+/** O aviso, em uma frase, de que meses já fechados mudaram de composição. */
+function textoImpactoDoCorte_(impacto) {
+  if (!impacto || !impacto.movidos) return '';
+  const base = ' ' + numBR_(impacto.movidos, 0) + ' lançamento(s) mudaram de competência.';
+  if (!impacto.fechadosAfetados.length) return base;
+  const quais = impacto.fechadosAfetados.map(function (f) {
+    return f.mes + ' (' + numBR_(f.lancamentos, 0) + ')';
+  }).join(', ');
+  return base + ' ATENÇÃO: isso muda a composição de competência(s) JÁ FECHADA(S) — ' +
+    quais + '. A Auditoria vai apontar divergência no hash de integridade desses meses, ' +
+    'porque o fechamento guardou outra composição. Se quiser o hash alinhado com a regra ' +
+    'nova, reabra e feche esses meses de novo.';
 }
 
 function webSalvarFornecedor(token, dados) {

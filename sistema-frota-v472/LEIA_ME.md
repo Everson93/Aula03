@@ -5302,6 +5302,80 @@ tempo do que está.
 **Não precisa rodar "Instalar / atualizar sistema"** — rode **"Validar dados"**
 uma vez para a linha antiga sumir da conferência.
 
+## V4.48.0 — o que a planilha de verdade mostrou
+
+O usuário mandou o arquivo da planilha. Conferir contra os dados reais achou
+coisas que dedução nenhuma acharia — e confirmou, com números, o que as versões
+anteriores consertaram.
+
+### O que bateu
+
+- **O Resumo bate centavo a centavo com os lançamentos.** Novembro recalculado
+  a partir da base: R$ 459.344,52 dos dois lados, 169 linhas, zero diferenças.
+  O defeito do cache (V4.43) não deixou resíduo.
+- **Base íntegra**: 1.590 lançamentos, nenhum sem ID, nenhum ID repetido,
+  nenhuma placa fora do cadastro, nenhum sem centro/categoria congelados,
+  nenhuma data inválida, nenhum `#REF!` na coluna Período.
+- **Outubro fechado continua fechado**: 1.003 lançamentos no fechamento e
+  1.003 hoje, valores iguais veículo a veículo.
+- **Uma** duplicata suspeita em 1.590 lançamentos, achada aplicando a
+  assinatura da V4.44 ao histórico inteiro.
+
+### O que estava errado, e entrou nesta versão
+
+**1. Placa que só difere por espaço.** O cadastro tinha o mesmo equipamento
+como `N 292` e `N292`. `normalizaPlaca_` tira o hífen, não o espaço: para o
+sistema são **dois veículos**. Um recebia todos os lançamentos, o outro ficava
+zerado no Resumo para sempre — 169 linhas para 168 veículos, contagem de ativos
+inflada e um fantasma na lista de parados. Agora o cadastro **recusa** a placa
+nova que colide ignorando espaços e hífens, dizendo qual já existe; na edição
+não bloqueia (a colisão já está lá, e travar impediria justamente quem tenta
+arrumar), mas avisa.
+
+**2. Os parâmetros apareciam como data.** `HORA_ALERTA` mostrava 07/01/1900 e
+`ESTOQUE_MINIMO_L` mostrava 14/05/1901. Os valores (7 e 500) estavam certos por
+dentro; o formato da célula é que tinha ficado `dd/mm/yyyy` de quando as linhas
+do "PERÍODO CALCULADO" ocupavam aquelas posições, versões atrás — a lista de
+parâmetros cresceu e as datas desceram, o formato não. `normalizarFormatosParametros_`
+tira isso, e roda **tanto no Instalar quanto na troca de período**: deixar só
+no Instalar obrigaria a reinstalar para consertar um formato.
+
+**3. O relatório de parados nasceu com 60 linhas que não pedem decisão.** Dos
+166 veículos ativos, 83 estavam "sem lançamento" — e mais de 60 eram leves de
+loja cujo último lançamento foi a **depreciação automática** do mês anterior.
+Não estão abandonados: esperam a depreciação deste mês, que só é gerada no
+último dia. Agora são dois blocos, e as faixas de tempo contam só os parados de
+verdade.
+
+**4. Mudar o dia de corte agora avisa o que acontece com mês já fechado.** O
+usuário passou a fechar por mês civil (dia 1 ao último dia). Isso reescreve a
+competência de **toda** a base — e, na planilha dele, tira 89 lançamentos
+(R$ 100.132,62) de dentro de outubro, que está fechado com hash de
+integridade. Não é proibido; é o que ele quer. O que não pode é acontecer em
+silêncio, com a Auditoria apontando divergência três meses depois sem ninguém
+lembrar por quê. `impactoDoCorteNosFechados_` mede **antes** de mexer e a
+resposta diz quantos lançamentos mudam, quais meses fechados deixam de bater, e
+o que fazer para realinhar.
+
+A regra conta os dois lados: o mês fechado que **ganha** lançamento e o que
+**perde**. Olhar só um deixaria passar justamente o caso real do usuário.
+
+### Achados que ficaram com ele para decidir
+
+- 4.076 L de diesel saíram sem carga registrada — todos em 28/09, o primeiro
+  dia de uso, antes da primeira carga. É saldo de abertura, não vazamento, mas
+  o cálculo soma isso para sempre e o alerta diário repete o aviso sem fim.
+- O **seguro** é o único custo que não é lançado: vem do cadastro atual. Um
+  veículo tinha R$ 2,00 quando outubro fechou e tem R$ 1,00 hoje — o custo de
+  um mês fechado mudou porque alguém editou o cadastro.
+- 26 carretas ativas, nenhuma com cavalo vinculado: o painel da frota está
+  instalado e parado.
+
+50 suítes, 1.972 provas. 5 mutantes mortos.
+
+**Precisa rodar "Instalar / atualizar sistema"** para o formato dos parâmetros
+ser corrigido (ou trocar o dia de corte, que também corrige).
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026

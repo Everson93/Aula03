@@ -168,6 +168,8 @@ ctx.globalThis = ctx;
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(arquivo, 'utf8') + `
   Object.assign(globalThis, { webSalvarParametro, apagarPeriodo_, periodoDoMes_,
+    impactoDoCorteNosFechados_, textoImpactoDoCorte_,
+    normalizarFormatosParametros_, LINHA_PARAM_INICIAL,
     normalizarMesReferencia_, PARAMETROS_PADRAO, salvarLancamento_, ABAS, COL_LANC, L_, COL_VEIC, COL_CENTRO });
   exigirExecucaoOperacional_ = function () {};
   exigirExecucaoLeitura_ = function () {};
@@ -398,6 +400,86 @@ console.log('\n6. Apagar período apaga o intervalo — e só ele');
   ok('LIMITAÇÃO CONHECIDA: linha sem data válida NÃO é apagada',
     ids.indexOf('LAN-SEM-DATA') !== -1, JSON.stringify(ids) +
     ' — ela sobrevive à reimportação e vira lançamento órfão; está no ANALISE_TECNICA');
+})();
+
+console.log('\n6b. Mudar o corte avisa o que acontece com mês já fechado');
+// Mudar o dia de corte reescreve a competência de TODA a base, inclusive a de
+// meses já fechados com hash de integridade. Não é proibido — o usuário trocou
+// para mês civil de propósito. O que não pode é acontecer em silêncio: a
+// Auditoria aponta a divergência depois, e três meses adiante ninguém lembra
+// por quê.
+(function () {
+  const lanc = abas['Lançamentos'];
+  lanc.dados.length = 1;
+  function linha(dia, mes, id) {
+    const l = new Array(lanc.maxCols).fill('');
+    l[0] = d(2026, mes, dia); l[1] = 'AAA 0001'; l[2] = 'Pneus'; l[4] = 100; l[10] = id;
+    return l;
+  }
+  // Com corte 25: 28/10 e 30/10 são competência 2026-11. Com mês civil: 2026-10.
+  lanc.dados.push(linha(28, 10, 'LAN-A'));
+  lanc.dados.push(linha(30, 10, 'LAN-B'));
+  lanc.dados.push(linha(10, 11, 'LAN-C'));   // novembro nos dois critérios
+  // O caso que SAI de um mês fechado: com corte 25, 26/09 é competência
+  // 2026-10 (fechada); com mês civil, volta para setembro. Foi o que aconteceu
+  // de verdade na planilha do usuário — 89 lançamentos, R$ 100 mil.
+  lanc.dados.push(linha(26, 9, 'LAN-D'));
+  vm.runInContext('invalidarCacheLancamentos_(); CORTE_COMPETENCIA_EXEC_ = null;', ctx);
+  novaAba('Histórico', ['Período', 'Total', 'Qtd', 'Hash', 'Em', 'Quem'], [['2026-10', 1, 1, 'h', '', '']]);
+  const imp = ctx.impactoDoCorteNosFechados_(31);
+  ok('conta os lançamentos que trocam de competência', imp.movidos === 3,
+    JSON.stringify(imp) + ' — 28/10 e 30/10 entram em outubro; 26/09 SAI dele');
+  ok('acusa tanto quem entra quanto quem SAI do mês fechado',
+    imp.fechadosAfetados[0].lancamentos === 3, JSON.stringify(imp.fechadosAfetados) +
+    ' — olhar só um lado deixaria passar o lançamento que o fechado perde');
+  ok('e aponta o mês FECHADO afetado',
+    imp.fechadosAfetados.length === 1 && imp.fechadosAfetados[0].mes === '2026-10',
+    JSON.stringify(imp.fechadosAfetados));
+  const texto = ctx.textoImpactoDoCorte_(imp);
+  ok('o aviso cita o mês e fala do hash',
+    /2026-10/.test(texto) && /hash de integridade/.test(texto), texto);
+  ok('e diz o que fazer para alinhar', /reabra e feche/i.test(texto), texto);
+  const semFechado = ctx.textoImpactoDoCorte_({ movidos: 0, fechadosAfetados: [] });
+  ok('sem nada para avisar, não enche a mensagem', semFechado === '', JSON.stringify(semFechado));
+  // E o caminho inteiro: o aviso chega na resposta de quem trocou o corte.
+  ctx.__efeitos = [];
+  const r = salvar('DIA_FIM_PERIODO', 31);
+  ok('trocar para mês civil é aceito', r.ok === true, r.mensagem);
+  ok('e a resposta carrega o aviso do mês fechado',
+    /JÁ FECHADA/.test(String(r.mensagem)) && /2026-10/.test(String(r.mensagem)),
+    r.mensagem);
+  ctx.__param.DIA_FIM_PERIODO = 25;
+  vm.runInContext('CORTE_COMPETENCIA_EXEC_ = null;', ctx);
+})();
+
+console.log('\n6c. As células de parâmetro não são data');
+// Na planilha do usuário, HORA_ALERTA aparecia como 07/01/1900 e
+// ESTOQUE_MINIMO_L como 14/05/1901: os valores (7 e 500) estavam certos, o
+// formato da célula é que tinha ficado dd/mm/yyyy de quando as linhas do
+// "PERÍODO CALCULADO" ocupavam aquelas posições, versões atrás.
+(function () {
+  const formatos = {};
+  const fake = {
+    getRange: function (linha, coluna, nL) {
+      return { setNumberFormat: function (f) {
+        for (let i = 0; i < (nL || 1); i++) formatos[(linha + i) + ':' + coluna] = f;
+        return this;
+      } };
+    },
+  };
+  ctx.normalizarFormatosParametros_(fake, 14);
+  const ini = ctx.LINHA_PARAM_INICIAL;
+  ok('as 14 linhas de parâmetro saem do formato de data',
+    [...Array(14).keys()].every(function (i) { return formatos[(ini + i) + ':2'] === 'General'
+      || (i === 0 && formatos[(ini + i) + ':2'] === '@'); }), JSON.stringify(formatos));
+  ok('e MES_REFERENCIA continua texto', formatos[ini + ':2'] === '@',
+    '"2026-07" numa célula normal vira data sozinho');
+  const fonte = fs.readFileSync(arquivo, 'utf8');
+  ok('o Instalar e a troca de período chamam a normalização',
+    // A CHAMADA, não a definição: a linha do `function` casa com o mesmo
+    // texto, e a regra contaria três onde há duas.
+    (fonte.match(/^\s+normalizarFormatosParametros_\(sheet/gm) || []).length === 2,
+    'só no Instalar obrigaria a reinstalar para consertar o formato');
 })();
 
 console.log('\n7. Regras estáticas');
