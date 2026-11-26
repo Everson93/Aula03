@@ -3756,8 +3756,11 @@
           botaoConfirmarData + ' ' + botaoDivergencias + ' ' + botaoGerar + '</div></div>' +
 
       (!liberada && naAberta
-        ? '<div class="ok-caixa"><b>Regra da competência:</b> a depreciação só vira lançamento no último dia do período, em ' +
-          esc(st.dataLancamento || '') + '. Até lá os veículos ficam como <b>AGUARDANDO</b> e não contam como pendência.</div>'
+        ? '<div class="ok-caixa"><b>Regra da competência:</b> esta competência ainda não tem valor ' +
+          'próprio — ele viria do cadastro dos veículos, que pode mudar até o fim do mês. ' +
+          '<b>Importe a planilha de depreciação e ela entra na hora</b>, já como lançamento. ' +
+          'Sem importar, os veículos ficam como <b>AGUARDANDO</b> até ' + esc(st.dataLancamento || '') +
+          ' e não contam como pendência.</div>'
         : '') +
 
       (naAberta && DEP_FORA.length
@@ -4071,8 +4074,10 @@
           'Se não bater, o separador decimal foi lido errado — não grave.</span></div>' +
         blocos +
         (r.prontos
-          ? '<div style="margin-top:10px"><button class="acao" onclick="depImportar(this)">✅ Gravar ' +
-            num(r.prontos) + ' bem(ns) em ' + esc(DEP_COMPETENCIA) + '</button></div>'
+          ? '<div style="margin-top:10px"><button class="acao" onclick="depImportar(this)">✅ Gravar e lançar ' +
+            num(r.prontos) + ' bem(ns) em ' + esc(DEP_COMPETENCIA) + '</button></div>' +
+            '<div class="sub2" style="margin-top:6px">Os lançamentos de depreciação são gerados ' +
+            'na hora, com data do último dia do período.</div>'
           : '<div class="erro-caixa">Nenhum bem casou com o cadastro. Nada a gravar.</div>');
     }).withFailureHandler(function (e) {
       el('depPrevia').innerHTML = '<div class="erro-caixa">' + esc(e.message) + '</div>';
@@ -4163,7 +4168,7 @@
           '<div class="kpi"><div class="rotulo">Pendências</div><div class="valor">' + p.pendencias + '</div></div>' +
           '<div class="kpi"><div class="rotulo">Aceitas como exceção</div><div class="valor"' +
             (exc.length ? ' style="color:#A66300"' : '') + '>' + num(exc.length) + '</div></div>' +
-          '<div class="kpi"><div class="rotulo">Depreciação</div><div class="valor" style="font-size:16px">' + (depOk?'OK':(!depLiberada?'Aguardando '+esc(dep.dataLancamento||'dia 25'):(dep.pendentes+dep.divergentes)+' revisar')) + '</div></div>' +
+          '<div class="kpi"><div class="rotulo">Depreciação</div><div class="valor" style="font-size:16px">' + (depOk?'OK':(!depLiberada?'Importar':(dep.pendentes+dep.divergentes)+' revisar')) + '</div></div>' +
           '<div class="kpi"><div class="rotulo">Próximo período</div><div class="valor" style="font-size:15px">' + esc(p.proximo) + '</div></div>' +
         '</div>' +
         '<div class="cartao"><b>1. Conferir as pendências</b>' +
@@ -4177,7 +4182,7 @@
           (depOk
             ? '<div class="ok-caixa">Depreciação da competência regularizada.</div>'
             : (!depLiberada
-              ? '<div class="ok-caixa">A depreciação será inserida somente no último dia do período ('+esc(dep.dataLancamento||'')+'). Até lá ela não é considerada pendência e o fechamento permanece bloqueado.</div>'
+              ? '<div class="ok-caixa">Esta competência ainda não tem depreciação importada. Importe a planilha e ela é lançada na hora; sem importar, o valor do cadastro é usado em '+esc(dep.dataLancamento||'')+'. Até então ela não é pendência, e o fechamento permanece bloqueado.</div>'
               : '<div class="aviso">'+num(dep.pendentes)+' pendente(s) e '+num(dep.divergentes)+' divergente(s). O fechamento ficará bloqueado.</div>'))+
           '<button class="acao secundaria" onclick="abrir(\'depreciacao\')">📉 Abrir depreciação mensal</button></div>'+
         '<div class="cartao"><b>3. Atualizar os relatórios</b>' +

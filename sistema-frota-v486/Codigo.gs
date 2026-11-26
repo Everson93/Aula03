@@ -682,7 +682,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.48.1';
+const VERSAO_SISTEMA = '4.49.0';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -4596,9 +4596,8 @@ function salvarLancamento_(dados, opcoesSalvar) {
         erros.push('A depreciação só pode ser lançada no último dia do período (' +
           formatarData_(dataFechamentoDep) + ').');
       }
-      if (!depreciacaoLiberada_(periodo)) {
-        erros.push('A depreciação desta competência só é liberada no último dia do período (' +
-          formatarData_(dataFechamentoDep) + ').');
+      if (!depreciacaoLiberada_(periodo, param_('MES_REFERENCIA'))) {
+        erros.push(textoDepreciacaoAguardando_(periodo, formatarData_(dataFechamentoDep)));
       }
       const existenteDep = totalDepreciacaoLancadaPlacaPeriodo_(placa, periodo);
       if (existenteDep > 0) {
@@ -5908,7 +5907,8 @@ function ehPendenciaDepreciacao_(problema) {
 }
 
 function depreciacaoPodeContarComoPendencia_() {
-  try { return depreciacaoLiberada_(periodoAtual_()) === true; } catch (e) { return false; }
+  try { return depreciacaoLiberada_(periodoAtual_(), param_('MES_REFERENCIA')) === true; }
+  catch (e) { return false; }
 }
 
 /**
@@ -15624,9 +15624,50 @@ function mesmaData_(a, b) {
     a.getDate() === b.getDate();
 }
 
-/** Depreciação só pode ser gerada/lançada a partir do último dia do período. */
-function depreciacaoLiberada_(periodo) {
+/**
+ * A competencia tem valor PROPRIO, vindo da aba Depreciacao Mensal.
+ *
+ * E a evidencia de que o usuario ja importou (ou digitou) os valores daquele
+ * mes. Diferente do valor que vem do cadastro do veiculo, que existe sempre e
+ * portanto nao prova nada.
+ */
+function competenciaTemValorImportado_(mesRef) {
+  let alvo = '';
+  try { alvo = normalizarMesReferencia_(mesRef); } catch (e) { return false; }
+  if (!alvo) return false;
+  return lerDepreciacaoMensal_().some(function (l) {
+    try { return normalizarMesReferencia_(l[COL_DM.COMPETENCIA - 1]) === alvo; } catch (e) { return false; }
+  });
+}
+
+/**
+ * Quando a depreciacao do mes pode ser gerada e lancada.
+ *
+ * V4.49: eram duas regras colapsadas numa. A pergunta nao e "ja chegou o fim do
+ * mes?", e "o valor do mes ja esta definido?". Importar a planilha de
+ * depreciacao e exatamente isso: o valor de cada bem vem do arquivo, nao muda
+ * mais, e esperar o dia 30 para gravar o que ja se sabe no dia 5 nao protege
+ * nada — so faz o custo chegar atrasado ao Resumo.
+ *
+ * Sem importacao, a regra antiga continua: o valor vem do CADASTRO, que o
+ * usuario pode editar a qualquer momento ate o fim do mes, e gerar no dia 5
+ * congelaria um numero que ainda vai mudar.
+ *
+ * O `mesRef` nao e opcional por conveniencia: sem ele a funcao nao sabe qual
+ * competencia olhar e cairia silenciosamente na regra antiga. A regra estatica
+ * em conferir_depreciacao_antecipada.js exige os dois argumentos em todo lugar.
+ */
+function depreciacaoLiberada_(periodo, mesRef) {
+  if (competenciaTemValorImportado_(mesRef)) return true;
   return hojeNoFuso_().getTime() >= dataUltimoDiaPeriodo_(periodo).getTime();
+}
+
+/** Por que a depreciacao ainda nao esta liberada — para a tela dizer o que fazer. */
+function textoDepreciacaoAguardando_(periodo, mesExtenso) {
+  return 'A depreciação de ' + mesExtenso + ' ainda não tem valor próprio: ela viria do ' +
+    'cadastro dos veículos, que pode mudar até o fim do mês. Importe a planilha de ' +
+    'depreciação da competência e ela entra na hora — ou aguarde ' +
+    formatarData_(dataUltimoDiaPeriodo_(periodo)) + ', quando o valor do cadastro é usado.';
 }
 
 function totalDepreciacaoLancadaPlacaPeriodo_(placa, periodo) {
@@ -16364,7 +16405,7 @@ function statusDepreciacaoMensal_() {
   const mesRef = normalizarMesReferencia_(param_('MES_REFERENCIA'));
   const periodo = periodoDoMes_(mesRef);
   const dataLancamento = dataUltimoDiaPeriodo_(periodo);
-  const liberada = depreciacaoLiberada_(periodo);
+  const liberada = depreciacaoLiberada_(periodo, mesRef);
   const veiculos = dadosVeiculosExecucao_();
   const lancados = {};
   const lancadosForaData = {};
@@ -16631,8 +16672,8 @@ function gerarDepreciacaoMensal_() {
       return {
         gerados: 0,
         status: status,
-        mensagem: 'A depreciação de ' + status.mesExtenso + ' só pode ser inserida no último dia do período (' +
-          status.dataLancamento + '). Até lá ela fica como AGUARDANDO e não conta como pendência.'
+        mensagem: textoDepreciacaoAguardando_(periodo, status.mesExtenso) +
+          ' Até lá ela fica como AGUARDANDO e não conta como pendência.'
       };
     }
     const dataLancamento = new Date(periodo.fim.getFullYear(), periodo.fim.getMonth(), periodo.fim.getDate(), 12, 0, 0);
@@ -16890,13 +16931,44 @@ function webDepreciacaoImportar(token, texto, mesRef) {
   invalidarCacheInicio_();
   registrarLog_('Importar depreciação', alvo + ' • ' + gravados + ' bem(ns) • R$ ' +
     numBR_(aceitos.reduce(function (t, i) { return t + i.valor; }, 0), 2));
+
+  // V4.49: importar JA LANCA. Gravar o valor na aba e deixar o lancamento para
+  // um segundo clique era a origem do "o veiculo nao tem custo no periodo":
+  // o valor estava na planilha, o Resumo nao sabia dele, e sessenta veiculos
+  // apareciam como parados esperando um botao.
+  //
+  // So na competencia ABERTA: gerarDepreciacaoMensal_ trabalha sobre
+  // MES_REFERENCIA, e gerar aqui para outra competencia lancaria no periodo
+  // errado, em silencio.
+  let lancados = 0;
+  let avisoLancamento = '';
+  if (alvo === normalizarMesReferencia_(param_('MES_REFERENCIA'))) {
+    try {
+      const g = gerarDepreciacaoMensal_();
+      lancados = g.gerados || 0;
+      if (!lancados && g.mensagem) avisoLancamento = ' • ' + g.mensagem;
+    } catch (e) {
+      // O valor ESTA gravado; o lancamento e que falhou. Dizer que a importacao
+      // deu errado faria o usuario importar de novo sem necessidade.
+      avisoLancamento = ' • os valores foram gravados, mas o lançamento automático falhou: ' +
+        e.message + '. Use "Gerar depreciação mensal".';
+      registrarLog_('Importar depreciação', alvo + ' • lançamento automático falhou: ' + e.message);
+    }
+  } else {
+    avisoLancamento = ' • competência fora da aberta: os valores ficam guardados e serão ' +
+      'lançados quando ela for a competência aberta';
+  }
+
   return {
     ok: true,
     gravados: gravados,
+    lancados: lancados,
     recusados: r.semCadastro.slice(0, 30),
     totalRecusados: r.semCadastro.length,
     mensagem: gravados + ' bem(ns) gravado(s) na competência ' + alvo +
-      (r.semCadastro.length ? ' • ' + r.semCadastro.length + ' sem cadastro de veículo, não entraram' : ''),
+      (lancados ? ' • ' + lancados + ' lançamento(s) de depreciação gerado(s)' : '') +
+      (r.semCadastro.length ? ' • ' + r.semCadastro.length + ' sem cadastro de veículo, não entraram' : '') +
+      avisoLancamento,
     dados: webDepreciacao(token, alvo),
   };
 }
@@ -19413,8 +19485,8 @@ function diagnosticoSaudeRapida_(forcar) {
   let dep=null;
   try {
     const pDep=periodoAtual_();
-    if (!depreciacaoLiberada_(pDep)) {
-      adicionar('Depreciação mensal','OK','Aguardando '+formatarData_(dataUltimoDiaPeriodo_(pDep))+'. Antes desta data não é pendência.');
+    if (!depreciacaoLiberada_(pDep, param_('MES_REFERENCIA'))) {
+      adicionar('Depreciação mensal','OK','Sem valor importado; aguardando '+formatarData_(dataUltimoDiaPeriodo_(pDep))+'. Antes disso não é pendência.');
     } else {
       dep=statusDepreciacaoMensal_();
       adicionar('Depreciação mensal',(dep.pendentes||dep.divergentes)?'AVISO':'OK',(dep.pendentes||dep.divergentes)?dep.pendentes+' pendente(s), '+dep.divergentes+' divergente(s).':'Competência regularizada.');

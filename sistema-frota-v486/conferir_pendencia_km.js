@@ -129,6 +129,11 @@ function novaAba(nome, cabecalho, linhas) {
   return aba;
 }
 
+// Dia 5 de novembro: o meio do período aberto (26/10 a 25/11). É quando o
+// usuário importa a depreciação, e é o único instante em que a diferença entre
+// "data fora do período" e "data depois de hoje" aparece.
+const HOJE_FIXO = '2026-11-05';
+
 const ctx = {
   console: console,
   PropertiesService: {
@@ -147,7 +152,15 @@ const ctx = {
     getUuid: () => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
     formatDate: function (d, _tz, padrao) {
       const z = n => ('0' + n).slice(-2);
-      if (padrao === 'yyyy-MM-dd') return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate());
+      // HOJE é fixo. Enquanto vinha do relógio, a suíte provava coisas
+      // diferentes em dias diferentes: a prova do "período futuro" passava em
+      // 26/11 sem testar nada, porque a data real já tinha passado do período.
+      if (padrao === 'yyyy-MM-dd') {
+        if (d === undefined || d === null) return HOJE_FIXO;
+        return (Math.abs(d.getTime() - Date.now()) < 60000)
+          ? HOJE_FIXO
+          : d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate());
+      }
       if (padrao === 'yyyyMMdd') return '' + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate());
       if (padrao === 'yyyy-MM') return d.getFullYear() + '-' + z(d.getMonth() + 1);
       return z(d.getDate()) + '/' + z(d.getMonth() + 1) + '/' + d.getFullYear();
@@ -379,6 +392,50 @@ const fonte = fs.readFileSync(arquivo, 'utf8');
   });
   ok('as leituras são contadas só dentro do período',
     /if \(data >= periodo\.inicio && data <= periodo\.fim\) \{[\s\S]{0,140}leiturasNoPeriodo/.test(fonte));
+})();
+
+console.log('\n5. Depreciação com data do fim do período não é "período futuro"');
+// V4.49: a depreciação deixou de esperar o último dia do período para ser
+// LANÇADA, mas o lançamento continua datado no último dia — é o que mantém o
+// custo na competência certa. Importando no dia 5, isso é uma data que ainda
+// não chegou, e a pendência "Lançamento em período futuro" nasceu para pegar
+// quem digitou o ano errado.
+//
+// A pergunta que esta prova responde é se aquela checagem olha o PERÍODO ou o
+// RELÓGIO. Se olhasse o relógio, importar no dia 5 criaria 166 pendências
+// impossíveis de resolver — o mesmo estrago do IPVA em parcelas, que já custou
+// uma versão para consertar.
+(function () {
+  function depreciar(dia, mes) {
+    const l = new Array(ctx.TOTAL_COL_LANC || 15).fill('');
+    l[ctx.L_.DATA] = d(2026, mes, dia);
+    l[ctx.L_.PLACA] = 'AAA 0001';
+    l[ctx.L_.TIPO] = 'Depreciação';
+    l[ctx.L_.VALOR] = 800;
+    l[ctx.L_.CENTRO] = 'DEPÓSITO';
+    l[ctx.L_.CATEGORIA] = 'Truck Normal';
+    l[ctx.L_.ID] = 'LAN-DEP' + mes + dia;
+    abas['Lançamentos'].dados.push(l);
+    vm.runInContext('invalidarCacheLancamentos_();', ctx);
+  }
+  const antes = abas['Lançamentos'].dados.length;
+
+  // Último dia do período aberto (26/10 a 25/11): a data que o gerador usa.
+  depreciar(25, 11);
+  montarResumoFake([{ placa: 'AAA 0001', litros: 0, km: 0 }]);
+  let p = problemasDe('AAA 0001');
+  ok('datada no último dia do período: não é período futuro',
+    p.every(function (x) { return !/futuro/i.test(x); }), JSON.stringify(p));
+
+  // E a checagem está VIVA: um dia depois do período continua sendo acusado.
+  // Sem esta segunda metade, apagar a regra inteira faria a prova de cima passar.
+  depreciar(26, 11);
+  p = problemasDe('AAA 0001');
+  ok('e um dia DEPOIS do período continua sendo acusado',
+    p.some(function (x) { return /futuro/i.test(x); }), JSON.stringify(p));
+
+  abas['Lançamentos'].dados.length = antes;
+  vm.runInContext('invalidarCacheLancamentos_();', ctx);
 })();
 
 if (falhas) {

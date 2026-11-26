@@ -5435,6 +5435,88 @@ provas. 5 mutantes mortos.
 **Precisa rodar "Instalar / atualizar sistema"** — é o que regrava a
 competência como texto.
 
+## V4.49.0 — importar a depreciação já lança
+
+Pedido do usuário: não esperar o último dia do período; se ele importa a
+depreciação, ela entra e grava.
+
+### A pergunta estava errada
+
+O portão era `hoje >= último dia do período`. Fazia sentido enquanto o valor
+vinha do **cadastro do veículo**, que ele pode editar até o fim do mês: gerar no
+dia 5 congelaria um número que ainda vai mudar.
+
+Mas quando o valor vem de um **arquivo importado**, ele já está definido.
+Esperar o dia 30 para gravar o que se sabe no dia 5 não protege nada — e era a
+origem das sessenta linhas de "veículo sem lançamento" da V4.48.0: o valor
+estava na planilha, o Resumo não sabia dele, e sessenta veículos apareciam como
+parados esperando um clique.
+
+Então a pergunta não é *"já chegou o fim do mês?"*, é **"o valor do mês já está
+definido?"**. `depreciacaoLiberada_(periodo, mesRef)` passou a responder essa:
+
+- a competência tem linha na aba Depreciação Mensal → liberada, em qualquer dia;
+- não tem → a regra antiga continua, porque o valor viria do cadastro.
+
+Tirar o portão inteiro seria o caminho fácil e errado: poria 166 pendências de
+depreciação no painel no dia 1 de cada mês.
+
+### O lado que o argumento novo abre
+
+`mesRef` não é opcional. Sem ele a função não sabe qual competência olhar e
+**cai na regra antiga sem erro nenhum** — um chamador esquecido continuaria
+esperando o fim do mês para sempre, em silêncio. São quatro chamadores. A regra
+estática de `conferir_depreciacao_antecipada.js` exige os dois argumentos em
+todos.
+
+Escrever essa regra deu trabalho pelo motivo de sempre: a primeira versão usava
+`depreciacaoLiberada_\([^)]*\)`, que para no primeiro `)` e cortava
+`depreciacaoLiberada_(periodoAtual_(), param_('MES_REFERENCIA'))` no meio —
+acusando de falta de argumento justamente a chamada mais completa. Agora a regra
+conta parêntese aninhado, e há prova disso.
+
+### Importar grava o lançamento
+
+`webDepreciacaoImportar` chama o gerador depois de gravar os valores. Nessa
+ordem, e só na competência **aberta**: `gerarDepreciacaoMensal_` trabalha sobre
+`MES_REFERENCIA`, e gerar ali para outra competência lançaria no período errado,
+em silêncio. Se o lançamento falhar, a importação continua `ok` — o valor está
+gravado, e dizer que falhou faria o usuário importar de novo sem necessidade; a
+mensagem avisa e manda usar o botão.
+
+A **data** do lançamento continua sendo o último dia do período. É o que mantém
+o custo na competência certa, e é o que a conferência (`mesmaData_`,
+`confirmarDataDepreciacao_`) usa para casar. Importando no dia 5, isso é uma
+data que ainda não chegou.
+
+### O que isso quase quebrou
+
+A pendência "Lançamento em período futuro" existe para pegar quem digitou 2027
+no lugar de 2026. Se ela olhasse o **relógio**, importar no dia 5 criaria 166
+pendências impossíveis de resolver — o mesmo estrago que o IPVA em parcelas já
+causou uma vez. Ela olha o **período**, então não dispara. Isso está provado,
+não deduzido.
+
+E provar isso revelou uma fraqueza velha em `conferir_pendencia_km.js`: o
+"hoje" da suíte vinha do relógio de verdade. Como hoje é 26/11, depois do fim do
+período, a prova passava sem testar nada — o mutante que trocava
+`data > periodo.fim` por `data > hojeNoFuso_()` sobrevivia. Com o "hoje" fixado
+em 05/11, o mutante morre. Suíte cujo resultado depende do dia em que roda não
+está provando o que diz.
+
+### Tela
+
+Três textos ensinavam a regra antiga ("a depreciação só vira lançamento no
+último dia do período"). Agora dizem o que fazer: importe e ela entra na hora.
+O botão virou "Gravar **e lançar**", porque é o que ele faz.
+
+51 suítes, 2.022 provas. 37 provas novas em
+`conferir_depreciacao_antecipada.js`, 2 em `conferir_pendencia_km.js`.
+12 mutantes mortos.
+
+**Não precisa** rodar "Instalar / atualizar sistema": nenhuma aba, coluna ou
+parâmetro novo.
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026
