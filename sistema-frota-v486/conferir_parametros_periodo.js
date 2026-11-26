@@ -241,6 +241,8 @@ novaAba('Log', ['Quando', 'Quem', 'Ação', 'Detalhe'], []);
 
 ctx.__log = [];
 let provas = 0, falhas = 0;
+const PARAMETROS_PADRAO_N = ctx.PARAMETROS_PADRAO.length;
+
 function ok(nome, cond, detalhe) {
   provas++;
   if (cond) { console.log('  ok   ' + nome); return; }
@@ -457,29 +459,109 @@ console.log('\n6c. As células de parâmetro não são data');
 // ESTOQUE_MINIMO_L como 14/05/1901: os valores (7 e 500) estavam certos, o
 // formato da célula é que tinha ficado dd/mm/yyyy de quando as linhas do
 // "PERÍODO CALCULADO" ocupavam aquelas posições, versões atrás.
+//
+// E o dublê aqui IMITA A CONVERSÃO do Sheets: sair do formato texto reinterpreta
+// o conteúdo na hora. Sem isso a prova olhava só o formato final — que terminava
+// certo — e aprovava um código que destruía a competência no caminho.
+function fakeParametros(valorInicial) {
+  const estado = { valor: valorInicial, formato: '@', formatos: [], escritas: [] };
+  function cel(linha, coluna, nL) {
+    const daPrimeira = linha === 4 && coluna === 2;
+    const abrange = daPrimeira || (coluna === 2 && linha <= 4 && 4 < linha + (nL || 1));
+    return {
+      setNumberFormat: function (f) {
+        if (abrange) {
+          estado.formatos.push(f);
+          // A conversão do Sheets: texto que parece data deixa de ser texto.
+          if (f !== '@' && /^\d{4}-\d{1,2}$/.test(String(estado.valor))) {
+            const partes = String(estado.valor).split('-');
+            estado.valor = Math.round(
+              (Date.UTC(Number(partes[0]), Number(partes[1]) - 1, 1) - Date.UTC(1899, 11, 30)) / 86400000);
+          }
+          estado.formato = f;
+        }
+        return this;
+      },
+      setValue: function (v) { if (abrange) { estado.valor = v; estado.escritas.push(v); } return this; },
+      getValue: function () { return abrange ? estado.valor : ''; },
+    };
+  }
+  return { estado: estado, fake: { getRange: cel } };
+}
 (function () {
-  const formatos = {};
-  const fake = {
+  const alvo = fakeParametros('2026-12');
+  ctx.normalizarFormatosParametros_(alvo.fake, PARAMETROS_PADRAO_N);
+  ok('a linha do MES_REFERENCIA nunca sai do formato texto',
+    alvo.estado.formatos.every(function (f) { return f === '@'; }),
+    'aplicou ' + JSON.stringify(alvo.estado.formatos) +
+    ' — sair de "@" converte "2026-12" em data na hora, e o "@" de volta mostra 46357');
+  ok('e a competência continua valendo 2026-12 depois da normalização',
+    alvo.estado.valor === '2026-12', 'ficou ' + JSON.stringify(alvo.estado.valor));
+
+  // A célula que JÁ nasceu convertida tem de se consertar sozinha: 46357 é
+  // 01/12/2026, e foi o número que apareceu no erro do usuário.
+  const quebrada = fakeParametros(46357);
+  ctx.normalizarFormatosParametros_(quebrada.fake, PARAMETROS_PADRAO_N);
+  ok('a célula que já estava com o número de série volta a ser AAAA-MM',
+    quebrada.estado.valor === '2026-12', 'ficou ' + JSON.stringify(quebrada.estado.valor));
+
+  // Valor que ninguém sabe ler não é apagado: melhor estranho que vazio.
+  const perdida = fakeParametros('novembro');
+  ctx.normalizarFormatosParametros_(perdida.fake, PARAMETROS_PADRAO_N);
+  ok('valor ilegível é mantido, não apagado', perdida.estado.valor === 'novembro',
+    'ficou ' + JSON.stringify(perdida.estado.valor));
+
+  // As OUTRAS linhas é que precisam perder o formato de data.
+  const outras = {};
+  ctx.normalizarFormatosParametros_({
     getRange: function (linha, coluna, nL) {
       return { setNumberFormat: function (f) {
-        for (let i = 0; i < (nL || 1); i++) formatos[(linha + i) + ':' + coluna] = f;
+        for (let i = 0; i < (nL || 1); i++) outras[(linha + i) + ':' + coluna] = f;
         return this;
-      } };
+      }, setValue: function () { return this; }, getValue: function () { return '2026-12'; } };
     },
-  };
-  ctx.normalizarFormatosParametros_(fake, 14);
+  }, PARAMETROS_PADRAO_N);
   const ini = ctx.LINHA_PARAM_INICIAL;
-  ok('as 14 linhas de parâmetro saem do formato de data',
-    [...Array(14).keys()].every(function (i) { return formatos[(ini + i) + ':2'] === 'General'
-      || (i === 0 && formatos[(ini + i) + ':2'] === '@'); }), JSON.stringify(formatos));
-  ok('e MES_REFERENCIA continua texto', formatos[ini + ':2'] === '@',
-    '"2026-07" numa célula normal vira data sozinho');
+  ok('as outras linhas de parâmetro saem do formato de data',
+    [...Array(PARAMETROS_PADRAO_N - 1).keys()].every(function (i) {
+      return outras[(ini + 1 + i) + ':2'] === 'General';
+    }), JSON.stringify(outras));
+  ok('e a normalização cobre a lista de parâmetros inteira',
+    PARAMETROS_PADRAO_N === ctx.PARAMETROS_PADRAO.length && PARAMETROS_PADRAO_N > 1,
+    'uma lista com um item só faria a prova passar sem testar nada');
+
   const fonte = fs.readFileSync(arquivo, 'utf8');
   ok('o Instalar e a troca de período chamam a normalização',
     // A CHAMADA, não a definição: a linha do `function` casa com o mesmo
     // texto, e a regra contaria três onde há duas.
     (fonte.match(/^\s+normalizarFormatosParametros_\(sheet/gm) || []).length === 2,
     'só no Instalar obrigaria a reinstalar para consertar o formato');
+})();
+
+console.log('\n6d. Competência lida de um número de série');
+// O erro que o usuário viu: "MES_REFERENCIA inválido: 46357". Com formato de
+// texto por cima de um valor já convertido, a célula devolve o SERIAL, não um
+// Date — e a leitura morria aí, sem caminho de volta.
+(function () {
+  ok('46357 é lido como 2026-12', ctx.normalizarMesReferencia_(46357) === '2026-12',
+    'virou ' + ctx.normalizarMesReferencia_(46357));
+  ok('o serial também é aceito como texto', ctx.normalizarMesReferencia_('46357') === '2026-12',
+    'a célula com formato "@" devolve o número como texto');
+  ok('46327 é lido como 2026-11', ctx.normalizarMesReferencia_(46327) === '2026-11');
+  ok('o último dia do mês não escorrega para o mês seguinte',
+    ctx.normalizarMesReferencia_(46356) === '2026-11',
+    '46356 = 30/11/2026; arredondar para cima trocaria a competência');
+  let erro = '';
+  try { ctx.normalizarMesReferencia_(7); } catch (e) { erro = e.message; }
+  ok('HORA_ALERTA = 7 não vira janeiro de 1900', /inválido/.test(erro),
+    'aceitar qualquer número faria um parâmetro trocado passar por competência');
+  erro = '';
+  try { ctx.normalizarMesReferencia_(500); } catch (e) { erro = e.message; }
+  ok('ESTOQUE_MINIMO_L = 500 também não', /inválido/.test(erro), erro);
+  erro = '';
+  try { ctx.normalizarMesReferencia_('2026'); } catch (e) { erro = e.message; }
+  ok('"2026" sozinho continua inválido', /inválido/.test(erro),
+    'um ano sem mês não é competência');
 })();
 
 console.log('\n7. Regras estáticas');

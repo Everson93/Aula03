@@ -650,6 +650,14 @@ const PARAMETROS_PADRAO = [
     'Grupos de frota para os indicadores. Formato: Nome: categoria, categoria | Nome: ...'],
 ];
 
+/**
+ * Intervalo em que um numero e aceito como data serial do Sheets: 01/01/2000 a
+ * 31/12/2100. Fora dele um numero NAO vira competencia — assim um HORA_ALERTA
+ * igual a 7 nunca e lido como janeiro de 1900.
+ */
+const SERIE_DATA_MINIMA_ = 36526;
+const SERIE_DATA_MAXIMA_ = 73415;
+
 /** Linha da aba Parâmetros onde cada valor fica (a instalacao reescreve tudo). */
 const LINHA_PARAM_INICIAL = 4;
 
@@ -674,7 +682,7 @@ const BLOQUEIO_LOGIN_SEGUNDOS_ = 600;
 const PREFIXO_FALHA_LOGIN_ = 'LOGIN_FAIL_V46_';
 
 /** Blindagem operacional V4: saúde, autorreparo e backups sem abrir o editor. */
-const VERSAO_SISTEMA = '4.48.0';
+const VERSAO_SISTEMA = '4.48.1';
 const PASTA_BACKUPS_SISTEMA_ = 'Backups Sistema Frota';
 const PREFIXO_BACKUP_SISTEMA_ = 'Sistema_Frota_BACKUP_';
 const MAX_BACKUPS_SISTEMA_ = 30;
@@ -962,11 +970,22 @@ function mesReferenciaSugeridoHoje_() {
 }
 
 function normalizarMesReferencia_(mesRef) {
-  if (mesRef instanceof Date && !isNaN(mesRef.getTime())) {
+  if (Object.prototype.toString.call(mesRef) === '[object Date]' && !isNaN(mesRef.getTime())) {
     return Utilities.formatDate(mesRef, ss_().getSpreadsheetTimeZone(), 'yyyy-MM');
   }
 
   const texto = String(mesRef == null ? '' : mesRef).trim();
+
+  // V4.48.1: com formato de TEXTO sobre um valor que o Sheets ja havia convertido
+  // em data, a celula nao devolve Date — devolve o NUMERO DE SERIE (46357 =
+  // 01/12/2026), e era isso que aparecia no erro "MES_REFERENCIA invalido".
+  // Converter de volta e o que deixa a planilha se recuperar sozinha, sem o
+  // usuario ter que adivinhar o que digitar.
+  const serie = /^\d+([.,]\d+)?$/.test(texto) ? Number(texto.replace(',', '.')) : NaN;
+  if (isFinite(serie) && serie >= SERIE_DATA_MINIMA_ && serie <= SERIE_DATA_MAXIMA_) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(serie) * 86400000);
+    return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2);
+  }
   const m = /^(\d{4})-(\d{1,2})$/.exec(texto);
   if (m) {
     const ano = Number(m[1]);
@@ -2650,8 +2669,25 @@ function formulasPeriodoParametros_() {
  */
 function normalizarFormatosParametros_(sheet, quantas) {
   if (!sheet || !quantas) return;
-  sheet.getRange(LINHA_PARAM_INICIAL, 2, quantas, 1).setNumberFormat('General');
-  sheet.getRange(LINHA_PARAM_INICIAL, 2).setNumberFormat('@');
+  const cel = sheet.getRange(LINHA_PARAM_INICIAL, 2);
+
+  // Le ANTES de mexer em formato nenhum: e a unica leitura em que a celula ainda
+  // devolve o que o usuario enxerga.
+  let mes = '';
+  try { mes = normalizarMesReferencia_(cel.getValue()); } catch (e) { mes = ''; }
+
+  // V4.48.1: 'General' comeca na SEGUNDA linha. Tirar o formato texto da linha do
+  // MES_REFERENCIA faz o Sheets reinterpretar "2026-12" como data na hora, e o '@'
+  // reaplicado em seguida passa a mostrar o numero de serie (46357). Foi o defeito
+  // que a V4.48.0 introduziu: a correcao do formato quebrava a competencia.
+  if (quantas > 1) {
+    sheet.getRange(LINHA_PARAM_INICIAL + 1, 2, quantas - 1, 1).setNumberFormat('General');
+  }
+  cel.setNumberFormat('@');
+
+  // Regrava como texto: conserta a celula que ja nasceu convertida. Se nao deu para
+  // entender o valor, deixa como esta — melhor um valor estranho que um apagado.
+  if (mes) cel.setValue(mes);
 }
 
 function aplicarPeriodoNaPlanilha_() {

@@ -5376,6 +5376,65 @@ A regra conta os dois lados: o mês fechado que **ganha** lançamento e o que
 **Precisa rodar "Instalar / atualizar sistema"** para o formato dos parâmetros
 ser corrigido (ou trocar o dia de corte, que também corrige).
 
+## V4.48.1 — a correção do formato quebrava a competência
+
+A V4.48.0 consertava o formato das células de parâmetro e, no mesmo passo,
+destruía o `MES_REFERENCIA`. Quem instalou recebeu:
+
+    MES_REFERENCIA inválido: "46357". Use o formato AAAA-MM, por exemplo 2026-07.
+
+`46357` é data serial: 01/12/2026. O que acontecia, na ordem:
+
+1. `normalizarFormatosParametros_` punha `General` em **todas** as linhas de
+   parâmetro, a primeira incluída.
+2. Sair do formato texto faz o Sheets **reinterpretar o conteúdo na hora**:
+   `"2026-12"` deixa de ser texto e passa a ser a data 01/12/2026.
+3. A linha seguinte reaplicava `'@'` — tarde. O formato texto por cima de um
+   valor já convertido não mostra a data: mostra o número de série.
+4. `normalizarMesReferencia_` tratava `Date` e tratava texto, mas **não** um
+   número solto. Lançava, e o sistema não abria.
+
+`setNumberFormat` não é cosmético numa célula que guarda texto parecido com
+data. Foi a suposição errada.
+
+### Por que a prova da V4.48.0 não pegou
+
+Ela olhava o formato **final** de cada linha e aceitava `'@'` na primeira. O
+código quebrado terminava com `'@'` na primeira linha — passava. O que ela não
+olhava era o **valor**, que já tinha sido convertido no caminho.
+
+É a família de defeito que o CLAUDE.md descreve: uma checagem que olha um lado
+de algo que tem dois. Aqui os dois lados eram formato **e** valor, e eu tinha
+escrito a prova do lado que eu estava pensando.
+
+O dublê agora **imita a conversão do Sheets** — sair do formato texto converte
+o valor, como na planilha de verdade. Com isso a prova reprova o código antigo,
+que é o teste que faltava.
+
+### O que mudou
+
+- `General` começa na **segunda** linha; a linha do `MES_REFERENCIA` nunca sai
+  do formato texto.
+- A normalização lê o valor **antes** de tocar em formato nenhum — é a única
+  leitura em que a célula ainda devolve o que o usuário enxerga — e **regrava**
+  como texto depois. Isso conserta a planilha que já nasceu convertida, sem o
+  usuário ter que adivinhar o que digitar.
+- Valor que não dá para entender é **mantido**, não apagado. Melhor um valor
+  estranho que um vazio.
+- `normalizarMesReferencia_` passa a aceitar data serial, como número ou como
+  texto, dentro da faixa 01/01/2000–31/12/2100 (`SERIE_DATA_MINIMA_` /
+  `SERIE_DATA_MAXIMA_`). A faixa é o que impede `HORA_ALERTA = 7` de virar
+  janeiro de 1900: aceitar qualquer número faria um parâmetro trocado passar por
+  competência.
+- `instanceof Date` virou `Object.prototype.toString.call` nessa função — a
+  regra do CLAUDE.md, no lugar onde ela agora tem prova.
+
+12 provas novas em `conferir_parametros_periodo.js` (59). 50 suítes, 1.983
+provas. 5 mutantes mortos.
+
+**Precisa rodar "Instalar / atualizar sistema"** — é o que regrava a
+competência como texto.
+
 # Pendente
 
 - **IPVA contado duas vezes no Resumo.** O usuário confirmou em 30/10/2026
